@@ -1,7 +1,7 @@
 """
 Amira FinIQ Testing Agent — Software Requirements Specification (SRS) Generator
 IEEE 830 / ISO/IEC/IEEE 29148 Format
-Version 1.0
+Version 1.1 — Quantitative Evaluation Framework (Karpathy methodology)
 """
 
 from docx import Document
@@ -86,7 +86,7 @@ def add_title_page():
 
     # Metadata table
     meta = [
-        ("Document Version", "1.0"),
+        ("Document Version", "1.1"),
         ("Date", datetime.date.today().strftime("%B %d, %Y")),
         ("Classification", "Confidential"),
         ("Prepared For", "Mars, Incorporated"),
@@ -307,6 +307,10 @@ add_table(
         ["SLA", "Service Level Agreement"],
         ["FR", "Functional Requirement (from main FinIQ SRS)"],
         ["TR", "Test Requirement (defined in this SRS)"],
+        ["Scalar Metric", "A single numeric score (0\u2013100%) that summarizes pass rate for a capability"],
+        ["Eval Harness", "The immutable scoring infrastructure that the agent under test cannot modify"],
+        ["Keep-or-Revert", "Evaluation loop: if score improves after a code change, commit; if score drops, revert"],
+        ["Binary Criterion", "A pass/fail check with no subjective judgment \u2014 outcome is 0 or 1"],
     ],
     col_widths=[2.0, 4.5]
 )
@@ -324,6 +328,7 @@ add_table(
         ["ISO/IEC/IEEE 29148:2018", "Systems and software engineering \u2014 Life cycle processes \u2014 Requirements engineering"],
         ["finiq_synthetic.db", "SQLite synthetic data file (local development mode)"],
         ["Databricks workspace.default", "Synthetic data catalog in Databricks (cloud development mode)"],
+        ["Karpathy AutoResearch", "Andrej Karpathy, AutoResearch pattern for AI agent evaluation: scalar metrics, immutable eval harness, binary pass/fail, time-boxed cycles, keep-or-revert loop (2025)"],
     ],
     col_widths=[2.5, 4.0]
 )
@@ -331,13 +336,17 @@ add_table(
 # 1.5 Document Overview
 doc.add_heading("1.5 Document Overview", level=2)
 add_para(
-    "This document is organized into six sections plus appendices. Section 1 introduces the "
+    "This document is organized into eight sections plus appendices. Section 1 introduces the "
     "Testing Agent's purpose and scope. Section 2 describes the overall product context, user "
     "characteristics, and constraints. Section 3 specifies the detailed functional and non-functional "
     "requirements (TR1\u2013TR9, 31 test requirements). Section 4 describes the test data architecture "
-    "for both simulated and real modes. Section 5 provides the test case matrix mapping main SRS "
-    "requirements to test requirements. Section 6 defines acceptance criteria for the Testing Agent "
-    "itself. Appendices provide the prompt-response pair template and simulated data summary."
+    "for both simulated and real modes. Section 5 defines the Quantitative Evaluation Framework "
+    "based on Karpathy's AutoResearch methodology, including scalar metrics, binary pass/fail "
+    "criteria, and the keep-or-revert evaluation loop. Section 6 provides the test case matrix "
+    "mapping main SRS requirements to test requirements. Section 7 provides binary pass/fail "
+    "criteria for each test requirement group. Section 8 defines quantitative acceptance criteria "
+    "for the Testing Agent itself. Appendices provide the prompt-response pair template and "
+    "simulated data summary."
 )
 
 doc.add_page_break()
@@ -896,9 +905,138 @@ add_bullet("Format: Golden datasets are stored as JSON files alongside the test 
 doc.add_page_break()
 
 # ══════════════════════════════════════════════════════════════════
-#  5. TEST CASE MATRIX
+#  5. QUANTITATIVE EVALUATION FRAMEWORK (Karpathy methodology)
 # ══════════════════════════════════════════════════════════════════
-doc.add_heading("5. Test Case Matrix", level=1)
+doc.add_heading("5. Quantitative Evaluation Framework", level=1)
+add_para(
+    "This section defines the quantitative evaluation methodology for the FinIQ Testing Agent, "
+    "adapted from Andrej Karpathy's AutoResearch pattern for AI agent evaluation. The framework "
+    "ensures that every capability is measured by a single scalar metric, scored by an immutable "
+    "eval harness, and evaluated through binary pass/fail criteria with no subjective judgment."
+)
+
+# 5.1 Core Principles
+doc.add_heading("5.1 Core Principles", level=2)
+
+add_para("Single Scalar Metric per Capability", bold=True, space_after=2)
+add_para(
+    "Each FinIQ capability is reduced to one aggregate pass rate: the percentage of test cases "
+    "that pass across all scenarios for that capability. This scalar collapses multiple dimensions "
+    "(accuracy, completeness, timeliness) into one number that can be tracked over time and compared "
+    "across builds."
+)
+
+add_para("Immutable Eval Harness", bold=True, space_after=2)
+add_para(
+    "The scoring infrastructure is separated from the agent under test. The FinIQ application "
+    "cannot modify, influence, or access its own scoring logic. The eval harness runs independently, "
+    "reads outputs produced by FinIQ, and compares them against pre-computed ground truth. This "
+    "separation prevents gaming or circular validation."
+)
+
+add_para("Binary Pass/Fail Criteria", bold=True, space_after=2)
+add_para(
+    "Every test case resolves to a binary outcome: pass (1) or fail (0). There is no partial "
+    "credit, no subjective scoring, and no human judgment during execution. Each test requirement "
+    "group defines 3\u20136 specific binary criteria. A test case passes only when all applicable "
+    "criteria are satisfied."
+)
+
+add_para("Time-Boxed Test Cycles", bold=True, space_after=2)
+add_para(
+    "Each test cycle operates within a fixed compute budget. The full simulated suite must complete "
+    "within 15 minutes; the full real-data suite within 30 minutes. If a test case exceeds its "
+    "individual time budget (30 seconds), it is marked as failed regardless of output correctness. "
+    "This prevents runaway execution and ensures predictable CI/CD cycle times."
+)
+
+add_para("Keep-or-Revert Evaluation Loop", bold=True, space_after=2)
+add_para(
+    "After every code change, the full test suite runs automatically. If the aggregate score "
+    "improves or remains stable (within 2% tolerance), the change is committed. If the score drops "
+    "by more than 2%, the change is reverted. This loop ensures that the codebase only moves forward "
+    "in measurable quality. The 2% threshold is configurable per deployment environment."
+)
+
+add_para("Ground Truth from Synthetic Data", bold=True, space_after=2)
+add_para(
+    "In simulated mode, all expected values are pre-computed deterministically from the synthetic "
+    "dataset (finiq_synthetic.db / Databricks workspace.default). The synthetic data is generated "
+    "with a fixed random seed (seed 42), making every expected value reproducible across environments. "
+    "This eliminates ambiguity about what constitutes a correct answer."
+)
+
+# 5.2 Scalar Metrics Summary Table
+doc.add_heading("5.2 Scalar Metrics Summary", level=2)
+add_para(
+    "The following table maps each FinIQ capability to its single scalar metric, target threshold, "
+    "and tolerance. These metrics form the quantitative scorecard for every test run."
+)
+
+add_table(
+    ["Capability", "Scalar Metric", "Target", "Tolerance", "Source View / Table"],
+    [
+        ["PES Reports", "KPI exact-match %", "\u226595%", "\u00b10.01%", "finiq_vw_pl_entity, finiq_vw_pl_brand_product, finiq_vw_ncfo_entity"],
+        ["NL Queries", "Query accuracy rate", "\u226585%", "Exact match", "All finiq_ tables/views"],
+        ["Budget Variance", "Value match %", "\u226595%", "\u00b10.01%", "finiq_financial_replan, finiq_financial_replan_cons"],
+        ["CI Summaries", "Factual accuracy", "\u226580%", "N/A", "Ingested competitor documents"],
+        ["Job Board", "SLA compliance %", "\u226590%", "N/A", "Job lifecycle timestamps"],
+        ["Data Ingestion", "Checksum match %", "100%", "Exact", "All 20 finiq_ objects"],
+        ["Regression", "Score stability", "\u22642% drop", "Per build", "Golden dataset comparison"],
+    ],
+    col_widths=[1.2, 1.3, 0.7, 0.8, 2.5]
+)
+
+# 5.3 Quantitative Thresholds per TR Group
+doc.add_heading("5.3 Quantitative Thresholds per Test Requirement Group", level=2)
+add_para(
+    "Each test requirement group has specific numeric thresholds that convert qualitative expectations "
+    "into measurable pass/fail criteria."
+)
+
+add_para("TR2 \u2014 PES Testing", bold=True, space_after=2)
+add_bullet("KPI values must match expected values within \u00b10.01% tolerance")
+add_bullet("Expected values are pre-computed from finiq_vw_pl_entity, finiq_vw_pl_brand_product, and finiq_vw_ncfo_entity")
+add_bullet("Rankings (RANK 1, TOP 3, BOTTOM 3) must match exactly \u2014 no tolerance on ordinal positions")
+add_bullet("All 6 KPIs must be present in output; missing KPI = automatic failure")
+
+add_para("TR3 \u2014 Budget Variance Testing", bold=True, space_after=2)
+add_bullet("Actual vs. replan values must match finiq_financial_replan within \u00b10.01%")
+add_bullet("Variance percentage must be computed correctly: (Actual \u2212 Replan) / Replan \u00d7 100")
+add_bullet("Currency values must match within \u00b10.01 of source (USD and local currency)")
+
+add_para("TR4 \u2014 NL Query Testing", bold=True, space_after=2)
+add_bullet("Generated SQL must execute without error (binary: executes = pass, error = fail)")
+add_bullet("Result row count must match expected row count exactly")
+add_bullet("Numeric values in results must match within \u00b10.01% tolerance")
+add_bullet("Response must be returned within the SLA time budget (30 seconds per query)")
+
+add_para("TR5 \u2014 CI Testing", bold=True, space_after=2)
+add_bullet("Factual accuracy score = verifiable claims / total claims (target \u226580%)")
+add_bullet("Every factual claim must be traceable to a specific source document section")
+add_bullet("P2P quantitative values must match source documents exactly")
+
+add_para("TR6 \u2014 Data Ingestion Testing", bold=True, space_after=2)
+add_bullet("Row count for each of the 20 finiq_ objects must match known synthetic data counts")
+add_bullet("Schema checksum (column names + types) must match expected schema exactly")
+add_bullet("Sample data spot-checks: 10 random rows per table verified against source")
+
+add_para("TR7 \u2014 Job Board Testing", bold=True, space_after=2)
+add_bullet("Percentage of jobs completed within SLA threshold (target \u226590%)")
+add_bullet("All lifecycle state transitions must occur in correct order")
+add_bullet("Scheduling accuracy: jobs trigger within \u00b160 seconds of scheduled time")
+
+add_para("TR8 \u2014 Regression Testing", bold=True, space_after=2)
+add_bullet("Aggregate score must not regress more than 2% between builds")
+add_bullet("No individual capability may drop more than 5% between builds")
+add_bullet("Regression detection must complete within 5 minutes of code change")
+
+doc.add_page_break()
+
+# ══════════════════════════════════════════════════════════════════
+#  6. TEST CASE MATRIX (renumbered from 5)
+# ══════════════════════════════════════════════════════════════════
+doc.add_heading("6. Test Case Matrix", level=1)
 add_para(
     "The following matrix maps each main SRS functional requirement to the corresponding test "
     "requirements and test cases defined in this SRS. This mapping ensures complete traceability "
@@ -962,31 +1100,134 @@ add_para(
 doc.add_page_break()
 
 # ══════════════════════════════════════════════════════════════════
-#  6. ACCEPTANCE CRITERIA
+#  7. BINARY PASS/FAIL CRITERIA PER TR GROUP
 # ══════════════════════════════════════════════════════════════════
-doc.add_heading("6. Acceptance Criteria", level=1)
+doc.add_heading("7. Binary Pass/Fail Criteria", level=1)
 add_para(
-    "The following acceptance criteria define the conditions under which the Testing Agent itself "
-    "is considered complete and ready for deployment."
+    "Following Karpathy's recommendation, each test requirement group defines 3\u20136 binary pass/fail "
+    "criteria. Each criterion resolves to exactly 0 (fail) or 1 (pass) with no partial credit. A "
+    "test case passes only when all applicable criteria for its group are satisfied."
+)
+
+doc.add_heading("7.1 TR2: PES Testing Criteria", level=2)
+add_table(
+    ["ID", "Binary Criterion", "Pass Condition"],
+    [
+        ["PES-C1", "KPI value accuracy", "Each KPI numeric value matches expected within \u00b10.01%"],
+        ["PES-C2", "KPI completeness", "All 6 KPIs present in output (missing = fail)"],
+        ["PES-C3", "Ranking correctness", "RANK 1, TOP 3, BOTTOM 3 match expected order exactly"],
+        ["PES-C4", "Format compliance", "Output contains all required sections (Summary / WWW / WNWW)"],
+        ["PES-C5", "Trend direction", "Trend tagline direction (up/down/stable) matches data trajectory"],
+    ],
+    col_widths=[0.8, 2.0, 3.7]
+)
+
+doc.add_heading("7.2 TR3: Budget Variance Criteria", level=2)
+add_table(
+    ["ID", "Binary Criterion", "Pass Condition"],
+    [
+        ["BV-C1", "Actual value match", "Actual amount matches finiq_financial_replan within \u00b10.01%"],
+        ["BV-C2", "Replan value match", "Replan amount matches finiq_financial_replan within \u00b10.01%"],
+        ["BV-C3", "Variance computation", "Variance = (Actual \u2212 Replan) / Replan \u00d7 100, within \u00b10.01%"],
+        ["BV-C4", "Currency correctness", "Correct currency indicator displayed; conversion rate applied accurately"],
+        ["BV-C5", "Missing data handling", "Graceful handling when forecast unavailable (no error, clear message)"],
+    ],
+    col_widths=[0.8, 2.0, 3.7]
+)
+
+doc.add_heading("7.3 TR4: NL Query Criteria", level=2)
+add_table(
+    ["ID", "Binary Criterion", "Pass Condition"],
+    [
+        ["NL-C1", "SQL execution", "Generated SQL executes without error on target database"],
+        ["NL-C2", "Row count match", "Result set row count matches expected count exactly"],
+        ["NL-C3", "Value accuracy", "All numeric values in result match expected within \u00b10.01%"],
+        ["NL-C4", "Time budget", "Response returned within 30-second SLA"],
+        ["NL-C5", "Source attribution", "At least one valid source reference present in response"],
+        ["NL-C6", "Intent routing", "Query routed to correct processing pipeline"],
+    ],
+    col_widths=[0.8, 2.0, 3.7]
+)
+
+doc.add_heading("7.4 TR5: CI Testing Criteria", level=2)
+add_table(
+    ["ID", "Binary Criterion", "Pass Condition"],
+    [
+        ["CI-C1", "Factual accuracy", "Verifiable claims / total claims \u226580%"],
+        ["CI-C2", "Source traceability", "Every factual claim links to a specific document section"],
+        ["CI-C3", "P2P value match", "Quantitative P2P table values match source documents exactly"],
+        ["CI-C4", "Theme completeness", "All 7 required themes present in summary output"],
+    ],
+    col_widths=[0.8, 2.0, 3.7]
+)
+
+doc.add_heading("7.5 TR6: Data Ingestion Criteria", level=2)
+add_table(
+    ["ID", "Binary Criterion", "Pass Condition"],
+    [
+        ["DI-C1", "Object accessibility", "All 20 finiq_ objects queryable without error"],
+        ["DI-C2", "Row count match", "Row count per table matches known synthetic data count"],
+        ["DI-C3", "Schema checksum", "Column names and types match expected schema exactly"],
+        ["DI-C4", "Spot-check accuracy", "10 random rows per table match source values"],
+    ],
+    col_widths=[0.8, 2.0, 3.7]
+)
+
+doc.add_heading("7.6 TR7: Job Board Criteria", level=2)
+add_table(
+    ["ID", "Binary Criterion", "Pass Condition"],
+    [
+        ["JB-C1", "Lifecycle completion", "Job progresses through all states in correct order"],
+        ["JB-C2", "SLA compliance", "Job completes within SLA threshold for its priority level"],
+        ["JB-C3", "Schedule accuracy", "Scheduled job triggers within \u00b160 seconds of target time"],
+    ],
+    col_widths=[0.8, 2.0, 3.7]
+)
+
+doc.add_heading("7.7 TR8: Regression Criteria", level=2)
+add_table(
+    ["ID", "Binary Criterion", "Pass Condition"],
+    [
+        ["RG-C1", "Aggregate stability", "Overall pass rate does not drop more than 2% vs. baseline"],
+        ["RG-C2", "Capability floor", "No single capability drops more than 5% vs. baseline"],
+        ["RG-C3", "Detection speed", "Regression detected and reported within 5 minutes of code change"],
+        ["RG-C4", "Zero critical failures", "No data integrity or security test failures (zero tolerance)"],
+    ],
+    col_widths=[0.8, 2.0, 3.7]
+)
+
+doc.add_page_break()
+
+# ══════════════════════════════════════════════════════════════════
+#  8. ACCEPTANCE CRITERIA (renumbered from 6, now quantitative)
+# ══════════════════════════════════════════════════════════════════
+doc.add_heading("8. Acceptance Criteria", level=1)
+add_para(
+    "The following acceptance criteria define the quantitative conditions under which the Testing "
+    "Agent itself is considered complete and ready for deployment. All thresholds are derived from "
+    "the Quantitative Evaluation Framework (Section 5)."
 )
 
 add_table(
-    ["ID", "Criterion", "Verification Method"],
+    ["ID", "Criterion", "Quantitative Target", "Verification Method"],
     [
-        ["AC-1", "Full simulated test suite passes with 100% of TR requirements executable", "Execute full suite in simulated mode; verify all 31 TRs produce results"],
-        ["AC-2", "Coverage report shows 100% of main SRS FRs (all 50) have at least one test case", "Generate coverage report; verify no unmapped FRs"],
-        ["AC-3", "Regression suite detects intentional changes within a single run", "Introduce a known change; verify regression report flags it"],
-        ["AC-4", "Real data mode executes all user-provided prompt-response pairs", "Load prompt-response JSON; execute in real mode; verify all pairs processed"],
-        ["AC-5", "Test reports generate correctly in all three formats (JSON, HTML, PDF)", "Generate reports in each format; verify structure and content consistency"],
-        ["AC-6", "CI/CD integration triggers regression suite on staging deployment", "Deploy to staging; verify automated test execution via webhook"],
-        ["AC-7", "Individual test case execution completes within 30 seconds", "Execute each test case independently; measure wall-clock time"],
-        ["AC-8", "Full simulated suite completes within 15 minutes", "Execute full simulated suite; measure total duration"],
-        ["AC-9", "Full real data suite completes within 30 minutes", "Execute full real suite with all available pairs; measure total duration"],
-        ["AC-10", "Adding a new test case requires no code changes (JSON-only)", "Add a new test case via JSON; execute it without any code modifications"],
-        ["AC-11", "Mode toggle switches between simulated and real without restart", "Switch mode via configuration; verify next test run uses correct data source"],
-        ["AC-12", "Golden dataset versioning preserves full history", "Create 3+ golden dataset versions; verify all are retrievable and diffable"],
+        ["AC-1", "Overall pass rate across all test cases", "\u226585%", "Execute full suite; compute aggregate pass rate"],
+        ["AC-2", "No single capability below floor", "\u226570% per capability", "Check per-capability scalar metrics from Section 5.2"],
+        ["AC-3", "Zero critical test failures", "0 failures in data integrity and security tests", "Execute critical test subset; verify zero failures"],
+        ["AC-4", "Regression detection speed", "Within 5 minutes of code change", "Introduce known change; measure time to detection"],
+        ["AC-5", "Coverage of main SRS FRs", "100% (all 50 FRs mapped)", "Generate coverage report; verify no unmapped FRs"],
+        ["AC-6", "Real data mode executes all prompt-response pairs", "100% of provided pairs processed", "Load prompt-response JSON; execute in real mode"],
+        ["AC-7", "Test reports in all three formats", "JSON, HTML, PDF all valid", "Generate each format; verify structure and content"],
+        ["AC-8", "CI/CD integration operational", "Auto-trigger on staging deploy", "Deploy to staging; verify webhook fires and suite runs"],
+        ["AC-9", "Individual test case time budget", "\u226430 seconds each", "Execute each test case; measure wall-clock time"],
+        ["AC-10", "Full simulated suite time budget", "\u226415 minutes", "Execute full simulated suite; measure total duration"],
+        ["AC-11", "Full real data suite time budget", "\u226430 minutes", "Execute full real suite; measure total duration"],
+        ["AC-12", "Keep-or-revert loop functional", "Score drop >2% triggers revert", "Introduce regressive change; verify revert occurs"],
+        ["AC-13", "Adding test case requires no code changes", "JSON-only addition", "Add test via JSON; execute without code modifications"],
+        ["AC-14", "Mode toggle without restart", "Switch in <5 seconds", "Toggle mode; verify next run uses correct data source"],
+        ["AC-15", "Golden dataset versioning", "\u22653 versions retrievable", "Create 3+ versions; verify all diffable"],
     ],
-    col_widths=[0.6, 3.2, 2.7]
+    col_widths=[0.5, 2.0, 1.7, 2.3]
 )
 
 doc.add_page_break()
@@ -1155,9 +1396,11 @@ add_para("\u2014 End of Document \u2014", bold=True, size=11, color=RGBColor(0x9
 # ══════════════════════════════════════════════════════════════════
 #  SAVE
 # ══════════════════════════════════════════════════════════════════
-output_path = r"D:\Amira FinIQ\Testing Agent SRS\FinIQ Testing Agent SRS v1.0.docx"
+output_path = r"D:\Amira FinIQ\Testing Agent SRS\FinIQ Testing Agent SRS v1.1.docx"
 doc.save(output_path)
 print(f"Document saved to: {output_path}")
 print(f"Generated on: {datetime.date.today().strftime('%B %d, %Y')}")
 print(f"Test Requirements: 31 (TR1.1 through TR9.3)")
-print(f"Acceptance Criteria: 12 (AC-1 through AC-12)")
+print(f"Acceptance Criteria: 15 (AC-1 through AC-15)")
+print(f"Binary Pass/Fail Criteria: 31 across 7 TR groups")
+print(f"New in v1.1: Quantitative Evaluation Framework (Karpathy methodology)")

@@ -72,7 +72,8 @@ A unified platform that:
 | `FinIQ SRS v3.0 Final.docx` | SRS v3.0 Word document (CURRENT — final unified, share this one) |
 | `generate_srs_final.py` | Python-docx script that generates SRS v3.0 |
 | `Testing Agent SRS/` | Subfolder for testing agent SRS (separate from main SRS) |
-| `Testing Agent SRS/FinIQ Testing Agent SRS v1.0.docx` | Testing Agent SRS v1.0 — 31 test requirements (TR1-TR9), 12 acceptance criteria, dual-mode |
+| `Testing Agent SRS/FinIQ Testing Agent SRS v1.0.docx` | Testing Agent SRS v1.0 — original (superseded by v1.1) |
+| `Testing Agent SRS/FinIQ Testing Agent SRS v1.1.docx` | Testing Agent SRS v1.1 — adds Karpathy quantitative metrics, 31 binary criteria, 15 ACs |
 | `Testing Agent SRS/generate_testing_agent_srs.py` | Python-docx script that generates the testing agent SRS |
 | `FinIQ SRS IEEE Format v2.1 Merged.docx` | SRS v2.1 Word document (previous base, now superseded) |
 | `generate_srs_merged.py` | Python-docx script that generates SRS v2.1 |
@@ -154,7 +155,7 @@ A unified platform that:
 
 ## Upcoming work / open items
 - **Synthetic data LIVE IN DATABRICKS (2026-03-26)** — 17 tables + 3 views populated in `workspace.default`. All team members have access. Also available as SQLite (`finiq_synthetic.db`, 21.4 MB). Uploaded via `upload_sqlite_to_databricks.py`.
-- **Testing agent SRS v1.0 COMPLETE (2026-03-26)** — `Testing Agent SRS/FinIQ Testing Agent SRS v1.0.docx`. 31 test requirements (TR1-TR9), 12 acceptance criteria, dual-mode (simulated + real). Placeholder for Rajiv's prompt/response pairs in Appendix A. Pending: Rajiv to provide example prompts with expected results for real data testing.
+- **Testing agent SRS v1.1 CURRENT (2026-03-26)** — `Testing Agent SRS/FinIQ Testing Agent SRS v1.1.docx`. 31 test requirements (TR1-TR9), 15 acceptance criteria, dual-mode. **v1.1 adds Karpathy's quantitative evaluation framework**: scalar metrics per capability, immutable eval harness, binary pass/fail criteria (31 total), keep-or-revert loop, time-boxed cycles. Targets: PES ≥95%, NL Queries ≥85%, Budget Variance ≥95%, overall ≥85%. Placeholder for Rajiv's prompt/response pairs in Appendix A.
 - **Rajiv reviewing Testing Agent SRS (2026-03-26 evening)** — Will make testing metrics quantitative using Karpathy's methodology ("optimize the vibe automatically"). Will fine-tune by tomorrow (2026-03-27). Has not started Asimov (his AI agent) yet; asked about Databricks ODBC connection.
 - **Stylistic guidelines document** — Alessandro to create separate UI/front-end requirements doc, universally applicable, fed alongside product SRS to coding agent
 - **Architecture document update** — Cesar to update architecture doc: OpenAI/Anthropic connections via Azure OpenAI Foundry (not external URLs)
