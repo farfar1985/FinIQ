@@ -78,6 +78,7 @@ A unified platform that:
 | `FinIQ SRS IEEE Format by Claude.docx` | SRS v2.0 Word document (archived) |
 | `generate_srs.py` | Python-docx script that generates SRS v2.0 |
 | `Amira_FinIQ_SRS_v1.0.docx` | SRS v1.0 Word document (archived) |
+| `databricks_synthetic_data.py` | PySpark notebook: generates all 20 FinSight objects with synthetic data (27 cells, import into Databricks) |
 | `Matt's databricks schema/` | 46 screenshot pages of Matt's FinIQ UC Documentation (Databricks schema) |
 | `Matt's databricks schema/FinIQ Databricks Schema Reference (claude generated).docx` | Comprehensive reference doc: all 20 tables/views, every column, SQL definitions, relationships, PES mapping |
 | `Matt's databricks schema/generate_schema_reference.py` | Python-docx script that generates the schema reference |
@@ -147,7 +148,7 @@ A unified platform that:
 - **Schema is actively used** — tables created Jul 2025 through Mar 2026, views created Mar 2026 (very recent), RLS tracking present
 
 ## Upcoming work / open items
-- **Synthetic Databricks data** — Farzaneh to create synthetic data matching Matt's 20-table schema in Databricks for development/testing
+- **Synthetic Databricks data SCRIPT READY (2026-03-26)** — `databricks_synthetic_data.py` generates all 20 objects in Databricks. Two schemas: `finiq_synthetic` (with data) + `finiq_production` (empty for Mars real data). Catalog: `workspace`. Pending: Farzaneh to import and run in Databricks, then share connection details with team.
 - **Testing agent SRS** — Separate SRS for a testing agent that validates FinIQ using real and simulated data. Real data testing uses user-provided prompts with expected results (e.g., for period end reports).
 - **Stylistic guidelines document** — Alessandro to create separate UI/front-end requirements doc, universally applicable, fed alongside product SRS to coding agent
 - **Architecture document update** — Cesar to update architecture doc: OpenAI/Anthropic connections via Azure OpenAI Foundry (not external URLs)
@@ -156,6 +157,15 @@ A unified platform that:
 - **Quandl/Nasdaq Data Link** — Access added; explore competitor financial statements and investor reports for CI pipeline
 - **Credentials management** — All Databricks credentials and API keys stored in Excel file in shared Google Drive folder
 - Gemini integration requirements — Phase 2, A2A compatible agents on Azure/GCP
+
+## Databricks environment
+- **Workspace URL**: `dbc-af05a0e0-4ebe.cloud.databricks.com`
+- **Edition**: Free (Community/Starter)
+- **Catalog**: `workspace` (only available catalog besides `samples`)
+- **Compute**: Serverless Starter Warehouse (2XS)
+- **Schemas (planned)**: `finiq_synthetic` (populated with fake data), `finiq_production` (empty, for Mars real data)
+- **Synthetic data script**: `databricks_synthetic_data.py` — 27-cell PySpark notebook, import via Workspace > Import
+- **GitHub backup**: https://github.com/farfar1985/FinIQ (private)
 
 ## Meeting notes archive
 - **2026-03-26 call transcript**: `C:\Users\farza\Downloads\FinIQ - 2026_03_26 09_13 EDT - Notes by Gemini.docx` — key decisions: combine SRS, purely vibe coding, rename Claude Code to "Coding Orchestrator", Azure OpenAI Foundry, synthetic data, competition approach
