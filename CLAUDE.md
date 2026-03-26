@@ -136,7 +136,7 @@ A unified platform that:
 
 ## Key people
 **Mars side**: Bruce Simpson (exec sponsor), Matt Hutton (data owner), Karthik Subramaniam (platform/Gemini), Danny Woodruff (infra)
-**QDT/Amira side**: Rajiv Chandrasekaran (tech lead/boss), Alessandro Savino (senior reviewer, UI/stylistic guidelines), Farzaneh (project lead, specs + synthetic data), Bill Dennis (Amira platform/Air workflows), Cesar Flores (architecture, cloud deployment), Atif Ishaq (governance)
+**QDT/Amira side**: Rajiv Chandrasekaran (tech lead/boss, AI agent: "Asimov"), Alessandro Savino (senior reviewer, UI/stylistic guidelines, AI agent: "Atlas"), Farzaneh (project lead, specs + synthetic data, AI agent: Claude Code), Bill Dennis (Amira platform/Air workflows), Cesar Flores (architecture, cloud deployment, Databricks admin), Atif Ishaq (governance)
 
 ## Databricks / FinSight schema (Matt's data)
 - **Source**: "FinIQ UC Documentation" — 46 pages, generated 2026-03-25 by dipendra.das@effem.com
@@ -155,6 +155,7 @@ A unified platform that:
 ## Upcoming work / open items
 - **Synthetic data LIVE IN DATABRICKS (2026-03-26)** — 17 tables + 3 views populated in `workspace.default`. All team members have access. Also available as SQLite (`finiq_synthetic.db`, 21.4 MB). Uploaded via `upload_sqlite_to_databricks.py`.
 - **Testing agent SRS v1.0 COMPLETE (2026-03-26)** — `Testing Agent SRS/FinIQ Testing Agent SRS v1.0.docx`. 31 test requirements (TR1-TR9), 12 acceptance criteria, dual-mode (simulated + real). Placeholder for Rajiv's prompt/response pairs in Appendix A. Pending: Rajiv to provide example prompts with expected results for real data testing.
+- **Rajiv reviewing Testing Agent SRS (2026-03-26 evening)** — Will make testing metrics quantitative using Karpathy's methodology ("optimize the vibe automatically"). Will fine-tune by tomorrow (2026-03-27). Has not started Asimov (his AI agent) yet; asked about Databricks ODBC connection.
 - **Stylistic guidelines document** — Alessandro to create separate UI/front-end requirements doc, universally applicable, fed alongside product SRS to coding agent
 - **Architecture document update** — Cesar to update architecture doc: OpenAI/Anthropic connections via Azure OpenAI Foundry (not external URLs)
 - **Competition** — Team members (Bill, Rajiv, Farzaneh, Alessandro) will each take different paths to implement the requirements from the same spec
