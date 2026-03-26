@@ -14,3 +14,7 @@ __pycache__/
 .DS_Store
 Thumbs.db
 desktop.ini
+databricks_synthetic_data_sql.sql
+databricks_sql_chunks/
+databricks_dimensions_all.sql
+databricks_synthetic_data_notebook.sql
