@@ -160,6 +160,8 @@ A unified platform that:
 - **Stylistic guidelines document** — Alessandro to create separate UI/front-end requirements doc, universally applicable, fed alongside product SRS to coding agent
 - **Architecture document update** — Cesar to update architecture doc: OpenAI/Anthropic connections via Azure OpenAI Foundry (not external URLs)
 - **Competition** — Team members (Bill, Rajiv, Farzaneh, Alessandro) will each take different paths to implement the requirements from the same spec
+- **Farzaneh's competition strategy (2026-03-26)**: Two-stage pipeline — Artemis (OpenClaw agent) builds the app from the SRS first, pushes to GitHub. Then Claude Code reviews, finds gaps against the 50 FRs, fixes bugs, optimizes performance, and maximizes eval harness scores. Goal: win the competition.
+- **Farzaneh's AI agents**: Artemis (OpenClaw, builds the app) + Claude Code (reviews, optimizes, improves). Other competitors: Rajiv=Asimov, Alessandro=Atlas, Bill=Air workflows, Cesar=architecture
 - **Mars taxonomy/wiki** — Rajiv forwarded Mars's master data taxonomy; wants it incorporated for richer queries
 - **Quandl/Nasdaq Data Link** — Access added; explore competitor financial statements and investor reports for CI pipeline
 - **Credentials management** — All Databricks credentials and API keys stored in Excel file in shared Google Drive folder

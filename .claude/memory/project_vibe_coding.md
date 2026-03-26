@@ -1,18 +1,33 @@
 ---
-name: Purely vibe coding approach
-description: Team decided 2026-03-26 — no manual coding, strong spec writing, coding orchestrator (agent) builds app from specs
+name: Vibe coding approach and competition strategy
+description: Purely vibe coding, agentic engineering, Farzaneh's two-stage build strategy
 type: project
 ---
 
-The team decided on 2026-03-26 that the entire project will be "purely vibe coding" — no manual coding, only strong specification writing. A coding orchestrator agent (generic term, not tied to any specific tool) takes the SRS and builds the application.
+## Purely vibe coding (2026-03-26)
+- Team decided: no manual coding. Strong spec writing, coding orchestrator builds the app from specs.
+- Rajiv renamed "Claude Code" to generic "Coding Orchestrator" in Mars-facing materials.
+- Based on Karpathy's evolution: vibe coding → agentic engineering → AutoResearch eval loops.
 
-Key decisions:
-- "Claude Code" renamed to generic "Coding Orchestrator" or "Coding Agents" in all docs — allows future flexibility to switch coding engines
-- Amira acts as the orchestrating agent: takes a spec, builds an app, deploys it to a URL
-- Two-pronged approach: test coding process locally + run on cloud
-- Roles shift from coders to architects who define code and testing requirements
-- Continuous improvement loop: upload spec → generate product → new requirements via job board → product updates
+## Competition
+- All team members build their own version of FinIQ from the same SRS v3.0.
+- Rajiv: Asimov | Alessandro: Atlas | Farzaneh: Artemis + Claude Code | Bill: Air workflows | Cesar: architecture
+- Winner determined by eval harness scores (Testing Agent SRS v1.1 quantitative metrics).
+- MVP deadline: April 21, 2026 MLT meeting.
 
-**Why:** This is the core value proposition — proving that AI-assisted spec writing + coding orchestration can build enterprise apps. The competition (Bill, Rajiv, Farzaneh, Alessandro each taking different paths) will validate this approach.
+## Farzaneh's strategy: two-stage pipeline
+1. **Artemis (OpenClaw)** — builds the app autonomously from the SRS, pushes to GitHub
+2. **Claude Code** — reviews the code, finds gaps against 50 FRs, fixes bugs, optimizes performance, maximizes eval scores
+- Advantage: speed from Artemis + precision from Claude Code. Others have one agent each.
 
-**How to apply:** All deliverables should be specs, not code. The coding agent consumes the specs. Focus on spec quality and completeness.
+## Karpathy's quantitative methodology (applied in Testing Agent SRS v1.1)
+- Single scalar metric per capability
+- Immutable eval harness (agent can't modify its own scoring)
+- Binary pass/fail criteria (3-6 per feature)
+- Time-boxed test cycles
+- Keep-or-revert loop (score up = commit, score down = revert)
+- Ground truth from synthetic data (seed 42)
+
+**Why:** Rajiv wants quantitative optimization. Karpathy's AutoResearch pattern is the framework. Eval quality determines app quality.
+
+**How to apply:** All deliverables should be specs, not code. Artemis builds from specs. Claude Code reviews and optimizes. Focus on spec quality and eval harness rigor.
