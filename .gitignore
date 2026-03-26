@@ -2,8 +2,8 @@
 tmpclaude-*
 nul
 
-# Memory files (local to machine, not project)
-memory/
+# Root-level memory folder (Claude local, not project)
+# memory/
 
 # Python
 __pycache__/
