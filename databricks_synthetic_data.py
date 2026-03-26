@@ -25,8 +25,8 @@ Date: 2026-03-26
 CATALOG = "workspace"
 
 # Schema names
-SYNTHETIC_SCHEMA = "finiq_synthetic"
-PRODUCTION_SCHEMA = "finiq_production"
+SYNTHETIC_SCHEMA = "default"
+PRODUCTION_SCHEMA = "default"
 
 # Data generation parameters
 SEED = 42
@@ -50,11 +50,14 @@ print(f"Fiscal years: {FISCAL_YEARS}, Seed: {SEED}")
 # CELL 2: SCHEMA CREATION
 # ============================================================================
 
-spark.sql(f"CREATE CATALOG IF NOT EXISTS {CATALOG}")
-spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SYNTHETIC_SCHEMA}")
-spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{PRODUCTION_SCHEMA}")
+# Schema creation — using existing default schema on Databricks free tier
+# spark.sql(f"CREATE CATALOG IF NOT EXISTS {CATALOG}")  # Skip — workspace catalog already exists
+# spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SYNTHETIC_SCHEMA}")  # Skip — using default
+# spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{PRODUCTION_SCHEMA}")  # Skip — using default
+spark.sql(f"USE CATALOG {CATALOG}")
+spark.sql(f"USE SCHEMA {SYNTHETIC_SCHEMA}")
 
-print(f"Created schemas: {CATALOG}.{SYNTHETIC_SCHEMA} and {CATALOG}.{PRODUCTION_SCHEMA}")
+print(f"Using: {CATALOG}.{SYNTHETIC_SCHEMA}")
 
 # COMMAND ----------
 
@@ -75,14 +78,20 @@ import hashlib
 def write_table(df, table_name, schema=SYNTHETIC_SCHEMA):
     """Write a DataFrame as a managed Delta table in the given schema."""
     full_name = f"{CATALOG}.{schema}.{table_name}"
-    df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(full_name)
-    count = spark.table(full_name).count()
-    print(f"  Wrote {full_name}: {count} rows")
+    row_count = df.count()
+    # Register as temp view, then CREATE TABLE from it (avoids permission issues)
+    temp_view = f"_tmp_{table_name}"
+    df.createOrReplaceTempView(temp_view)
+    spark.sql(f"CREATE OR REPLACE TABLE {full_name} AS SELECT * FROM {temp_view}")
+    print(f"  Wrote {full_name}: {row_count} rows")
     return full_name
 
 
 def clone_empty(table_name):
-    """Create an empty clone in the production schema (schema only, no data)."""
+    """Create an empty clone in the production schema (schema only, no data). Skipped when both schemas are the same."""
+    if SYNTHETIC_SCHEMA == PRODUCTION_SCHEMA:
+        print(f"  Skip clone (same schema): {table_name}")
+        return
     src = f"{CATALOG}.{SYNTHETIC_SCHEMA}.{table_name}"
     dst = f"{CATALOG}.{PRODUCTION_SCHEMA}.{table_name}"
     spark.sql(f"CREATE OR REPLACE TABLE {dst} LIKE {src}")
