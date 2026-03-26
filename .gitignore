@@ -1,0 +1,16 @@
+# Claude temp files
+tmpclaude-*
+nul
+
+# Memory files (local to machine, not project)
+memory/
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
