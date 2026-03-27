@@ -109,6 +109,11 @@ app/
 - Dynamic lazy loading (next/dynamic on heavy chart components)
 - FMP API live with real competitor data (key configured)
 
+### Job Board (updated)
+- Jobs now execute REAL queries (not simulations)
+- Completed jobs store full results: narrative, data, chartConfig, sources, trends
+- Click a completed job to see the full report with chart + data table
+
 ### Waiting for API Keys
 - **LLM (Anthropic or OpenAI)**: Unlocks AI narratives, ad-hoc SQL, PDF summaries
 - **Databricks token**: Unlocks real Mars data (dual-mode switch ready)
