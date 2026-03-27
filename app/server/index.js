@@ -7,7 +7,7 @@ import cors from "cors";
 import { createServer } from "http";
 import config from "./lib/config.mjs";
 import routes from "./lib/routes.mjs";
-import { initWebSocket, broadcastJobUpdate } from "./lib/websocket.mjs";
+import { initWebSocket, broadcastJobUpdate, getWss } from "./lib/websocket.mjs";
 import { handleVoiceConnection } from "./lib/realtime-agent.mjs";
 import jobBoard from "./lib/job-board.mjs";
 import { generalLimiter } from "./lib/rate-limit.mjs";
@@ -26,21 +26,27 @@ app.use("/api", generalLimiter);
 // API routes
 app.use("/api", routes);
 
-// Initialize WebSocket for job board on the HTTP server
+// Initialize WebSocket servers (both use noServer: true)
 initWebSocket(server);
+const jobsWss = getWss();
 
-// Voice Agent WebSocket endpoint (/voice-ws)
 const voiceWss = new WebSocketServer({ noServer: true });
 voiceWss.on("connection", handleVoiceConnection);
 
-// Route WebSocket upgrades based on path
+// Route ALL WebSocket upgrades by path
 server.on("upgrade", (req, socket, head) => {
-  if (req.url === "/voice-ws") {
+  const pathname = req.url;
+  if (pathname === "/voice-ws") {
     voiceWss.handleUpgrade(req, socket, head, (ws) => {
       voiceWss.emit("connection", ws, req);
     });
+  } else if (pathname === "/ws") {
+    jobsWss.handleUpgrade(req, socket, head, (ws) => {
+      jobsWss.emit("connection", ws, req);
+    });
+  } else {
+    socket.destroy();
   }
-  // /ws is handled by initWebSocket's own server attachment
 });
 
 // Wire job board updates to WebSocket broadcast

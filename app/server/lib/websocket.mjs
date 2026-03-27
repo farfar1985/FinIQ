@@ -14,7 +14,7 @@ const clients = new Set();
  * @param {import("http").Server} server - The existing HTTP server
  */
 function initWebSocket(server) {
-  wss = new WebSocketServer({ server, path: "/ws" });
+  wss = new WebSocketServer({ noServer: true });
 
   wss.on("connection", (ws, req) => {
     const clientId = `client_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -151,5 +151,6 @@ function getStats() {
   };
 }
 
-export { initWebSocket, broadcast, broadcastJobUpdate, getStats };
-export default { initWebSocket, broadcast, broadcastJobUpdate, getStats };
+function getWss() { return wss; }
+export { initWebSocket, broadcast, broadcastJobUpdate, getStats, getWss };
+export default { initWebSocket, broadcast, broadcastJobUpdate, getStats, getWss };
