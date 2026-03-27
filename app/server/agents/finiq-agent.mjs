@@ -8,6 +8,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import config from "../lib/config.mjs";
 import dataLayer from "../lib/databricks.mjs";
 import SCHEMA_CONTEXT from "../lib/schema-context.mjs";
+import { getThreeWayComparison } from "../lib/intelligence.mjs";
 
 const anthropic = config.anthropicApiKey
   ? new Anthropic({ apiKey: config.anthropicApiKey })
@@ -25,7 +26,8 @@ const INTENTS = {
   product: { keywords: ["product", "brand", "segment", "item", "category"], description: "Product/brand analysis" },
   trend: { keywords: ["trend", "over time", "history", "compare period", "year over year", "yoy", "growth"], description: "Trend/time series analysis" },
   ranking: { keywords: ["rank", "top", "bottom", "best", "worst", "highest", "lowest"], description: "Entity/KPI rankings" },
-  ci: { keywords: ["competitor", "nestle", "mondelez", "hershey", "benchmark", "peer", "competitive"], description: "Competitive intelligence" },
+  ci: { keywords: ["competitor", "nestle", "mondelez", "hershey", "ferrero", "colgate", "general mills", "kellanova", "smucker", "freshpet", "idexx", "benchmark", "peer", "competitive", "swot", "porter", "margin compare"], description: "Competitive intelligence" },
+  forecast: { keywords: ["forecast", "vs actual", "actual vs", "three-way", "replan vs", "projection"], description: "Forecast comparison" },
   adhoc: { keywords: [], description: "Ad-hoc SQL query" },
 };
 
@@ -386,6 +388,82 @@ async function processQuery(message, sessionContext = {}) {
         chartConfig,
         sources: [{ table: "finiq_vw_pl_entity", query: "Entity and KPI filter applied", rowCount: kpiRows.length }],
       };
+    }
+
+    case "ci": {
+      // Route CI queries to FMP-powered analysis
+      try {
+        const { default: ciAgent } = await import("./ci-agent.mjs");
+        const benchmarkData = await ciAgent.getBenchmarkComparison();
+        const competitors = benchmarkData.competitors || [];
+
+        const chartData = competitors.slice(0, 8).map((c) => ({
+          name: c.company || c.ticker,
+          "Revenue ($B)": Math.round((c.revenue || 0) / 1e9 * 10) / 10,
+          "Gross Margin %": Math.round((c.grossMargin || 0) * 10) / 10,
+          "Operating Margin %": Math.round((c.operatingMargin || 0) * 10) / 10,
+        }));
+
+        let narrative = `## Competitive Benchmarking\n\n`;
+        if (anthropic) {
+          try {
+            const resp = await anthropic.messages.create({
+              model: MODEL,
+              max_tokens: 1024,
+              messages: [{ role: "user", content: `You are a financial analyst for Mars, Incorporated. Analyze this competitor benchmarking data and provide insights. Question: "${message}"\n\nData:\n${JSON.stringify(competitors.slice(0, 6), null, 2)}\n\nBe concise. Use specific numbers. Never say "replace" or "fragmented".` }],
+            });
+            narrative = resp.content[0]?.text || narrative;
+          } catch (e) { /* keep default */ }
+        } else {
+          narrative += competitors.map((c) => `- **${c.company}**: Revenue $${Math.round((c.revenue || 0) / 1e9)}B, Gross Margin ${c.grossMargin?.toFixed(1)}%, Op Margin ${c.operatingMargin?.toFixed(1)}%`).join("\n");
+        }
+
+        return {
+          response: narrative,
+          data: competitors,
+          chartConfig: makeBarChart(chartData, "name", ["Revenue ($B)", "Gross Margin %", "Operating Margin %"], "Competitor Benchmarking"),
+          sources: [{ table: "FMP API", query: "Benchmark comparison", rowCount: competitors.length }],
+        };
+      } catch (err) {
+        return { response: `CI query error: ${err.message}`, data: null, chartConfig: null, sources: [] };
+      }
+    }
+
+    case "forecast": {
+      // Three-way comparison: Actual vs Replan vs Forecast
+      try {
+        const comparison = await getThreeWayComparison(entity);
+        const rows = comparison.rows || [];
+        const chartData = rows.slice(0, 10).map((r) => ({
+          name: r.account,
+          Actual: Math.round(r.actual),
+          Replan: Math.round(r.replan),
+          Forecast: Math.round(r.forecast || 0),
+        }));
+
+        let narrative = `## ${entity} — Actual vs Replan vs Forecast\n\n`;
+        if (anthropic) {
+          try {
+            const resp = await anthropic.messages.create({
+              model: MODEL,
+              max_tokens: 1024,
+              messages: [{ role: "user", content: `You are a financial analyst for Mars, Incorporated. Analyze this three-way comparison (Actual vs Replan vs Forecast) for ${entity}. Highlight key variances and risks.\n\nData (first 10 accounts):\n${JSON.stringify(rows.slice(0, 10), null, 2)}\n\nBe concise. Use specific numbers. Never say "replace" or "fragmented".` }],
+            });
+            narrative = resp.content[0]?.text || narrative;
+          } catch (e) { /* keep default */ }
+        } else {
+          narrative += `${rows.length} accounts compared. Forecast is simulated (mock data).`;
+        }
+
+        return {
+          response: narrative,
+          data: rows,
+          chartConfig: makeBarChart(chartData, "name", ["Actual", "Replan", "Forecast"], `${entity} — Three-Way Comparison`),
+          sources: [{ table: "finiq_financial_replan + forecast", query: "Entity filter applied", rowCount: rows.length }],
+        };
+      } catch (err) {
+        return { response: `Forecast query error: ${err.message}`, data: null, chartConfig: null, sources: [] };
+      }
     }
 
     default: {
