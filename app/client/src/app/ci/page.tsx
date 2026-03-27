@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
-import { formatCompact, formatPercent, formatChange, getChangeColor } from "@/lib/format";
+import { formatCompact, formatChange, getChangeColor } from "@/lib/format";
 import { Download } from "lucide-react";
 import { FinBarChart } from "@/components/charts/bar-chart";
 import {

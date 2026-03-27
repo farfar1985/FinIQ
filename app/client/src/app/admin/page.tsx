@@ -695,7 +695,7 @@ function PromptsTab() {
 
   const handleSave = async (id: string) => {
     try {
-      const res = await api.get<{ prompt: Prompt }>(`/admin/prompts/${id}`); // will use PATCH
+      await api.get<{ prompt: Prompt }>(`/admin/prompts/${id}`); // will use PATCH
       const patchRes = await fetch(`/api/admin/prompts/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1089,7 +1089,6 @@ function TemplatesTab() {
 function PeerGroupsTab() {
   const [peerGroups, setPeerGroups] = useState<PeerGroup[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     api
