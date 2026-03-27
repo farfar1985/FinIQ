@@ -1,0 +1,145 @@
+@import "tailwindcss";
+
+/* ============================================================
+   FinIQ Design System — OKLCH Color Tokens
+   Bloomberg-inspired dark-first design
+   ============================================================ */
+
+@theme {
+  /* Dark mode (primary) */
+  --color-background: oklch(0.12 0.005 250);
+  --color-foreground: oklch(0.93 0 0);
+  --color-card: oklch(0.16 0.005 250);
+  --color-card-foreground: oklch(0.93 0 0);
+  --color-primary: oklch(0.55 0.15 250);
+  --color-primary-foreground: oklch(0.98 0 0);
+  --color-secondary: oklch(0.20 0.005 250);
+  --color-secondary-foreground: oklch(0.93 0 0);
+  --color-muted: oklch(0.20 0.005 250);
+  --color-muted-foreground: oklch(0.55 0 0);
+  --color-accent: oklch(0.20 0.01 250);
+  --color-accent-foreground: oklch(0.93 0 0);
+  --color-border: oklch(0.25 0.005 250);
+  --color-input: oklch(0.20 0.005 250);
+  --color-ring: oklch(0.55 0.15 250);
+  --color-destructive: oklch(0.65 0.20 25);
+
+  /* Semantic colors */
+  --color-positive: oklch(0.70 0.17 160);
+  --color-negative: oklch(0.65 0.20 25);
+  --color-warning: oklch(0.70 0.15 80);
+
+  /* Chart palette */
+  --color-chart-1: oklch(0.55 0.15 250);
+  --color-chart-2: oklch(0.70 0.17 160);
+  --color-chart-3: oklch(0.65 0.20 25);
+  --color-chart-4: oklch(0.70 0.15 80);
+  --color-chart-5: oklch(0.65 0.18 300);
+
+  /* Sidebar */
+  --color-sidebar: oklch(0.10 0.005 250);
+  --color-sidebar-foreground: oklch(0.93 0 0);
+  --color-sidebar-border: oklch(0.20 0.005 250);
+  --color-sidebar-accent: oklch(0.18 0.01 250);
+
+  /* Layout */
+  --sidebar-width: 192px;
+  --sidebar-collapsed-width: 48px;
+  --header-height: 48px;
+  --ticker-height: 32px;
+
+  /* Radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+/* Light mode overrides */
+.light {
+  --color-background: oklch(0.98 0.002 250);
+  --color-foreground: oklch(0.15 0.005 250);
+  --color-card: oklch(1.00 0 0);
+  --color-card-foreground: oklch(0.15 0.005 250);
+  --color-primary: oklch(0.45 0.18 250);
+  --color-primary-foreground: oklch(0.98 0 0);
+  --color-secondary: oklch(0.95 0.002 250);
+  --color-secondary-foreground: oklch(0.15 0.005 250);
+  --color-muted: oklch(0.95 0.002 250);
+  --color-muted-foreground: oklch(0.45 0 0);
+  --color-accent: oklch(0.95 0.005 250);
+  --color-accent-foreground: oklch(0.15 0.005 250);
+  --color-border: oklch(0.88 0.005 250);
+  --color-input: oklch(0.88 0.005 250);
+  --color-ring: oklch(0.45 0.18 250);
+  --color-sidebar: oklch(0.96 0.002 250);
+  --color-sidebar-foreground: oklch(0.15 0.005 250);
+  --color-sidebar-border: oklch(0.88 0.005 250);
+  --color-sidebar-accent: oklch(0.93 0.005 250);
+}
+
+/* ============================================================
+   Base styles
+   ============================================================ */
+
+html {
+  color-scheme: dark;
+}
+
+html.light {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted-foreground);
+}
+
+/* Ticker animation */
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.animate-ticker {
+  animation: ticker-scroll 30s linear infinite;
+}
+
+.animate-ticker:hover {
+  animation-play-state: paused;
+}
+
+/* Tabular numbers for financial data */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Financial table header style */
+.th-financial {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-muted-foreground);
+}

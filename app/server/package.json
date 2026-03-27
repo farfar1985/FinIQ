@@ -1,0 +1,20 @@
+{
+  "name": "finiq-server",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "@anthropic-ai/sdk": "^0.52.0",
+    "@databricks/sql": "^1.8.4",
+    "better-sqlite3": "^11.9.1",
+    "ws": "^8.18.1",
+    "pdf-parse": "^1.1.1"
+  }
+}

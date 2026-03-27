@@ -1,144 +1,95 @@
-# FinIQ App — Claude Code Context
+# FinIQ App — Claude Code Context (v2 Fresh Build)
 
-## What is this?
-You are building **FinIQ** — a Unified Financial Analytics Hub for Mars, Incorporated. This is a web application where Mars business users ask financial and competitive questions in natural language (typed or spoken), and an AI agent processes them against Mars's Databricks data and returns interactive reports, summaries, and analytics.
+## Build Status
+- **Branch**: `v2-fresh`
+- **Build start**: 2026-03-27
+- **Batch 1: Foundation** — COMPLETE
+- **Batch 2–8** — Pending
 
-## Architecture
-This app is based on the **Amira Meet Desktop** codebase (`~/qdt-repos/amira-b-meet-desktop/`). You should reference that repo for patterns but NEVER modify it. Copy what you need into this app directory.
+## Architecture (v2)
+- **Frontend**: Next.js 15.5 + React 19 + TypeScript + Tailwind CSS 4 + Recharts
+- **Backend**: Node.js + Express 4 (ESM)
+- **LLM**: Anthropic SDK (`claude-sonnet-4-20250514`)
+- **Data**: Databricks SQL connector + SQLite fallback (better-sqlite3)
+- **Real-time**: WebSocket (ws)
+- **State**: Zustand
+- **Components**: shadcn/ui + class-variance-authority
+- **Fonts**: IBM Plex Sans + JetBrains Mono (Google Fonts via next/font)
+- **Design system**: OKLCH color tokens, Bloomberg-inspired dark-first
 
-### What to reuse from Amira Meet Desktop:
-- Node.js modular server architecture (lib/ + agents/ pattern)
-- Agent framework (standalone agents with tool-use loops, LLM connections)
-- Brain/knowledge system (BM25 search, brain loading)
-- Canvas/dashboard session management
-- WebSocket infrastructure for real-time comms
-- Voice input/output pipeline (OpenAI Realtime API for speech-to-text and text-to-speech)
+## Project Structure
+```
+app/
+├── client/                    # Next.js frontend
+│   ├── src/app/              # App Router pages (7 routes)
+│   │   ├── page.tsx          # Dashboard
+│   │   ├── chat/page.tsx     # NL Query interface
+│   │   ├── reports/page.tsx  # Financial Reports
+│   │   ├── ci/page.tsx       # Competitive Intelligence
+│   │   ├── explorer/page.tsx # Data Explorer
+│   │   ├── jobs/page.tsx     # Job Board
+│   │   └── admin/page.tsx    # Admin Panel
+│   ├── src/components/
+│   │   ├── layout/           # AppShell, Sidebar, Header, Ticker
+│   │   ├── ui/               # shadcn/ui primitives (to be added)
+│   │   ├── charts/           # Recharts wrappers (Batch 3)
+│   │   ├── shared/           # KPI cards, badges, formatters
+│   │   └── features/         # Feature-specific components
+│   ├── src/lib/              # utils.ts, format.ts, api.ts
+│   ├── src/stores/           # Zustand (ui-store.ts)
+│   └── src/types/            # TypeScript interfaces
+├── server/                    # Express backend
+│   ├── index.js              # Entry point (port 3001)
+│   ├── lib/
+│   │   ├── config.mjs        # SINGLE SOURCE OF TRUTH for config
+│   │   └── routes.mjs        # API routes (placeholder endpoints)
+│   └── agents/               # AI agents (Batch 3+)
+├── .env.example              # Credentials template
+├── .gitignore                # Includes .env, node_modules, .next
+├── BUILD_PROMPT.md           # Master build spec
+└── package.json              # Root with concurrently
+```
 
-### What to strip/NOT include:
-- All named AI personalities (Amira, Kern, Nyx, Vex, Shipy) — there is ONE agent: "Coding Agent"
-- All oil/maritime/commodity-specific agents and data (AIS, QuantShip, QML, Weaviate news)
-- Electron app wrapper — this is a web app
-- Recall.ai meeting bot integration
-- All references to Bill, QDT-brain, commodity data lake
+## What's Working (Batch 1)
+- Next.js dev server starts on :3000 (8.2s)
+- Express server starts on :3001 with /api/health endpoint
+- App shell: collapsible sidebar (48px/192px), top header with search, market ticker strip
+- 7 page routes with placeholder content
+- OKLCH design tokens (dark + light mode)
+- IBM Plex Sans + JetBrains Mono fonts
+- Zustand store (sidebar collapse, theme toggle)
+- API client with typed methods
+- TypeScript types for all core entities
+- Financial number formatters
 
-### What to build NEW:
-- **Databricks connector** — connects to finiq_ tables/views (17 tables + 3 views)
-- **PES report engine** — generate 6-KPI performance summaries from Databricks views
-- **Budget variance** — actual vs replan analysis from finiq_financial_replan tables
-- **CI pipeline** — document ingestion, themed summaries, P2P benchmarking
-- **NL query interface** — intent classification → route to right handler → query Databricks → return result
-- **Job board** — users submit queries, single agent processes them with SLAs
-- **Admin panel** — templates, org hierarchy, RBAC, Databricks connection config
-- **Dynamic UI** — React + TypeScript SPA with configurable dashboards, SSE, export
+## Anti-Patterns to Avoid (carried from Build 1)
+1. Use `claude-sonnet-4-20250514` — NOT `claude-opus-4-6`
+2. Always use parameterized SQL queries — NEVER interpolate strings
+3. Config keys defined ONCE in config.mjs — reference everywhere
+4. Always JOIN dimension tables for human-readable labels
+5. Wire WebSocket on BOTH server AND client
+6. EVERY analytics response includes a Recharts chart
+7. Use FMP API for real competitor data — no hardcoded/simulated CI
+8. Tailwind + shadcn/ui + OKLCH tokens from day 1
 
-## The ONLY data source is Databricks
-No other data connections. Everything comes from the `finiq_` tables in Databricks.
+## npm Workaround
+System npm is broken (NVM issue). Use this to run npm:
+```bash
+node "/c/Users/farza/.npm-install/package/bin/npm-cli.js" install
+```
+For Next.js dev:
+```bash
+node node_modules/next/dist/bin/next dev --port 3000
+```
 
-### Databricks Connection (Synthetic — current):
-- **Workspace**: `dbc-af05a0e0-4ebe.cloud.databricks.com`
-- **Catalog**: `workspace` | **Schema**: `default`
-- **Warehouse**: Serverless Starter Warehouse (2XS)
-- **All tables prefixed**: `finiq_`
-- **17 tables + 3 views**, 165K+ rows
+## Key Specs
+- `BUILD_PROMPT.md` — 80-item compliance matrix, 8 batches
+- `FinIQ SRS v3.1 Final.docx` — 52 FRs
+- `FinIQ Frontend Design Guideline v1.0.docx` — Design system
+- `FIN_IQ_FRONTEND_SPEC.md` — Markdown version of design spec
 
-### Also available as SQLite fallback:
-- `~/qdt-repos/FinIQ/finiq_synthetic.db` (21.4 MB) — same schema, local file
-
-### Dual-mode:
-The app MUST support a config toggle between:
-1. **Simulated mode** — connects to synthetic Databricks (above) or SQLite fallback
-2. **Real mode** — connects to Mars production Databricks (`corporate_finance_analytics_dev.finsight_core_model_mvp3`)
-
-### Key Databricks objects:
-- **Views (map to PES Excel)**: `finiq_vw_pl_entity` (P&L), `finiq_vw_pl_brand_product` (Product/Brand), `finiq_vw_ncfo_entity` (NCFO)
-- **Fact tables**: `finiq_financial` (39-col denormalized), `finiq_financial_base`, `finiq_financial_cons`, `finiq_financial_replan`
-- **Dimensions**: `finiq_dim_entity` (150+ org units), `finiq_dim_account`, `finiq_account_formula` (KPI calc logic), `finiq_composite_item`, `finiq_customer`
-- **6 KPIs**: Organic Growth, MAC Shape %, A&CP Shape %, CE Shape %, Controllable Overhead Shape %, NCFO
-
-## Voice capability
-Users can SPEAK their queries. Keep the voice input/output pipeline. Use OpenAI Realtime API or similar for:
-- Speech-to-text (user speaks a question)
-- Text-to-speech (app reads back the answer)
-
-## Specs (READ THESE — available in this directory AND parent):
-- `FinIQ SRS v3.1 Final.docx` — **CURRENT** — 52 functional requirements, CI/FMP API (Section 7), suggested prompts (Appendix C)
-- `FinIQ Frontend Design Guideline v1.0.docx` — **CURRENT** — Bloomberg-inspired UI spec, OKLCH colors, Recharts, shadcn/ui
-- `../FinIQ SRS v3.0 Final.docx` — Previous SRS (50 FRs), superseded by v3.1
-- `../Testing Agent SRS/FinIQ Testing Agent SRS v1.1.docx` — 31 test requirements, quantitative eval
-- `../Matt's databricks schema/FinIQ Databricks Schema Reference (claude generated).docx` — all 20 tables/views
-- `FIN_IQ_FRONTEND_SPEC.md` — Markdown version of the frontend design spec (same content as the docx)
-
-## Language rules (Mars-facing text):
-- NEVER say "replace" → use "augment", "consolidate", "evolve", "enhance"
-- NEVER say "fragmented" → use "dispersed" or "separate"
-- No timelines or cost estimates in any UI text
-
-## Tech stack:
-- **Frontend**: React + TypeScript SPA, Vite
-- **Backend**: Node.js, Express or plain HTTP
-- **LLM**: Azure OpenAI (GPT-4.1 or latest) via LangChain
-- **Data**: Databricks SQL connector + SQLite fallback
-- **Real-time**: WebSocket + SSE
-- **Voice**: OpenAI Realtime API
-
-## MVP Deadline: April 21, 2026
-
-## Session tracking
-Create and maintain:
-- `memory/` folder with session files (`YYYY-MM-DD-N.md`) tracking what you build each session
-- `TODO.md` — step-by-step checklist of all work items mapped to SRS FRs
-- Update these after every major chunk of work
-
----
-
-## Claude Code Review — Pass 1 (2026-03-27)
-
-### Build Assessment by Claude Code
-Artemis built a solid MVP foundation (~7,700 lines, 35+ API endpoints). Overall SRS coverage: **~55-65%**.
-
-**What's working well:**
-- Job Board (FR5): 100% complete
-- Database layer: Clean dual-mode abstraction (SQLite ↔ Databricks)
-- PES reports (FR2): ~85% — queries 3 views, KPI calculations working
-- Schema context for LLM: Full 20-table reference embedded
-- Frontend: Professional dark-theme SPA with 6 pages
-
-### Critical bugs found (NOT YET FIXED — Claude Code Pass 1 will fix these)
-1. **Anthropic model name wrong** — uses `claude-opus-4-6` (invalid model name). Every LLM call fails and falls back to basic keyword matching. Needs correct model name.
-2. **SQL injection in fallback mode** — `finiq-agent.mjs:289` interpolates entity names directly into SQL strings. Must parameterize.
-3. **Config property mismatch** — `admin.mjs` references `DATABRICKS_HOST` but `config.mjs` defines `DATABRICKS_SERVER_HOSTNAME`. Admin panel connection check always fails.
-4. **Frontend doesn't use WebSocket** — Server-side WebSocket is fully built (`websocket.mjs`) but React client polls `/api/jobs` every 2 seconds instead.
-5. **Variance query missing JOIN** — Budget variance queries don't JOIN with `finiq_dim_account`, so account descriptions show "Unknown".
-6. **CI is all simulated** — Competitor data is hardcoded (Nestle, Mondelez, Hershey, Ferrero). No real PDF ingestion pipeline.
-
-### Coverage vs SRS v3.0 (50 FRs)
-| Area | Coverage | Notes |
-|------|----------|-------|
-| FR1: Data Ingestion | ~50% | Dual-mode works, no real Databricks tested |
-| FR2: Analytics | ~60% | PES + variance working, rankings/formats pending |
-| FR3: CI | ~40% | Simulated only |
-| FR4: NL Query | ~40% | Architecture ready but LLM broken (model name) |
-| FR5: Job Board | **100%** | Complete |
-| FR6: Integration | ~30% | Replan data ready, Forecast/Marketing APIs not started |
-| FR7: Admin | ~20% | Config viewer only, no RBAC/templates |
-| FR8: Dynamic UI | ~50% | Tables, sorting, dark theme — no charts, no drag-drop |
-
-### KEY GAP: No charting/visualization
-Alessandro's build has Recharts area charts, time series, data explorer with plots. Our app returns tables only. When user asks "plot me the sales," they get a data table — no chart. **Must add Recharts or similar.**
-
-### Frontend Design Spec available
-`FIN_IQ_FRONTEND_SPEC.md` in this directory — Alessandro's Bloomberg-inspired design system. Use as reference for future UI improvements. Key tech: Recharts, OKLCH colors, IBM Plex Sans, shadcn/ui components.
-
-## Team competition context (2026-03-27)
-- **Cesar**: Leading — full platform with skills, Kanban, multi-tenancy. FastAPI + Next.js. But doesn't have Mars data yet.
-- **Alessandro**: Strong UI — Data Explorer with charts, market ticker. But missed core FRs.
-- **Rajiv**: Proposing compliance matrix loop (Karpathy automated). SRS v3.1 + stylistic guidelines coming.
-- **Us (Farzaneh)**: Strongest spec coverage. Strategy = win on compliance score.
-
-## 2026-03-27 call decisions
-- **Compliance matrix loop** adopted: coding agent + compliance tester iterate until score maximized
-- **SRS v3.1 coming**: Rajiv adding competitive analysis requirements
-- **Stylistic guidelines v1.0 coming**: Alessandro/Rajiv creating UI spec
-- **Fresh start next round**: Clean slate build with combined functional + stylistic requirements
-- **VM being provisioned**: Resource group `EAA-CORPAIML-SANDBOX-EUS2-DEV-RG`, Unity Catalog `corporate_finance_analytics_prod`
-- **Platform convergence**: Everyone to use Cesar's platform once ready
+## Next: Batch 2 — Data Layer
+- Databricks SQL connector with SQLite auto-fallback
+- Dimension table queries (entities, accounts, products, customers)
+- Schema context string for LLM prompts
+- Connection management (health check, retries, pooling)

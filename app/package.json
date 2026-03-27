@@ -1,38 +1,17 @@
 {
   "name": "finiq",
-  "version": "0.1.0",
-  "description": "FinIQ - Unified Financial Analytics Hub for Mars, Incorporated",
-  "type": "module",
-  "main": "server/index.js",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Amira FinIQ — Unified Financial Analytics Hub for Mars, Incorporated",
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node --watch server/index.js",
-    "client": "cd client && npm run dev",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:client": "cd client && npm run dev",
+    "dev:server": "cd server && node index.js",
     "build": "cd client && npm run build",
-    "test": "echo \"Testing with Testing Agent\" && exit 0"
-  },
-  "keywords": [
-    "finiq",
-    "financial-analytics",
-    "mars",
-    "databricks",
-    "ai-agent"
-  ],
-  "author": "Amira Technologies (QDT)",
-  "license": "PROPRIETARY",
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.80.0",
-    "@databricks/sql": "^1.13.0",
-    "@langchain/core": "^0.1.45",
-    "@langchain/openai": "^0.0.19",
-    "better-sqlite3": "^11.0.0",
-    "dotenv": "^16.4.1",
-    "express": "^4.18.2",
-    "langchain": "^0.1.25",
-    "pdf-parse": "^1.1.1",
-    "ws": "^8.16.0"
+    "start": "cd server && NODE_ENV=production node index.js",
+    "install:all": "npm install && cd client && npm install && cd ../server && npm install"
   },
   "devDependencies": {
-    "nodemon": "^3.0.3"
+    "concurrently": "^9.1.0"
   }
 }
