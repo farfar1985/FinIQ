@@ -13,6 +13,9 @@ import { getStats as getWsStats } from "./websocket.mjs";
 import { processQuery, resolveVariables, SUGGESTED_PROMPTS } from "../agents/finiq-agent.mjs";
 import { getThreeWayComparison, getDataFreshness, getRecommendations, getMarketingInsights } from "./intelligence.mjs";
 import ciAgent from "../agents/ci-agent.mjs";
+
+// Wire the real query engine into the job board
+jobBoard.setProcessQueryFn(processQuery);
 import { monitorCompetitors, getCompetitorAlerts } from "./fmp-client.mjs";
 import {
   testDatabricksConnection,
@@ -246,7 +249,7 @@ router.post("/jobs", requireRole("admin", "analyst"), (req, res) => {
     // Simulate processing in development mode
     if (config.nodeEnv !== "production") {
       const duration = { critical: 2000, high: 3000, medium: 5000, low: 8000 };
-      jobBoard.simulateJobCompletion(job.id, duration[job.priority] || 5000);
+      jobBoard.executeJob(job.id, duration[job.priority] || 5000);
     }
 
     res.status(201).json({ job });
@@ -312,7 +315,7 @@ router.post("/jobs/:id/retry", requireRole("admin", "analyst"), (req, res) => {
 
     // Simulate processing again in dev
     if (config.nodeEnv !== "production") {
-      jobBoard.simulateJobCompletion(job.id, 3000);
+      jobBoard.executeJob(job.id, 3000);
     }
 
     res.json({ job });

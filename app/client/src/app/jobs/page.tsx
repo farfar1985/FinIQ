@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { api } from "@/lib/api";
-import type { Job, JobCounts, JobPriority, WsMessage } from "@/types";
+import { ChartRenderer } from "@/components/charts/chart-renderer";
+import type { Job, JobCounts, JobPriority, WsMessage, ChartConfig } from "@/types";
 
 // ============================================================
 // Constants
@@ -348,19 +349,29 @@ function JobDetailPanel({
       </div>
 
       {job.result && (
-        <div className="mt-4 rounded-md border border-border bg-secondary/50 p-3">
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-positive">
-            Result
-          </div>
-          <div className="text-xs text-foreground">
-            <div className="font-medium">{job.result.summary}</div>
+        <div className="mt-4 space-y-3">
+          <div className="rounded-md border border-border bg-secondary/50 p-3">
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-positive">
+              Result
+            </div>
+            <div className="text-xs text-foreground whitespace-pre-wrap">{job.result.summary}</div>
             {job.result.rows_analyzed !== undefined && (
-              <div className="mt-1 text-muted-foreground">
+              <div className="mt-1 text-[10px] text-muted-foreground">
                 {job.result.rows_analyzed.toLocaleString()} rows analyzed across{" "}
                 {job.result.tables_queried?.join(", ")}
               </div>
             )}
           </div>
+
+          {/* Chart from real query result */}
+          {job.result.chartConfig && (
+            <ChartRenderer config={job.result.chartConfig as ChartConfig} />
+          )}
+
+          {/* Data table from real query result */}
+          {job.result.data && Array.isArray(job.result.data) && job.result.data.length > 0 && (
+            <JobDataTable data={job.result.data as Record<string, unknown>[]} />
+          )}
         </div>
       )}
 
@@ -714,6 +725,53 @@ export default function JobsPage() {
           setSelectedJob((prev) => (prev?.id === job.id ? null : job))
         }
       />
+    </div>
+  );
+}
+
+// ============================================================
+// Job result data table
+// ============================================================
+
+function JobDataTable({ data }: { data: Record<string, unknown>[] }) {
+  const [showAll, setShowAll] = useState(false);
+  const keys = Object.keys(data[0]);
+  const displayData = showAll ? data.slice(0, 50) : data.slice(0, 5);
+
+  return (
+    <div className="overflow-x-auto rounded border border-border">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-border bg-secondary/50">
+            {keys.map((key) => (
+              <th key={key} className="th-financial px-3 py-2 text-left">{key}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {displayData.map((row, i) => (
+            <tr key={i} className="border-b border-border/50">
+              {keys.map((key) => (
+                <td key={key} className={`px-3 py-1.5 ${typeof row[key] === "number" ? "font-mono tabular-nums text-right" : ""}`}>
+                  {typeof row[key] === "number"
+                    ? (row[key] as number).toLocaleString(undefined, { maximumFractionDigits: 2 })
+                    : typeof row[key] === "object" && row[key] !== null
+                    ? String((row[key] as Record<string, unknown>).tagline || JSON.stringify(row[key]))
+                    : String(row[key] ?? "")}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {data.length > 5 && (
+        <button
+          onClick={() => setShowAll(!showAll)}
+          className="w-full py-1.5 text-center text-[10px] text-muted-foreground hover:text-foreground"
+        >
+          {showAll ? "Show less" : `Show all ${data.length} rows`}
+        </button>
+      )}
     </div>
   );
 }

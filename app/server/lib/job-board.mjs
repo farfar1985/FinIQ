@@ -456,31 +456,58 @@ function getAgentPool() {
 // Simulate job completion (for demo / development)
 // ============================================================
 
-function simulateJobCompletion(jobId, durationMs = 3000) {
+/**
+ * Execute a job by running the actual NL query engine.
+ * processQueryFn is injected from routes.mjs to avoid circular imports.
+ */
+let _processQueryFn = null;
+
+function setProcessQueryFn(fn) {
+  _processQueryFn = fn;
+}
+
+function executeJob(jobId, durationMs = 1000) {
   const job = jobs.get(jobId);
   if (!job) return;
 
-  setTimeout(() => {
+  setTimeout(async () => {
     if (job.status !== "processing") return;
 
-    // 90% success rate for simulation
-    const success = Math.random() > 0.1;
-
-    if (success) {
-      transitionJob(job, "review");
-      setTimeout(() => {
-        updateJobStatus(jobId, "completed", {
-          result: {
-            summary: `Analysis complete for query: "${job.query}"`,
-            rows_analyzed: Math.floor(Math.random() * 5000) + 100,
-            tables_queried: ["finiq_financial", "finiq_dim_entity", "finiq_dim_account"],
-            generated_at: new Date().toISOString(),
-          },
-        });
-      }, 1000);
-    } else {
+    try {
+      if (_processQueryFn) {
+        // Run the REAL query
+        const result = await _processQueryFn(job.query, { entity: null });
+        transitionJob(job, "review");
+        setTimeout(() => {
+          updateJobStatus(jobId, "completed", {
+            result: {
+              summary: result.response || `Analysis complete for: "${job.query}"`,
+              data: result.data || null,
+              chartConfig: result.chartConfig || null,
+              sources: result.sources || [],
+              rows_analyzed: result.data?.length || 0,
+              tables_queried: (result.sources || []).map(s => s.table),
+              generated_at: new Date().toISOString(),
+            },
+          });
+        }, 500);
+      } else {
+        // Fallback: simulation if no query fn wired
+        transitionJob(job, "review");
+        setTimeout(() => {
+          updateJobStatus(jobId, "completed", {
+            result: {
+              summary: `Analysis complete for query: "${job.query}"`,
+              rows_analyzed: Math.floor(Math.random() * 5000) + 100,
+              tables_queried: ["finiq_financial", "finiq_dim_entity", "finiq_dim_account"],
+              generated_at: new Date().toISOString(),
+            },
+          });
+        }, 1000);
+      }
+    } catch (err) {
       updateJobStatus(jobId, "failed", {
-        error: "Simulated failure: timeout while querying data source",
+        error: `Query execution failed: ${err.message}`,
       });
     }
   }, durationMs);
@@ -500,7 +527,8 @@ export default {
   setOnJobUpdate,
   startScheduler,
   stopScheduler,
-  simulateJobCompletion,
+  executeJob,
+  setProcessQueryFn,
   JOB_STATES,
   PRIORITIES,
 };

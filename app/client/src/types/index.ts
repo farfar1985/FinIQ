@@ -62,6 +62,9 @@ export interface Job {
 
 export interface JobResult {
   summary: string;
+  data?: Record<string, unknown>[] | null;
+  chartConfig?: ChartConfig | null;
+  sources?: Source[];
   rows_analyzed: number;
   tables_queried: string[];
   generated_at: string;
