@@ -41,6 +41,10 @@ const config = {
   // Anthropic
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
 
+  // OpenAI (TTS voice)
+  openaiApiKey: process.env.OPENAI_API_KEY || "",
+  openaiTtsVoice: process.env.OPENAI_TTS_VOICE || "sage",
+
   // FMP (Competitive Intelligence)
   fmpApiKey: process.env.FMP_API_KEY || "",
 };

@@ -172,37 +172,70 @@ export default function ChatPage() {
   // Voice Output — Text-to-Speech (speechSynthesis)
   // ============================================================
 
-  function speakMessage(msgId: string, text: string) {
-    if (!window.speechSynthesis) return;
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  async function speakMessage(msgId: string, text: string) {
     // If already speaking this message, stop
     if (speakingMsgId === msgId) {
-      window.speechSynthesis.cancel();
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
       setSpeakingMsgId(null);
       return;
     }
 
-    // Cancel any other ongoing speech
-    window.speechSynthesis.cancel();
+    // Stop any current playback
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
 
+    setSpeakingMsgId(msgId);
+
+    try {
+      // Use OpenAI TTS via our server endpoint (sage voice)
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!res.ok) {
+        // Fallback to browser speechSynthesis if OpenAI unavailable
+        fallbackSpeak(msgId, text);
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+
+      audio.onended = () => {
+        setSpeakingMsgId(null);
+        audioRef.current = null;
+        URL.revokeObjectURL(url);
+      };
+      audio.onerror = () => {
+        setSpeakingMsgId(null);
+        audioRef.current = null;
+      };
+
+      await audio.play();
+    } catch {
+      // Fallback to browser speech
+      fallbackSpeak(msgId, text);
+    }
+  }
+
+  function fallbackSpeak(msgId: string, text: string) {
+    if (!window.speechSynthesis) { setSpeakingMsgId(null); return; }
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "en-US";
     utterance.rate = 0.95;
-    utterance.pitch = 0.9;
-
-    // Try to pick a professional voice
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = voices.find(
-      (v) => v.lang.startsWith("en") && v.name.toLowerCase().includes("google")
-    ) || voices.find(
-      (v) => v.lang.startsWith("en-US") && !v.name.toLowerCase().includes("novelty")
-    ) || voices.find((v) => v.lang.startsWith("en"));
-    if (preferred) utterance.voice = preferred;
-
-    utterance.onstart = () => setSpeakingMsgId(msgId);
     utterance.onend = () => setSpeakingMsgId(null);
     utterance.onerror = () => setSpeakingMsgId(null);
-
     window.speechSynthesis.speak(utterance);
   }
 

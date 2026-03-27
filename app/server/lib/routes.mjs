@@ -16,6 +16,7 @@ import ciAgent from "../agents/ci-agent.mjs";
 
 // Wire the real query engine into the job board
 jobBoard.setProcessQueryFn(processQuery);
+
 import { monitorCompetitors, getCompetitorAlerts } from "./fmp-client.mjs";
 import {
   testDatabricksConnection,
@@ -39,6 +40,46 @@ import { requireRole } from "./auth.mjs";
 import { chatLimiter, getRateLimitStatus } from "./rate-limit.mjs";
 
 const router = Router();
+
+// ============================================================
+// TTS — OpenAI Text-to-Speech (sage voice)
+// ============================================================
+
+router.post("/tts", async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ error: "text is required" });
+    if (!config.openaiApiKey) return res.status(503).json({ error: "OpenAI TTS not configured" });
+
+    const truncated = text.length > 4000 ? text.substring(0, 4000) + "..." : text;
+
+    const response = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${config.openaiApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "tts-1",
+        input: truncated,
+        voice: config.openaiTtsVoice,
+        response_format: "mp3",
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      return res.status(response.status).json({ error: err });
+    }
+
+    res.set("Content-Type", "audio/mpeg");
+    const arrayBuffer = await response.arrayBuffer();
+    res.send(Buffer.from(arrayBuffer));
+  } catch (err) {
+    console.error("[tts] Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ============================================================
 // Health check
