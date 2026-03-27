@@ -206,8 +206,8 @@ export default function ReportsPage() {
           onChange={(e) => setSelectedEntity(e.target.value)}
           className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
         >
-          {entities.map((e) => (
-            <option key={e.Entity_ID} value={e.Entity_Alias}>
+          {entities.map((e, i) => (
+            <option key={`${e.Entity_Alias}-${i}`} value={e.Entity_Alias}>
               {e.Entity_Alias}
             </option>
           ))}

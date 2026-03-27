@@ -95,8 +95,10 @@ function useJobWebSocket(onJobUpdate: (job: Job) => void) {
       }, 3000);
     };
 
-    ws.onerror = (err) => {
-      console.error("[ws] WebSocket error:", err);
+    ws.onerror = () => {
+      // Downgraded from error to warn — transient connection failures
+      // are expected during startup and handled by auto-reconnect
+      console.warn("[ws] WebSocket connection issue, will reconnect...");
       ws.close();
     };
   }, []);
