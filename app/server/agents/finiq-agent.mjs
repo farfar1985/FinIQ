@@ -21,13 +21,13 @@ const MODEL = "claude-haiku-4-5-20251001";
 // ============================================================
 
 const INTENTS = {
+  ci: { keywords: ["competitor", "nestle", "mondelez", "hershey", "ferrero", "colgate", "general mills", "kellanova", "smucker", "freshpet", "idexx", "benchmark", "peer", "competitive", "swot", "porter", "margin compare"], description: "Competitive intelligence" },
   pes: { keywords: ["pes", "period end", "summary", "kpi", "organic growth", "mac shape", "a&cp", "ce shape", "controllable", "ncfo", "performance", "working well", "not working", "what's working", "what's not"], description: "Period End Summary report" },
   variance: { keywords: ["variance", "budget", "replan", "actual vs", "favorable", "unfavorable"], description: "Budget variance analysis" },
+  forecast: { keywords: ["forecast", "vs actual", "actual vs", "three-way", "replan vs", "projection"], description: "Forecast comparison" },
   product: { keywords: ["product", "brand", "segment", "item", "category"], description: "Product/brand analysis" },
   trend: { keywords: ["trend", "over time", "history", "compare period", "year over year", "yoy", "growth"], description: "Trend/time series analysis" },
   ranking: { keywords: ["rank", "top", "bottom", "best", "worst", "highest", "lowest"], description: "Entity/KPI rankings" },
-  ci: { keywords: ["competitor", "nestle", "mondelez", "hershey", "ferrero", "colgate", "general mills", "kellanova", "smucker", "freshpet", "idexx", "benchmark", "peer", "competitive", "swot", "porter", "margin compare"], description: "Competitive intelligence" },
-  forecast: { keywords: ["forecast", "vs actual", "actual vs", "three-way", "replan vs", "projection"], description: "Forecast comparison" },
   adhoc: { keywords: [], description: "Ad-hoc SQL query" },
 };
 
@@ -312,8 +312,12 @@ async function processQuery(message, sessionContext = {}) {
   const requestedEntity = extractEntity(message);
   const entity = requestedEntity || sessionContext.entity || "Mars Inc";
 
+  // CI and forecast intents don't need entity validation — skip straight to routing
+  if (intent === "ci" || intent === "forecast") {
+    // Jump to the switch statement below
+  }
   // If user asked for a specific entity that we don't recognize, check if it exists in the DB
-  if (requestedEntity === null && !sessionContext.entity) {
+  else if (requestedEntity === null && !sessionContext.entity) {
     // User may have mentioned an entity we don't have in our keyword list — try fuzzy match
     const allEntities = await dataLayer.getEntities();
     const lower = message.toLowerCase();
