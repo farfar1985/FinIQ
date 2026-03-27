@@ -309,7 +309,46 @@ function formatKPITable(entity, kpis, format) {
 
 async function processQuery(message, sessionContext = {}) {
   const intent = classifyIntent(message);
-  const entity = extractEntity(message) || sessionContext.entity || "Mars Inc";
+  const requestedEntity = extractEntity(message);
+  const entity = requestedEntity || sessionContext.entity || "Mars Inc";
+
+  // If user asked for a specific entity that we don't recognize, check if it exists in the DB
+  if (requestedEntity === null && !sessionContext.entity) {
+    // User may have mentioned an entity we don't have in our keyword list — try fuzzy match
+    const allEntities = await dataLayer.getEntities();
+    const lower = message.toLowerCase();
+    const fuzzyMatch = allEntities.find((e) =>
+      lower.includes(e.Entity_Alias.toLowerCase())
+    );
+    if (fuzzyMatch) {
+      // Found a match in the database
+      return processQuery(message, { ...sessionContext, entity: fuzzyMatch.Entity_Alias });
+    }
+    // Check if user explicitly mentioned an entity name that doesn't exist
+    const entityPatterns = /(?:for|of|at|in)\s+([A-Z][A-Za-z\s&']+?)(?:\s+(?:in|for|during|ytd|yoy|period|fy|q[1-4])|[?,.]|$)/i;
+    const match = message.match(entityPatterns);
+    if (match && match[1]) {
+      const mentioned = match[1].trim();
+      const exists = allEntities.some((e) =>
+        e.Entity_Alias.toLowerCase() === mentioned.toLowerCase()
+      );
+      if (!exists && intent !== "ci") {
+        // Suggest similar entities
+        const similar = allEntities
+          .filter((e) => e.Entity_Alias.toLowerCase().includes(mentioned.toLowerCase().split(" ")[0]))
+          .slice(0, 5);
+        const suggestions = similar.length > 0
+          ? `\n\nDid you mean: ${similar.map((e) => `**${e.Entity_Alias}**`).join(", ")}?`
+          : `\n\nAvailable entities include: ${allEntities.slice(0, 10).map((e) => e.Entity_Alias).join(", ")}...`;
+        return {
+          response: `No data found for entity "${mentioned}".${suggestions}`,
+          data: null,
+          chartConfig: null,
+          sources: [],
+        };
+      }
+    }
+  }
 
   // Route by intent
   switch (intent) {
