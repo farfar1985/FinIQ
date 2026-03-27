@@ -129,11 +129,15 @@ app/
 - **OpenAI**: LIVE — TTS sage voice (`tts-1`), planned: Realtime API for conversational agent
 - **Databricks**: Waiting for token from Cesar (dual-mode switch ready)
 
-### Next: OpenAI Realtime API Voice Agent
-- Full conversational voice interaction (like Amira Meet)
-- WebSocket to OpenAI Realtime API, audio streaming, function calling
-- Agent can query data mid-conversation, narrate findings naturally
-- Interrupt handling, conversation memory, auto-play responses
+### Voice Agent (LIVE — /voice page)
+- **OpenAI Realtime API** with sage voice — full conversational experience
+- Server-side WebSocket proxy (realtime-agent.mjs) → OpenAI Realtime API
+- Function calling mid-conversation: queries Mars data, CI competitors, submits jobs
+- Charts appear in side panel as agent pulls data
+- Interrupt handling — speak while agent is talking, it stops
+- Multi-turn memory — agent remembers context across the conversation
+- Voice activity detection (server-side VAD)
+- Separate /voice-ws endpoint (existing /ws for jobs untouched)
 
 ## SQLite Column Mapping
 - Entity: `Child_Entity` / `Child_Entity_ID`
