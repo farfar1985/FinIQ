@@ -52,7 +52,7 @@ export function Sidebar() {
       </div>
 
       {/* Nav items */}
-      <nav className="flex-1 space-y-1 px-2 py-3">
+      <nav className="flex-1 space-y-1 px-2 py-3" role="navigation" aria-label="Main navigation">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
           const Icon = item.icon;
@@ -67,6 +67,7 @@ export function Sidebar() {
                   : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
               )}
               title={sidebarCollapsed ? item.label : undefined}
+              aria-current={isActive ? "page" : undefined}
             >
               <Icon className="h-4 w-4 shrink-0" />
               {!sidebarCollapsed && <span>{item.label}</span>}
@@ -95,6 +96,8 @@ export function Sidebar() {
           onClick={toggleSidebar}
           className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
           title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!sidebarCollapsed}
+          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {sidebarCollapsed ? (
             <ChevronRight className="h-4 w-4 shrink-0" />

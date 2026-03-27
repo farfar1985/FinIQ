@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
 import { formatCompact, formatPercent, formatChange, getChangeColor } from "@/lib/format";
+import { Download } from "lucide-react";
 import { FinBarChart } from "@/components/charts/bar-chart";
 import {
   ScatterChart,
@@ -190,6 +191,7 @@ function OverviewTab() {
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataSource, setDataSource] = useState("");
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     api
@@ -203,6 +205,9 @@ function OverviewTab() {
   }, []);
 
   if (loading) return <LoadingSpinner />;
+
+  const INITIAL_ROWS = 5;
+  const displayCompetitors = showAll ? competitors : competitors.slice(0, INITIAL_ROWS);
 
   return (
     <div className="space-y-4">
@@ -225,7 +230,7 @@ function OverviewTab() {
             </tr>
           </thead>
           <tbody>
-            {competitors.map((c) => (
+            {displayCompetitors.map((c) => (
               <tr
                 key={c.ticker}
                 className="border-b border-border/50 hover:bg-muted/20 transition-colors"
@@ -265,6 +270,14 @@ function OverviewTab() {
             ))}
           </tbody>
         </table>
+        {competitors.length > INITIAL_ROWS && (
+          <button
+            onClick={() => setShowAll(!showAll)}
+            className="w-full py-2 text-center text-[11px] text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground border-t border-border/50"
+          >
+            {showAll ? "Show less" : `Show all ${competitors.length} competitors`}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -513,14 +526,40 @@ function BenchmarkTab() {
     "ROE %": c.roe,
   }));
 
+  function exportBenchmarkCsv() {
+    const headers = ["Company", "Ticker", "Revenue", "Revenue Growth %", "Gross Margin %", "Op Margin %", "Net Margin %", "ROE %", "D/E", "P/E", "EV/EBITDA"];
+    const lines = [headers.join(",")];
+    for (const c of data!.competitors) {
+      lines.push([c.company, c.ticker, c.revenue, c.revenueGrowth, c.grossMargin, c.operatingMargin, c.netMargin, c.roe, c.debtToEquity, c.peRatio ?? "", c.evToEbitda ?? ""].join(","));
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `finiq_benchmark_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-4">
-      <p className="text-[10px] text-muted-foreground">
-        {data.peerCount} competitors compared | Averages: Gross Margin{" "}
-        {data.averages.grossMargin?.toFixed(1)}%, Op Margin{" "}
-        {data.averages.operatingMargin?.toFixed(1)}%, Growth{" "}
-        {data.averages.revenueGrowth?.toFixed(1)}%
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] text-muted-foreground">
+          {data.peerCount} competitors compared | Averages: Gross Margin{" "}
+          {data.averages.grossMargin?.toFixed(1)}%, Op Margin{" "}
+          {data.averages.operatingMargin?.toFixed(1)}%, Growth{" "}
+          {data.averages.revenueGrowth?.toFixed(1)}%
+        </p>
+        <button
+          onClick={exportBenchmarkCsv}
+          className="flex items-center gap-1.5 rounded-md border border-border bg-secondary px-3 py-1.5 text-[10px] font-medium text-foreground hover:bg-accent"
+        >
+          <Download className="h-3 w-3" />
+          Export CSV
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <FinBarChart

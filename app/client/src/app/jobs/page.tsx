@@ -385,6 +385,67 @@ function JobDetailPanel({
   );
 }
 
+function PendingReviewSection({
+  jobs,
+  onApprove,
+  onReject,
+}: {
+  jobs: Job[];
+  onApprove: (id: string) => void;
+  onReject: (id: string) => void;
+}) {
+  const reviewJobs = jobs.filter((j) => j.status === "review");
+
+  if (reviewJobs.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-chart-5/30 bg-chart-5/5 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="inline-block h-2 w-2 rounded-full bg-chart-5 animate-pulse" />
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-chart-5">
+          Pending Review ({reviewJobs.length})
+        </span>
+      </div>
+      <div className="space-y-3">
+        {reviewJobs.map((job) => (
+          <div
+            key={job.id}
+            className="flex items-start justify-between gap-4 rounded-md border border-border bg-card p-3"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[10px] text-muted-foreground">{job.id.slice(0, 8)}</span>
+                <PriorityBadge priority={job.priority} />
+                <span className="text-[10px] text-muted-foreground">{job.agent_name}</span>
+              </div>
+              <div className="mt-1 text-xs">{truncate(job.query, 100)}</div>
+              {job.result && (
+                <div className="mt-1.5 text-[10px] text-muted-foreground">
+                  {job.result.summary ? truncate(job.result.summary, 120) : "Result available"}
+                </div>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                onClick={() => onApprove(job.id)}
+                className="rounded-md bg-positive/15 px-3 py-1.5 text-[11px] font-medium text-positive transition-colors hover:bg-positive/25"
+              >
+                Approve
+              </button>
+              <button
+                onClick={() => onReject(job.id)}
+                className="rounded-md bg-negative/15 px-3 py-1.5 text-[11px] font-medium text-negative transition-colors hover:bg-negative/25"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function JobTable({
   jobs,
   selectedId,
@@ -557,6 +618,31 @@ export default function JobsPage() {
     }
   }
 
+  async function handleApprove(jobId: string) {
+    try {
+      const result = await api.updateJob(jobId, { status: "completed" });
+      setJobs((prev) => prev.map((j) => (j.id === result.job.id ? result.job : j)));
+      if (selectedJob?.id === jobId) setSelectedJob(result.job);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to approve job");
+    }
+  }
+
+  async function handleReject(jobId: string) {
+    try {
+      const result = await api.updateJob(jobId, {
+        status: "failed",
+        error: "Rejected by reviewer",
+      });
+      setJobs((prev) => prev.map((j) => (j.id === result.job.id ? result.job : j)));
+      if (selectedJob?.id === jobId) setSelectedJob(result.job);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reject job");
+    }
+  }
+
   // Periodically refresh counts (WebSocket handles individual job updates,
   // but counts need a full refresh to stay accurate)
   useEffect(() => {
@@ -598,6 +684,13 @@ export default function JobsPage() {
 
       {/* Status cards */}
       <StatusCards counts={counts} />
+
+      {/* Pending review section (FR5.7 Collaborative Review) */}
+      <PendingReviewSection
+        jobs={jobs}
+        onApprove={handleApprove}
+        onReject={handleReject}
+      />
 
       {/* Submit form */}
       <SubmitJobForm onSubmit={handleSubmit} submitting={submitting} />

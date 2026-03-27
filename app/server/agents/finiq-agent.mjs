@@ -188,8 +188,8 @@ async function generatePES(entity, format = "summary") {
     data: kpiResults,
     chartConfig,
     sources: [
-      { table: "finiq_vw_pl_entity", query: `WHERE Entity = '${entity}'`, rowCount: pl.length },
-      { table: "finiq_vw_ncfo_entity", query: `WHERE Entity = '${entity}'`, rowCount: ncfo.length },
+      { table: "finiq_vw_pl_entity", query: "Entity filter applied", rowCount: pl.length },
+      { table: "finiq_vw_ncfo_entity", query: "Entity filter applied", rowCount: ncfo.length },
     ],
   };
 }
@@ -242,7 +242,7 @@ async function processQuery(message, sessionContext = {}) {
       const favorable = data.filter((d) => d.favorable).length;
       narrative += `**${favorable}** of ${data.length} accounts are favorable.\n\n`;
 
-      return { response: narrative, data, chartConfig, sources: [{ table: "finiq_financial_replan", query: `WHERE Entity = '${entity}'`, rowCount: rows.length }] };
+      return { response: narrative, data, chartConfig, sources: [{ table: "finiq_financial_replan", query: "Entity filter applied", rowCount: rows.length }] };
     }
 
     case "ranking": {
@@ -289,7 +289,7 @@ async function processQuery(message, sessionContext = {}) {
         response: `## ${entity} — ${kpiName} Trend\n\nShowing ${trendData.length} periods.`,
         data: trendData,
         chartConfig,
-        sources: [{ table: "finiq_vw_pl_entity", query: `WHERE Entity = '${entity}' AND Account_KPI = '${kpiName}'`, rowCount: kpiRows.length }],
+        sources: [{ table: "finiq_vw_pl_entity", query: "Entity and KPI filter applied", rowCount: kpiRows.length }],
       };
     }
 

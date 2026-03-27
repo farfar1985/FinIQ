@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { Send, Loader2, Database, ChevronDown } from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { Send, Loader2, Database, ChevronDown, Clock } from "lucide-react";
 import { ChartRenderer } from "@/components/charts/chart-renderer";
 import type { ChatMessage, ChartConfig, Source, SuggestedPrompt } from "@/types";
+
+const MAX_RECENT_QUERIES = 5;
 
 export default function ChatPage() {
   const [input, setInput] = useState("");
@@ -12,7 +14,23 @@ export default function ChatPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [prompts, setPrompts] = useState<SuggestedPrompt[]>([]);
   const [showPrompts, setShowPrompts] = useState(true);
+  const [recentQueries, setRecentQueries] = useState<string[]>([]);
+  const [showAutoComplete, setShowAutoComplete] = useState(false);
+  const [autoCompleteIndex, setAutoCompleteIndex] = useState(-1);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Autocomplete: filter prompts that match current input
+  const autoCompleteSuggestions = useMemo(() => {
+    const q = input.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return prompts
+      .filter((p) => {
+        const resolved = (p as unknown as { resolved_prompt: string }).resolved_prompt || p.suggested_prompt;
+        return resolved.toLowerCase().includes(q) || (p.description && p.description.toLowerCase().includes(q));
+      })
+      .slice(0, 6);
+  }, [input, prompts]);
 
   // Load suggested prompts
   useEffect(() => {
@@ -31,6 +49,12 @@ export default function ChatPage() {
     const msg = text || input.trim();
     if (!msg) return;
 
+    // Track recent queries (FR8.4 adaptive query interface)
+    setRecentQueries((prev) => {
+      const updated = [msg, ...prev.filter((q) => q !== msg)].slice(0, MAX_RECENT_QUERIES);
+      return updated;
+    });
+
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: "user",
@@ -39,6 +63,8 @@ export default function ChatPage() {
     };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
+    setShowAutoComplete(false);
+    setAutoCompleteIndex(-1);
     setLoading(true);
     setShowPrompts(false);
 
@@ -82,7 +108,7 @@ export default function ChatPage() {
       <h1 className="mb-3 text-base font-medium">Query Interface</h1>
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto rounded-lg border border-border bg-card p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto rounded-lg border border-border bg-card p-4 space-y-4" aria-live="polite" aria-label="Chat messages">
         {messages.length === 0 && showPrompts && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
@@ -187,24 +213,120 @@ export default function ChatPage() {
         </div>
       )}
 
+      {/* Recent queries chips (FR8.4) */}
+      {recentQueries.length > 0 && (
+        <div className="mt-2 flex items-center gap-2 overflow-x-auto" aria-label="Recent queries">
+          <Clock className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+          {recentQueries.map((q, i) => (
+            <button
+              key={i}
+              onClick={() => sendMessage(q)}
+              className="shrink-0 rounded-full border border-border bg-secondary px-2.5 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              title={q}
+            >
+              {q.length > 40 ? q.slice(0, 40) + "..." : q}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Input bar */}
-      <div className="mt-2 flex gap-2">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask a financial question..."
-          className="flex-1 rounded-md border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && input.trim() && !loading) {
-              sendMessage();
-            }
-          }}
-          disabled={loading}
-        />
+      <div className="relative mt-2 flex gap-2">
+        <div className="relative flex-1">
+          <input
+            ref={inputRef}
+            type="text"
+            value={input}
+            onChange={(e) => {
+              setInput(e.target.value);
+              setShowAutoComplete(e.target.value.trim().length >= 2);
+              setAutoCompleteIndex(-1);
+            }}
+            onFocus={() => {
+              if (input.trim().length >= 2) setShowAutoComplete(true);
+            }}
+            onBlur={() => {
+              // Delay to allow click on autocomplete item
+              setTimeout(() => setShowAutoComplete(false), 200);
+            }}
+            placeholder="Ask a financial question... (Enter to send)"
+            aria-label="Ask a financial question"
+            aria-describedby="chat-keyboard-hint"
+            aria-autocomplete="list"
+            aria-controls={showAutoComplete && autoCompleteSuggestions.length > 0 ? "autocomplete-list" : undefined}
+            aria-activedescendant={autoCompleteIndex >= 0 ? `autocomplete-item-${autoCompleteIndex}` : undefined}
+            className="w-full rounded-md border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            onKeyDown={(e) => {
+              if (showAutoComplete && autoCompleteSuggestions.length > 0) {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setAutoCompleteIndex((prev) => Math.min(prev + 1, autoCompleteSuggestions.length - 1));
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setAutoCompleteIndex((prev) => Math.max(prev - 1, -1));
+                  return;
+                }
+                if (e.key === "Escape") {
+                  setShowAutoComplete(false);
+                  setAutoCompleteIndex(-1);
+                  return;
+                }
+                if (e.key === "Enter" && autoCompleteIndex >= 0) {
+                  e.preventDefault();
+                  const selected = autoCompleteSuggestions[autoCompleteIndex];
+                  const text = (selected as unknown as { resolved_prompt: string }).resolved_prompt || selected.suggested_prompt;
+                  sendMessage(text);
+                  return;
+                }
+              }
+              if (e.key === "Enter" && input.trim() && !loading) {
+                sendMessage();
+              }
+            }}
+            disabled={loading}
+          />
+          <span id="chat-keyboard-hint" className="sr-only">Press Enter to send, Arrow keys to navigate suggestions</span>
+
+          {/* Autocomplete dropdown (FR8.4) */}
+          {showAutoComplete && autoCompleteSuggestions.length > 0 && (
+            <ul
+              id="autocomplete-list"
+              role="listbox"
+              aria-label="Suggested prompts"
+              className="absolute bottom-full left-0 z-20 mb-1 w-full rounded-md border border-border bg-card shadow-lg"
+            >
+              {autoCompleteSuggestions.map((p, i) => {
+                const text = (p as unknown as { resolved_prompt: string }).resolved_prompt || p.suggested_prompt;
+                return (
+                  <li
+                    key={p.id}
+                    id={`autocomplete-item-${i}`}
+                    role="option"
+                    aria-selected={i === autoCompleteIndex}
+                    className={`cursor-pointer px-3 py-2 text-xs transition-colors ${
+                      i === autoCompleteIndex ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                    }`}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      sendMessage(text);
+                    }}
+                  >
+                    <div className="truncate">{text}</div>
+                    {p.description && (
+                      <div className="mt-0.5 truncate text-[10px] text-muted-foreground/70">{p.description}</div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
         <button
           onClick={() => sendMessage()}
           disabled={!input.trim() || loading}
+          aria-label="Send message"
           className="flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

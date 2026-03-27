@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { TrendingUp, TrendingDown, Activity, DollarSign, BarChart3, Briefcase } from "lucide-react";
 import { FinBarChart } from "@/components/charts/bar-chart";
+import { Sparkline } from "@/components/charts/sparkline";
 
 interface KPIData {
   kpi: string;
@@ -12,6 +13,18 @@ interface KPIData {
   periodic_cy: number;
   periodic_ly: number;
   periodic_growth: number;
+}
+
+/** Generate mock sparkline data from a KPI's CY/LY values. Returns 6 period values trending from LY toward CY. */
+function generateSparkData(ly: number, cy: number): number[] {
+  const steps = 6;
+  const diff = cy - ly;
+  return Array.from({ length: steps }, (_, i) => {
+    const base = ly + (diff * (i / (steps - 1)));
+    // Add slight noise (deterministic by index)
+    const noise = base * 0.02 * ((i % 3) - 1);
+    return Math.round(base + noise);
+  });
 }
 
 const KPI_ICONS: Record<string, typeof TrendingUp> = {
@@ -97,7 +110,7 @@ export default function DashboardPage() {
                   <div className="mt-2 font-mono text-lg font-semibold tabular-nums">
                     {kpi.ytd_cy?.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </div>
-                  <div className="mt-1 flex items-center gap-2">
+                  <div className="mt-1 flex items-center justify-between gap-2">
                     <span
                       className={`font-mono text-xs tabular-nums ${
                         kpi.ytd_growth > 0
@@ -110,6 +123,7 @@ export default function DashboardPage() {
                       {kpi.ytd_growth > 0 ? "+" : ""}
                       {kpi.ytd_growth}% YTD
                     </span>
+                    <Sparkline data={generateSparkData(kpi.ytd_ly, kpi.ytd_cy)} />
                   </div>
                 </div>
               );

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { FileBarChart, Loader2 } from "lucide-react";
+import { FileBarChart, Loader2, Download, ChevronDown } from "lucide-react";
 import { FinBarChart } from "@/components/charts/bar-chart";
 
 interface Entity {
@@ -50,6 +50,32 @@ interface ComparisonData {
 
 type ReportType = "pes" | "variance" | "comparison";
 
+function downloadFile(content: string, filename: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function toCsv(rows: Record<string, unknown>[]): string {
+  if (rows.length === 0) return "";
+  const headers = Object.keys(rows[0]);
+  const lines = [headers.join(",")];
+  for (const row of rows) {
+    lines.push(headers.map((h) => {
+      const v = row[h];
+      const s = v == null ? "" : String(v);
+      return s.includes(",") || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
+    }).join(","));
+  }
+  return lines.join("\n");
+}
+
 export default function ReportsPage() {
   const [entities, setEntities] = useState<Entity[]>([]);
   const [selectedEntity, setSelectedEntity] = useState("Mars Inc");
@@ -58,6 +84,30 @@ export default function ReportsPage() {
   const [varianceData, setVarianceData] = useState<VarianceRow[]>([]);
   const [comparisonData, setComparisonData] = useState<ComparisonData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+
+  function getCurrentData(): Record<string, unknown>[] {
+    if (reportType === "pes" && pesData) {
+      const d = pesData as { pl: Record<string, unknown>[]; ncfo: Record<string, unknown>[] };
+      return [...(d.pl || []), ...(d.ncfo || [])];
+    }
+    if (reportType === "variance") return varianceData as unknown as Record<string, unknown>[];
+    if (reportType === "comparison" && comparisonData) return comparisonData.rows as unknown as Record<string, unknown>[];
+    return [];
+  }
+
+  function handleExport(format: "csv" | "json") {
+    const data = getCurrentData();
+    if (data.length === 0) return;
+    const ts = new Date().toISOString().slice(0, 10);
+    const base = `finiq_${reportType}_${selectedEntity.replace(/\s+/g, "_")}_${ts}`;
+    if (format === "csv") {
+      downloadFile(toCsv(data), `${base}.csv`, "text/csv");
+    } else {
+      downloadFile(JSON.stringify(data, null, 2), `${base}.json`, "application/json");
+    }
+    setExportOpen(false);
+  }
 
   useEffect(() => {
     fetch("/api/entities")
@@ -137,6 +187,29 @@ export default function ReportsPage() {
           {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileBarChart className="h-3 w-3" />}
           Generate
         </button>
+
+        {/* Export dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setExportOpen(!exportOpen)}
+            disabled={getCurrentData().length === 0}
+            className="flex items-center gap-2 rounded-md border border-border bg-secondary px-4 py-2 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50"
+          >
+            <Download className="h-3 w-3" />
+            Export
+            <ChevronDown className="h-3 w-3" />
+          </button>
+          {exportOpen && (
+            <div className="absolute left-0 top-full z-10 mt-1 w-36 rounded-md border border-border bg-card py-1 shadow-lg">
+              <button onClick={() => handleExport("csv")} className="block w-full px-3 py-1.5 text-left text-xs hover:bg-accent">
+                Export CSV
+              </button>
+              <button onClick={() => handleExport("json")} className="block w-full px-3 py-1.5 text-left text-xs hover:bg-accent">
+                Export JSON
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* PES Report */}
