@@ -85,3 +85,57 @@ Create and maintain:
 - `memory/` folder with session files (`YYYY-MM-DD-N.md`) tracking what you build each session
 - `TODO.md` — step-by-step checklist of all work items mapped to SRS FRs
 - Update these after every major chunk of work
+
+---
+
+## Claude Code Review — Pass 1 (2026-03-27)
+
+### Build Assessment by Claude Code
+Artemis built a solid MVP foundation (~7,700 lines, 35+ API endpoints). Overall SRS coverage: **~55-65%**.
+
+**What's working well:**
+- Job Board (FR5): 100% complete
+- Database layer: Clean dual-mode abstraction (SQLite ↔ Databricks)
+- PES reports (FR2): ~85% — queries 3 views, KPI calculations working
+- Schema context for LLM: Full 20-table reference embedded
+- Frontend: Professional dark-theme SPA with 6 pages
+
+### Critical bugs found (NOT YET FIXED — Claude Code Pass 1 will fix these)
+1. **Anthropic model name wrong** — uses `claude-opus-4-6` (invalid model name). Every LLM call fails and falls back to basic keyword matching. Needs correct model name.
+2. **SQL injection in fallback mode** — `finiq-agent.mjs:289` interpolates entity names directly into SQL strings. Must parameterize.
+3. **Config property mismatch** — `admin.mjs` references `DATABRICKS_HOST` but `config.mjs` defines `DATABRICKS_SERVER_HOSTNAME`. Admin panel connection check always fails.
+4. **Frontend doesn't use WebSocket** — Server-side WebSocket is fully built (`websocket.mjs`) but React client polls `/api/jobs` every 2 seconds instead.
+5. **Variance query missing JOIN** — Budget variance queries don't JOIN with `finiq_dim_account`, so account descriptions show "Unknown".
+6. **CI is all simulated** — Competitor data is hardcoded (Nestle, Mondelez, Hershey, Ferrero). No real PDF ingestion pipeline.
+
+### Coverage vs SRS v3.0 (50 FRs)
+| Area | Coverage | Notes |
+|------|----------|-------|
+| FR1: Data Ingestion | ~50% | Dual-mode works, no real Databricks tested |
+| FR2: Analytics | ~60% | PES + variance working, rankings/formats pending |
+| FR3: CI | ~40% | Simulated only |
+| FR4: NL Query | ~40% | Architecture ready but LLM broken (model name) |
+| FR5: Job Board | **100%** | Complete |
+| FR6: Integration | ~30% | Replan data ready, Forecast/Marketing APIs not started |
+| FR7: Admin | ~20% | Config viewer only, no RBAC/templates |
+| FR8: Dynamic UI | ~50% | Tables, sorting, dark theme — no charts, no drag-drop |
+
+### KEY GAP: No charting/visualization
+Alessandro's build has Recharts area charts, time series, data explorer with plots. Our app returns tables only. When user asks "plot me the sales," they get a data table — no chart. **Must add Recharts or similar.**
+
+### Frontend Design Spec available
+`FIN_IQ_FRONTEND_SPEC.md` in this directory — Alessandro's Bloomberg-inspired design system. Use as reference for future UI improvements. Key tech: Recharts, OKLCH colors, IBM Plex Sans, shadcn/ui components.
+
+## Team competition context (2026-03-27)
+- **Cesar**: Leading — full platform with skills, Kanban, multi-tenancy. FastAPI + Next.js. But doesn't have Mars data yet.
+- **Alessandro**: Strong UI — Data Explorer with charts, market ticker. But missed core FRs.
+- **Rajiv**: Proposing compliance matrix loop (Karpathy automated). SRS v3.1 + stylistic guidelines coming.
+- **Us (Farzaneh)**: Strongest spec coverage. Strategy = win on compliance score.
+
+## 2026-03-27 call decisions
+- **Compliance matrix loop** adopted: coding agent + compliance tester iterate until score maximized
+- **SRS v3.1 coming**: Rajiv adding competitive analysis requirements
+- **Stylistic guidelines v1.0 coming**: Alessandro/Rajiv creating UI spec
+- **Fresh start next round**: Clean slate build with combined functional + stylistic requirements
+- **VM being provisioned**: Resource group `EAA-CORPAIML-SANDBOX-EUS2-DEV-RG`, Unity Catalog `corporate_finance_analytics_prod`
+- **Platform convergence**: Everyone to use Cesar's platform once ready

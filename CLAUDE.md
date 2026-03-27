@@ -186,6 +186,136 @@ A unified platform that:
 
 ## Meeting notes archive
 - **2026-03-26 call transcript**: `C:\Users\farza\Downloads\FinIQ - 2026_03_26 09_13 EDT - Notes by Gemini.docx` — key decisions: combine SRS, purely vibe coding, rename Claude Code to "Coding Orchestrator", Azure OpenAI Foundry, synthetic data, competition approach
+- **2026-03-27 call transcript**: `C:\Users\farza\Desktop\FinIQ - 2026_03_27 09_12 EDT - Notes by Gemini.docx` — key decisions: compliance matrix loop, SRS v3.1 coming, fresh start with combined specs, stylistic guidelines v1.0, platform convergence on Cesar's environment
+
+## App build status (Artemis + Claude Code review loop)
+
+### Build pipeline
+- **Artemis** (OpenClaw agent) builds the app from SRS specs, pushes to GitHub
+- **Claude Code** reviews, fixes critical bugs, updates CLAUDE.md + memory, suggests enhancements
+- **Repeat** until competition-ready
+- Both agents share context via `app/CLAUDE.md`, `app/memory/`, and git
+
+### Artemis build — Phase 1+3 complete (2026-03-26)
+- **Tech stack**: Node.js/Express backend + React/TypeScript/Vite frontend
+- **~7,700 lines** across 8 backend modules + React SPA
+- **35+ API endpoints** across 6 categories
+- **Dual-mode data layer**: SQLite fallback ↔ Databricks (auto-switch via config)
+- **NL Query pipeline**: Intent classification → SQL generation → execution → LLM summarization
+- **Job Board (FR5)**: 100% complete — submission, SLA routing, lifecycle, retries, dashboard
+- **PES reports (FR2)**: ~85% — queries 3 views, KPI calculations, trend indicators
+- **Budget variance**: Working but missing account name JOINs (shows "Unknown")
+- **CI agent**: Compares Mars vs competitor metrics (simulated data only)
+- **WebSocket server**: Built but frontend still polls (client-side not wired)
+- **Frontend**: Professional dark-theme SPA, 6 pages (Dashboard, Chat, Jobs, CI, Data Explorer, Admin)
+- **Schema context**: Full 20-table reference embedded for LLM prompts
+
+### Claude Code review — Pass 1 findings (2026-03-27)
+**Critical bugs identified:**
+1. **Anthropic model name wrong** — uses `claude-opus-4-6` (invalid), every LLM call fails
+2. **SQL injection in fallback mode** — entity names interpolated directly into SQL strings in `finiq-agent.mjs:289`
+3. **Config property name mismatch** — admin.mjs references `DATABRICKS_HOST` but config.mjs defines `DATABRICKS_SERVER_HOSTNAME`
+4. **Frontend doesn't use WebSocket** — server ready but React client polls `/api/jobs` every 2s
+5. **Variance query missing JOIN** — no `finiq_dim_account` JOIN, account descriptions show "Unknown"
+6. **CI is all simulated** — hardcoded competitor data, no real PDF ingestion pipeline
+
+**Coverage vs SRS v3.0 (50 FRs):**
+| Area | Coverage | Notes |
+|------|----------|-------|
+| FR1: Data Ingestion | ~50% | Dual-mode works, no real Databricks tested |
+| FR2: Analytics | ~60% | PES + variance working, rankings/formats pending |
+| FR3: CI | ~40% | Simulated only |
+| FR4: NL Query | ~40% | Architecture ready but LLM broken |
+| FR5: Job Board | **100%** | Complete |
+| FR6: Integration | ~30% | Replan data ready, Forecast/Marketing APIs not started |
+| FR7: Admin | ~20% | Config viewer only, no RBAC/templates |
+| FR8: Dynamic UI | ~50% | Tables, sorting, dark theme — no drag-drop/adaptive |
+| **Overall** | **~55-65%** | |
+
+**Key gap vs competitors: NO charting/visualization.** Alessandro's build has Recharts area charts, time series, data explorer with plots. Our app returns tables only — "plot me the sales" just shows a data table.
+
+### What needs fixing (Claude Code Pass 1 — next)
+1. Fix model name (`claude-opus-4-6` → correct Anthropic model)
+2. Fix config property mismatch (DATABRICKS_HOST vs DATABRICKS_SERVER_HOSTNAME)
+3. Fix SQL injection (parameterize queries)
+4. Fix variance account JOIN
+5. Wire up frontend WebSocket client
+6. **Add Recharts charting** — area charts, bar charts, line charts for NL queries like "plot X"
+
+## Team progress & competition (as of 2026-03-27)
+
+### Cesar Flores — LEADING
+- Built full Amira platform with Claude Code under the hood
+- **Features**: Persistent skills layer, Kanban board for tasks, multi-tenancy (each user has own space)
+- **"Brain" concept**: Platform learns from user actions, auto-creates skills from business logic
+- Backend migrated to **FastAPI**, frontend to **Next.js**
+- Task management: Users define where artifacts go (GitHub, Azure pipeline)
+- Demo runs in Docker containers on single VM
+- Rajiv said they "built all of Replit yesterday"
+- **Gap**: Still the general Amira platform — doesn't have Mars FinIQ data/intelligence yet
+
+### Alessandro Savino — STRONG UI
+- Built app with pure Claude ("CLAUDIO" / Atlas)
+- **Standout**: Data Explorer with charts (Recharts), time series visualization, market ticker, data dictionary sidebar
+- Connected to Databricks, data exploration works
+- Created comprehensive **Frontend Design Spec** (`FIN_IQ_FRONTEND_SPEC.md`) — Bloomberg-inspired dark theme, OKLCH colors, full component library
+- **Gap**: Missed core functionality — no report generation, no voice commands. Focus on front-end style caused bot to skip core FRs
+
+### Rajiv Chandrasekaran — STRATEGY
+- Not yet started building (Asimov agent)
+- Focused on **process innovation**: compliance matrix + iterative testing loop
+- Proposed standard enterprise workflow: Spec agent → human approval → coding agent → compliance matrix agent → iterate until score maximized → human approval → deploy
+- Will create SRS v3.1 (adds competitive analysis requirements)
+- Will create stylistic guidelines v1.0
+
+### Bill Dennis — PLATFORM
+- Amira platform already handles human governance workflow
+- Fixed audio stuttering from previous demo
+- Cesar to integrate both pieces
+
+### Farzaneh (us) — SPEC-DRIVEN
+- Strongest spec coverage (SRS v3.0, Testing Agent SRS v1.1, Databricks schema reference)
+- Artemis built solid MVP (~55-65% SRS coverage)
+- Claude Code review loop in progress
+- **Strategy**: Win on compliance score — most FRs covered, best eval harness results
+
+## 2026-03-27 call decisions
+
+### Infrastructure
+- **Resource group set up**: `EAA-CORPAIML-SANDBOX-EUS2-DEV-RG` — everyone has access
+- **Unity Catalog**: `corporate_finance_analytics_prod` (production data!)
+- **VM being provisioned today** — team can deploy code
+- **Matt approved** Databricks access for QDT
+- **Mars communicates via Teams/effem chat** — monitor those channels
+
+### Process decisions
+- **Compliance matrix loop**: Coding agent + compliance matrix agent iterate until score maximized (Karpathy approach automated)
+- **Fresh start**: Next iteration builds from clean slate with combined requirements (not appending to existing code)
+- **SRS v3.1 coming**: Rajiv adding competitive analysis requirements to base
+- **Stylistic guidelines v1.0 coming**: Alessandro/Rajiv creating UI/design spec
+- **Both docs fed together** to coding agent for next build
+
+### Action items from call
+| Person | Task |
+|--------|------|
+| Cesar | Construct iterative compliance matrix prompt + platform artifacts |
+| Rajiv | Update SRS to v3.1 with competitive analysis; create stylistic guidelines v1.0 |
+| Alessandro | Provide stylistic guidelines in required format |
+| Farzaneh | Format the stylistic guidelines document |
+| Cesar | Integrate Bill's audio fix + human governance workflow |
+| Cesar | Notify team about platform setup status |
+
+### Platform convergence
+- Goal: Everyone uses Cesar's platform for all work once set up
+- Platform handles: spec creation → human governance → coding → compliance testing → deployment
+- Each user has their own space, agents access collective knowledge
+
+## Frontend design spec (Alessandro's)
+- **File**: `app/FIN_IQ_FRONTEND_SPEC.md` (copied from Alessandro's spec)
+- **Design philosophy**: Bloomberg-inspired, "information density without visual clutter"
+- **Tech**: Next.js + Tailwind CSS + shadcn/ui + Recharts + lightweight-charts
+- **Key components**: OKLCH color system, IBM Plex Sans + JetBrains Mono fonts, collapsible sidebar, market ticker strip, 12-column grid, area/candlestick/treemap/Sankey charts, sparklines, KPI stat cards, change badges
+- **This will be the stylistic guideline** fed alongside SRS to the coding agent in future builds
 
 ## IMPORTANT: This is NOT the DD harmonization project
 This project is completely separate from the Data Dictionary classification work in `D:\Sean's DD\effort_a\bible_method\`. Different client need, different deliverables, different scope.
