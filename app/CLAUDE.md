@@ -60,10 +60,13 @@ Users can SPEAK their queries. Keep the voice input/output pipeline. Use OpenAI 
 - Speech-to-text (user speaks a question)
 - Text-to-speech (app reads back the answer)
 
-## Specs (READ THESE — they are in the parent directory):
-- `../FinIQ SRS v3.0 Final.docx` — 50 functional requirements, full architecture
+## Specs (READ THESE — available in this directory AND parent):
+- `FinIQ SRS v3.1 Final.docx` — **CURRENT** — 52 functional requirements, CI/FMP API (Section 7), suggested prompts (Appendix C)
+- `FinIQ Frontend Design Guideline v1.0.docx` — **CURRENT** — Bloomberg-inspired UI spec, OKLCH colors, Recharts, shadcn/ui
+- `../FinIQ SRS v3.0 Final.docx` — Previous SRS (50 FRs), superseded by v3.1
 - `../Testing Agent SRS/FinIQ Testing Agent SRS v1.1.docx` — 31 test requirements, quantitative eval
 - `../Matt's databricks schema/FinIQ Databricks Schema Reference (claude generated).docx` — all 20 tables/views
+- `FIN_IQ_FRONTEND_SPEC.md` — Markdown version of the frontend design spec (same content as the docx)
 
 ## Language rules (Mars-facing text):
 - NEVER say "replace" → use "augment", "consolidate", "evolve", "enhance"
