@@ -113,10 +113,20 @@ app/
 - Jobs now execute REAL queries (not simulations)
 - Completed jobs store full results: narrative, data, chartConfig, sources, trends
 - Click a completed job to see the full report with chart + data table
+- Export bar: Report (.txt), Full Data (.json), Spreadsheet (.xlsx) — Mars-branded
 
-### Waiting for API Keys
-- **LLM (Anthropic or OpenAI)**: Unlocks AI narratives, ad-hoc SQL, PDF summaries
-- **Databricks token**: Unlocks real Mars data (dual-mode switch ready)
+### AI Intelligence (LIVE)
+- **Anthropic Haiku** (`claude-haiku-4-5-20251001`) — generating executive narratives
+- PES queries return AI-written performance summaries with trend insights
+- CI queries route to FMP data with AI competitive analysis
+- Forecast queries route to three-way comparison with AI commentary
+- Entity not found → suggests available entities + "Assign an agent" button
+- Ad-hoc SQL generation for freeform questions
+
+### API Keys Configured
+- **Anthropic**: LIVE — Haiku generating narratives
+- **FMP**: LIVE — real competitor data for 10 companies
+- **Databricks**: Waiting for token from Cesar (dual-mode switch ready)
 
 ## SQLite Column Mapping
 - Entity: `Child_Entity` / `Child_Entity_ID`
