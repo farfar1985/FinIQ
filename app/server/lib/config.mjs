@@ -20,7 +20,7 @@ const config = {
   // SQLite fallback
   sqlitePath: resolve(
     import.meta.dirname,
-    process.env.SQLITE_PATH || "../../finiq_synthetic.db"
+    process.env.SQLITE_PATH || "../../../finiq_synthetic.db"
   ),
 
   // Databricks connection

@@ -35,15 +35,69 @@ export interface VarianceRow {
   favorable: boolean;
 }
 
+export type JobStatus = "submitted" | "queued" | "assigned" | "processing" | "review" | "completed" | "failed";
+export type JobPriority = "critical" | "high" | "medium" | "low";
+
 export interface Job {
   id: string;
   query: string;
-  status: "submitted" | "queued" | "assigned" | "processing" | "review" | "completed" | "failed";
-  priority: "critical" | "high" | "medium" | "low";
+  status: JobStatus;
+  priority: JobPriority;
   agent_type: string;
+  agent_name: string;
+  intent: string;
+  sla_deadline: string;
   created_at: string;
   updated_at: string;
-  result?: unknown;
+  submitted_by: string;
+  result: JobResult | null;
+  error: string | null;
+  retries: number;
+  max_retries: number;
+  schedule: string | null;
+  is_recurring: boolean;
+  last_run_at: string | null;
+  next_run_at: string | null;
+}
+
+export interface JobResult {
+  summary: string;
+  rows_analyzed: number;
+  tables_queried: string[];
+  generated_at: string;
+}
+
+export interface JobCounts {
+  submitted: number;
+  queued: number;
+  assigned: number;
+  processing: number;
+  review: number;
+  completed: number;
+  failed: number;
+  total: number;
+}
+
+export interface JobsResponse {
+  jobs: Job[];
+  total: number;
+  counts: JobCounts;
+}
+
+export interface AgentInfo {
+  id: string;
+  name: string;
+  description: string;
+  capacity: number;
+  activeJobs: number;
+  available: number;
+  intents: string[];
+}
+
+export interface WsMessage {
+  type: string;
+  data: Record<string, unknown>;
+  timestamp?: string;
 }
 
 export interface ChatMessage {
