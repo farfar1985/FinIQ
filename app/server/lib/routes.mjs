@@ -33,6 +33,7 @@ import {
   getIngestionStatus,
 } from "./admin.mjs";
 import { requireRole } from "./auth.mjs";
+import { chatLimiter, getRateLimitStatus } from "./rate-limit.mjs";
 
 const router = Router();
 
@@ -184,7 +185,7 @@ router.get("/reports/variance/:entity", async (req, res) => {
 
 const sessions = new Map(); // Simple in-memory session store
 
-router.post("/chat", async (req, res) => {
+router.post("/chat", chatLimiter, async (req, res) => {
   try {
     const { message, sessionId } = req.body;
     if (!message) return res.status(400).json({ error: "message is required" });
@@ -733,6 +734,20 @@ router.patch("/admin/peer-groups/:id", requireRole("admin"), (req, res) => {
 router.get("/admin/ingestion/status", async (req, res) => {
   try {
     const status = await getIngestionStatus();
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// Gateway status (FR6.4)
+// ============================================================
+
+/** GET /api/gateway/status — Rate limit config and current request counts */
+router.get("/gateway/status", (req, res) => {
+  try {
+    const status = getRateLimitStatus();
     res.json(status);
   } catch (err) {
     res.status(500).json({ error: err.message });

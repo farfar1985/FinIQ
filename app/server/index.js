@@ -9,6 +9,7 @@ import config from "./lib/config.mjs";
 import routes from "./lib/routes.mjs";
 import { initWebSocket, broadcastJobUpdate } from "./lib/websocket.mjs";
 import jobBoard from "./lib/job-board.mjs";
+import { generalLimiter } from "./lib/rate-limit.mjs";
 
 const app = express();
 const server = createServer(app);
@@ -16,6 +17,9 @@ const server = createServer(app);
 // Middleware
 app.use(cors({ origin: "http://localhost:3000" }));
 app.use(express.json({ limit: "10mb" }));
+
+// FR6.4: Apply general rate limiting to all API routes (100 RPM default)
+app.use("/api", generalLimiter);
 
 // API routes
 app.use("/api", routes);

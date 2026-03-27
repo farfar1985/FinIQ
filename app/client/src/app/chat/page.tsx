@@ -638,6 +638,8 @@ function DataTablePreview({ data }: { data: Record<string, unknown>[] }) {
                 <td key={key} className={`px-3 py-1.5 ${typeof row[key] === "number" ? "font-mono tabular-nums text-right" : ""}`}>
                   {typeof row[key] === "number"
                     ? (row[key] as number).toLocaleString(undefined, { maximumFractionDigits: 2 })
+                    : typeof row[key] === "object" && row[key] !== null
+                    ? (row[key] as Record<string, unknown>).tagline || (row[key] as Record<string, unknown>).direction || JSON.stringify(row[key])
                     : String(row[key] ?? "")}
                 </td>
               ))}
