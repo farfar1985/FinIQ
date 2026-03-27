@@ -9,6 +9,25 @@ import jobBoard from "./job-board.mjs";
 import { getStats as getWsStats } from "./websocket.mjs";
 import { processQuery, resolveVariables, SUGGESTED_PROMPTS } from "../agents/finiq-agent.mjs";
 import { getThreeWayComparison, getDataFreshness, getRecommendations } from "./intelligence.mjs";
+import ciAgent from "../agents/ci-agent.mjs";
+import {
+  testDatabricksConnection,
+  getConnectionConfig,
+  updateConnectionConfig,
+  getOrgTree,
+  getUsers,
+  getRoles,
+  assignRole,
+  getPrompts,
+  updatePrompt,
+  togglePrompt,
+  getTemplates,
+  createTemplate,
+  updateTemplate,
+  getPeerGroups,
+  updatePeerGroup,
+  getIngestionStatus,
+} from "./admin.mjs";
 
 const router = Router();
 
@@ -283,24 +302,100 @@ router.post("/jobs/:id/retry", (req, res) => {
 });
 
 // ============================================================
-// CI (Batch 7 — competitor list is static for now)
+// CI — Competitive Intelligence (Batch 7 — FR3 + Section 7)
 // ============================================================
 
-router.get("/ci/competitors", (req, res) => {
-  res.json({
-    competitors: [
-      { name: "Nestle", ticker: "NSRGY", segment_overlap: "Confectionery, Pet Care, Food" },
-      { name: "Mondelez", ticker: "MDLZ", segment_overlap: "Confectionery, Snacking" },
-      { name: "Hershey", ticker: "HSY", segment_overlap: "Confectionery" },
-      { name: "Ferrero", ticker: "N/A", segment_overlap: "Confectionery" },
-      { name: "Colgate-Palmolive", ticker: "CL", segment_overlap: "Pet Care (Hill's)" },
-      { name: "General Mills", ticker: "GIS", segment_overlap: "Pet Care (Blue Buffalo), Food" },
-      { name: "Kellanova", ticker: "K", segment_overlap: "Snacking" },
-      { name: "J.M. Smucker", ticker: "SJM", segment_overlap: "Pet Care (Meow Mix, Milk-Bone)" },
-      { name: "Freshpet", ticker: "FRPT", segment_overlap: "Pet Care (fresh/refrigerated)" },
-      { name: "IDEXX", ticker: "IDXX", segment_overlap: "Veterinary diagnostics" },
-    ],
-  });
+/** GET /api/ci/competitors — Competitor universe with financial data */
+router.get("/ci/competitors", async (req, res) => {
+  try {
+    const result = await ciAgent.getCompetitorUniverse();
+    res.json(result);
+  } catch (err) {
+    console.error("[ci] Competitors error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** GET /api/ci/swot/:ticker — SWOT analysis for a competitor */
+router.get("/ci/swot/:ticker", async (req, res) => {
+  try {
+    const result = await ciAgent.getSWOT(req.params.ticker);
+    res.json(result);
+  } catch (err) {
+    console.error("[ci] SWOT error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** GET /api/ci/porters — Porter's Five Forces analysis */
+router.get("/ci/porters", async (req, res) => {
+  try {
+    const result = await ciAgent.getPortersFiveForces();
+    res.json(result);
+  } catch (err) {
+    console.error("[ci] Porter's error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** GET /api/ci/earnings/:ticker/:year/:quarter — Earnings call intelligence */
+router.get("/ci/earnings/:ticker/:year/:quarter", async (req, res) => {
+  try {
+    const { ticker, year, quarter } = req.params;
+    const result = await ciAgent.analyzeEarningsCall(ticker, year, quarter);
+    res.json(result);
+  } catch (err) {
+    console.error("[ci] Earnings error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** GET /api/ci/benchmark — Financial benchmarking across all competitors */
+router.get("/ci/benchmark", async (req, res) => {
+  try {
+    const tickers = req.query.tickers ? req.query.tickers.split(",") : undefined;
+    const result = await ciAgent.getBenchmarkComparison(tickers);
+    res.json(result);
+  } catch (err) {
+    console.error("[ci] Benchmark error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** GET /api/ci/positioning — Competitive positioning scatter map */
+router.get("/ci/positioning", async (req, res) => {
+  try {
+    const { x, y } = req.query;
+    const result = await ciAgent.getPositioningMap(x || "revenueGrowth", y || "operatingMargin");
+    res.json(result);
+  } catch (err) {
+    console.error("[ci] Positioning error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** GET /api/ci/ma — M&A activity tracker */
+router.get("/ci/ma", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 20;
+    const result = await ciAgent.getMAActivity(limit);
+    res.json(result);
+  } catch (err) {
+    console.error("[ci] M&A error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** GET /api/ci/news — Competitor news feed */
+router.get("/ci/news", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 15;
+    const result = await ciAgent.getCompetitorNews(limit);
+    res.json(result);
+  } catch (err) {
+    console.error("[ci] News error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ============================================================
@@ -328,18 +423,176 @@ router.get("/prompts/suggested", async (req, res) => {
 });
 
 // ============================================================
-// Admin (Batch 6)
+// Admin (Batch 6 — FR7.1-7.6)
 // ============================================================
 
+// FR7.6 — Connection admin
 router.get("/admin/config", async (req, res) => {
   try {
-    const dbHealth = await dataLayer.healthCheck();
-    res.json({
-      dataMode: dataLayer.getMode(),
-      database: dbHealth,
-      sqlitePath: config.sqlitePath,
-      databricksHost: config.databricks.serverHostname || "not configured",
-    });
+    const cfg = getConnectionConfig();
+    res.json(cfg);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/admin/config/test", async (req, res) => {
+  try {
+    const overrideConfig = req.body.serverHostname ? req.body : null;
+    const result = await testDatabricksConnection(overrideConfig);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch("/admin/config", async (req, res) => {
+  try {
+    const updated = updateConnectionConfig(req.body);
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// FR7.2 — Org hierarchy
+router.get("/admin/org-tree", async (req, res) => {
+  try {
+    const tree = await getOrgTree();
+    res.json(tree);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// FR7.5 — RBAC
+router.get("/admin/roles", (req, res) => {
+  try {
+    const roles = getRoles();
+    res.json({ roles });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/admin/users", (req, res) => {
+  try {
+    const userList = getUsers();
+    res.json({ users: userList });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/admin/users/:id/role", (req, res) => {
+  try {
+    const { role } = req.body;
+    if (!role) return res.status(400).json({ error: "role is required" });
+    const user = assignRole(req.params.id, role);
+    res.json({ user });
+  } catch (err) {
+    if (err.message.includes("not found") || err.message.includes("Invalid role")) {
+      return res.status(400).json({ error: err.message });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// FR7.4 — Prompt management
+router.get("/admin/prompts", (req, res) => {
+  try {
+    const category = req.query.category || null;
+    const prompts = getPrompts(category);
+    res.json({ prompts });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch("/admin/prompts/:id", (req, res) => {
+  try {
+    const prompt = updatePrompt(req.params.id, req.body);
+    res.json({ prompt });
+  } catch (err) {
+    if (err.message.includes("not found")) {
+      return res.status(404).json({ error: err.message });
+    }
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post("/admin/prompts/:id/toggle", (req, res) => {
+  try {
+    const prompt = togglePrompt(req.params.id);
+    res.json({ prompt });
+  } catch (err) {
+    if (err.message.includes("not found")) {
+      return res.status(404).json({ error: err.message });
+    }
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// FR7.1 — Template management
+router.get("/admin/templates", (req, res) => {
+  try {
+    const templates = getTemplates();
+    res.json({ templates });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/admin/templates", (req, res) => {
+  try {
+    const { name, ...config } = req.body;
+    if (!name) return res.status(400).json({ error: "name is required" });
+    const template = createTemplate(name, config);
+    res.status(201).json({ template });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.patch("/admin/templates/:id", (req, res) => {
+  try {
+    const template = updateTemplate(req.params.id, req.body);
+    res.json({ template });
+  } catch (err) {
+    if (err.message.includes("not found")) {
+      return res.status(404).json({ error: err.message });
+    }
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// FR7.3 — Peer group configuration
+router.get("/admin/peer-groups", (req, res) => {
+  try {
+    const groups = getPeerGroups();
+    res.json({ peerGroups: groups });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch("/admin/peer-groups/:id", (req, res) => {
+  try {
+    const group = updatePeerGroup(req.params.id, req.body);
+    res.json({ peerGroup: group });
+  } catch (err) {
+    if (err.message.includes("not found")) {
+      return res.status(404).json({ error: err.message });
+    }
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// FR1.5 — Ingestion status
+router.get("/admin/ingestion/status", async (req, res) => {
+  try {
+    const status = await getIngestionStatus();
+    res.json(status);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

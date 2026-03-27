@@ -8,8 +8,8 @@
 - **Batch 3: Core Analytics + NL Query** — COMPLETE
 - **Batch 4: Intelligence Layer** — COMPLETE
 - **Batch 5: Job Board + Real-time** — COMPLETE
-- **Batch 6: Admin** — Pending
-- **Batch 7: CI/FMP Module** — Pending
+- **Batch 6: Admin** — COMPLETE
+- **Batch 7: CI/FMP Module** — COMPLETE
 - **Batch 8: Polish + Final Compliance** — Pending
 
 ## Architecture (v2)
@@ -18,9 +18,10 @@
 - **LLM**: Anthropic SDK (`claude-sonnet-4-20250514`)
 - **Data**: Databricks SQL connector + SQLite fallback (better-sqlite3)
 - **Real-time**: WebSocket (ws) — server AND client wired
+- **CI Data**: FMP API with realistic mock fallback
 - **State**: Zustand
 - **Components**: shadcn/ui + class-variance-authority
-- **Fonts**: IBM Plex Sans + JetBrains Mono (Google Fonts via next/font)
+- **Fonts**: IBM Plex Sans + JetBrains Mono
 - **Design system**: OKLCH color tokens, Bloomberg-inspired dark-first
 
 ## Project Structure
@@ -31,14 +32,14 @@ app/
 │   │   ├── page.tsx          # Dashboard (live KPI cards + chart)
 │   │   ├── chat/page.tsx     # NL Query (chat + charts + source attribution)
 │   │   ├── reports/page.tsx  # PES + Variance + Three-Way Comparison
-│   │   ├── ci/page.tsx       # Competitive Intelligence (placeholder)
+│   │   ├── ci/page.tsx       # CI dashboard (7 tabs: Overview, SWOT, Porter's, Benchmark, Positioning, M&A, News)
 │   │   ├── explorer/page.tsx # Data Explorer (entity/account browser)
 │   │   ├── jobs/page.tsx     # Job Board (WebSocket real-time)
-│   │   └── admin/page.tsx    # Admin Panel (placeholder)
+│   │   └── admin/page.tsx    # Admin (6 tabs: Connection, Org, RBAC, Prompts, Templates, Peer Groups)
 │   ├── src/components/
 │   │   ├── layout/           # AppShell, Sidebar, Header, Ticker
 │   │   ├── charts/           # FinAreaChart, FinBarChart, ChartRenderer
-│   │   ├── ui/               # shadcn/ui primitives (to be added)
+│   │   ├── ui/               # shadcn/ui primitives
 │   │   ├── shared/           # KPI cards, badges, formatters
 │   │   └── features/         # Feature-specific components
 │   ├── src/lib/              # utils.ts, format.ts, api.ts
@@ -49,93 +50,90 @@ app/
 │   ├── lib/
 │   │   ├── config.mjs        # SINGLE SOURCE OF TRUTH for config
 │   │   ├── databricks.mjs    # Dual-mode data layer (Databricks + SQLite)
-│   │   ├── routes.mjs        # All API routes
+│   │   ├── routes.mjs        # All API routes (40+ endpoints)
 │   │   ├── schema-context.mjs # 20-table schema for LLM prompts
 │   │   ├── websocket.mjs     # WebSocket server (/ws)
 │   │   ├── job-board.mjs     # Job queue, SLA routing, agent pool
-│   │   └── intelligence.mjs  # Three-way comparison, freshness, recommendations
+│   │   ├── intelligence.mjs  # Three-way comparison, freshness, recommendations
+│   │   ├── admin.mjs         # RBAC, templates, org tree, prompts, peer groups
+│   │   └── fmp-client.mjs    # FMP API client with mock fallback
 │   └── agents/
-│       └── finiq-agent.mjs   # NL query processor, intent classification, PES engine
-├── .env.example              # Credentials template
+│       ├── finiq-agent.mjs   # NL query processor, intent classification, PES engine
+│       └── ci-agent.mjs      # CI analysis: SWOT, Porter's, benchmarking, positioning
+├── .env.example
 ├── .gitignore
 ├── BUILD_PROMPT.md           # Master build spec (80-item compliance matrix)
 └── package.json
 ```
 
-## What's Working (Batches 1-5)
+## What's Working (Batches 1-7)
 
 ### Data Layer (Batch 2)
-- SQLite connected: 173 entities, 36 accounts, 93 products, 56 customers
+- SQLite: 173 entities, 36 accounts, 93 products, 56 customers
 - All queries parameterized (zero SQL injection)
-- Dual-mode: auto-fallback from Databricks to SQLite
-- Dimension queries with normalized column names
-- Data catalog endpoint with row counts
+- Dual-mode with auto-fallback
 
 ### Core Analytics (Batch 3)
-- PES generation: queries 3 views, computes growth for all KPIs
-- Budget variance: Actual vs Replan with account names (not "Unknown")
-- NL query engine: intent classification → route → execute → chart
-- Intents: pes, variance, ranking, trend, product, ci, adhoc
-- 18 suggested prompts with variable resolution ({unit}, {year}, {period})
-- Recharts: FinAreaChart + FinBarChart with OKLCH colors and gradient fills
-- Every analytics response includes a chart
-- Source attribution on every answer (table name, query, row count)
+- PES: 3 views, 6 KPIs, growth calculations, 3 formats
+- Budget variance with proper account names
+- NL query: 7 intents, charts on every response
+- 18 suggested prompts with variable resolution
+- Recharts: AreaChart + BarChart with OKLCH gradients
 
 ### Intelligence Layer (Batch 4)
-- Three-way comparison: Actual vs Replan vs Forecast (mock forecast = 1.03-1.08x actuals)
-- Data freshness monitoring with staleness warnings
-- Rule-based recommendation engine (severity-ranked)
-- Reports page: PES + Variance + Three-Way Comparison tabs
+- Three-way comparison: Actual vs Replan vs Forecast
+- Data freshness monitoring, recommendation engine
 
-### Job Board + Real-time (Batch 5)
-- Full job lifecycle: submitted → queued → assigned → processing → review → completed/failed
-- Priority routing: critical (<2min), high (<10min), medium (<30min), low (<2hr)
-- Agent pool: PES Agent, CI Agent, Forecasting Agent, Ad-Hoc Agent
-- WebSocket server AND client wired (NOT polling)
-- Dev mode: auto-simulates job completion for testing
-- Job detail panel with result, error, SLA deadline, retries
-- Scheduled/recurring job support
+### Job Board (Batch 5)
+- Full lifecycle (7 states), SLA routing, 4 agent types
+- WebSocket (NOT polling), dev mode simulation
 
-### Dashboard
-- Live KPI cards pulling real data from SQLite
-- Bar chart showing YTD vs Periodic growth
-- Quick action links to chat queries
+### Admin Panel (Batch 6)
+- Databricks connection admin with test button
+- Org hierarchy tree with search/filter
+- RBAC: 4 roles (Admin, Analyst, Viewer, API Consumer), 8 demo users
+- Prompt management: edit, toggle, category filter
+- Template management: create, edit, activate/deactivate
+- Peer group configuration: 3 groups (Confectionery, Pet Care, Food)
+- Ingestion status dashboard
 
-### Data Explorer
-- Entity hierarchy browser (173 entities with parent/level)
-- Account structure browser (36 accounts with sign conversion)
-- Data catalog summary cards
+### CI/FMP Module (Batch 7)
+- FMP API client with realistic mock fallback (works without API key)
+- 10 competitors with financial data
+- SWOT analysis (auto-generated from ratios)
+- Porter's Five Forces (HHI-based quantification)
+- Earnings Call Intelligence (sentiment, topics, guidance)
+- Financial Benchmarking (side-by-side charts)
+- Competitive Positioning Map (ScatterChart, selectable axes)
+- M&A Tracker timeline
+- News feed with sentiment tags
 
 ## SQLite Column Name Mapping
-The SQLite schema uses different column names than BUILD_PROMPT.md expected:
-- Entity: `Child_Entity` (not `Entity_Alias`), `Child_Entity_ID` (not `Entity_ID`)
-- Account: `Child_Account` (not `Account_Alias`), `Child_Account_ID` (not `Account_ID`)
-- Views: `Entity` (not `Entity_Alias`), `Account_KPI` (not `Account_Alias`), `Period` (not `Date_ID`)
-- Date: `Year`/`Period`/`Quarter` (not `Fiscal_Year`/`Fiscal_Period`)
-- Replan: `Entity` (not `Entity_Alias`), `Account_KPI`
+- Entity: `Child_Entity` / `Child_Entity_ID` (not Entity_Alias / Entity_ID)
+- Account: `Child_Account` / `Child_Account_ID`
+- Views: `Entity`, `Account_KPI`, `Period`, `YTD_LY`, `YTD_CY`, `Periodic_LY`, `Periodic_CY`
+- Date: `Year` / `Period` / `Quarter`
+- Replan: `Entity`, `Account_KPI`, `Actual_USD_Value`, `Replan_USD_Value`
 
-The data layer normalizes these to consistent output shapes.
-
-## Anti-Patterns to Avoid (carried from Build 1)
+## Anti-Patterns to Avoid
 1. Use `claude-sonnet-4-20250514` — NOT `claude-opus-4-6`
-2. Always use parameterized SQL queries — NEVER interpolate strings
-3. Config keys defined ONCE in config.mjs — reference everywhere
-4. Always JOIN dimension tables for human-readable labels
-5. Wire WebSocket on BOTH server AND client
-6. EVERY analytics response includes a Recharts chart
-7. Use FMP API for real competitor data — no hardcoded/simulated CI
-8. Tailwind + shadcn/ui + OKLCH tokens from day 1
+2. Always parameterized SQL — NEVER interpolate
+3. Config keys in config.mjs only — reference everywhere
+4. Always JOIN dimension tables for readable labels
+5. WebSocket on BOTH server AND client
+6. EVERY analytics response includes a chart
+7. FMP API for real CI data (mock fallback when no key)
+8. OKLCH design tokens from day 1
 
 ## npm Workaround
-System npm is broken (NVM issue). Use this to run npm:
 ```bash
 node "/c/Users/farza/.npm-install/package/bin/npm-cli.js" install
-```
-For Next.js dev:
-```bash
 node node_modules/next/dist/bin/next dev --port 3000
 ```
 
-## Next: Batch 6 — Admin
-- Template management, RBAC, org hierarchy, Databricks connection admin
-- Prompt management, peer group configuration
+## Next: Batch 8 — Polish + Final Compliance
+- WCAG 2.1 AA accessibility
+- Keyboard nav, focus states, screen reader
+- Undo/redo, multi-panel workspace
+- Dynamic component injection, progressive disclosure
+- Run compliance matrix, fix all gaps, target 95+/80
