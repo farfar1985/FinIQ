@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Send, Loader2, Database, ChevronDown, Clock, PanelRightOpen, PanelRightClose, ArrowRight, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import { Send, Loader2, Database, ChevronDown, Clock, PanelRightOpen, PanelRightClose, ArrowRight, Mic, MicOff, Volume2, VolumeX, Briefcase } from "lucide-react";
 import { ChartRenderer } from "@/components/charts/chart-renderer";
 import type { ChatMessage, ChartConfig, Source, SuggestedPrompt } from "@/types";
 
@@ -246,15 +246,28 @@ export default function ChatPage() {
 
       if (data.sessionId) setSessionId(data.sessionId);
 
+      // Detect empty/no-data results
+      const hasData = data.data && Array.isArray(data.data) && data.data.length > 0;
+      const isNoResult = !hasData && (!data.response || data.response.includes("No data found") || data.response.includes("Found 0 rows") || data.response.includes("not configured"));
+      const isEmpty = !hasData && data.response && !isNoResult;
+
+      let content = data.response || "No response.";
+      // Add "assign to agent" suggestion for empty results
+      if (isNoResult) {
+        content = `${content}\n\n---\n**No data available for this query.** Would you like to assign an agent to investigate?`;
+      }
+
       const assistantMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: data.response || "No response.",
+        content,
         data: data.data,
         chartConfig: data.chartConfig as ChartConfig,
         sources: data.sources as Source[],
         timestamp: new Date().toISOString(),
-      };
+        noData: isNoResult,
+        originalQuery: msg,
+      } as ChatMessage & { noData?: boolean; originalQuery?: string };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {
       setMessages((prev) => [
@@ -379,6 +392,39 @@ export default function ChatPage() {
                       <span className="text-[10px] text-muted-foreground">
                         {msg.sources.map((s) => `${s.table} (${s.rowCount} rows)`).join(" · ")}
                       </span>
+                    </div>
+                  )}
+
+                  {/* Suggest assigning to agent when no data found */}
+                  {(msg as ChatMessage & { noData?: boolean; originalQuery?: string }).noData && (
+                    <div className="mt-3 border-t border-border/50 pt-3">
+                      <button
+                        onClick={async () => {
+                          const query = (msg as ChatMessage & { originalQuery?: string }).originalQuery || msg.content.split("\n")[0];
+                          try {
+                            await fetch("/api/jobs", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ query, priority: "high" }),
+                            });
+                            setMessages((prev) => [
+                              ...prev,
+                              {
+                                id: crypto.randomUUID(),
+                                role: "assistant",
+                                content: `Job submitted: "${query}"\n\nAn agent has been assigned to investigate. Check the [Job Board](/jobs) for status and results.`,
+                                timestamp: new Date().toISOString(),
+                              },
+                            ]);
+                          } catch {
+                            // silently fail
+                          }
+                        }}
+                        className="flex items-center gap-2 rounded-md border border-primary/50 bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+                      >
+                        <Briefcase className="h-3 w-3" />
+                        Assign an agent to investigate this
+                      </button>
                     </div>
                   )}
                 </div>
