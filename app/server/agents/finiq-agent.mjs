@@ -21,7 +21,7 @@ const MODEL = "claude-haiku-4-5-20251001";
 // ============================================================
 
 const INTENTS = {
-  pes: { keywords: ["pes", "period end", "summary", "kpi", "organic growth", "mac shape", "a&cp", "ce shape", "controllable", "ncfo", "performance"], description: "Period End Summary report" },
+  pes: { keywords: ["pes", "period end", "summary", "kpi", "organic growth", "mac shape", "a&cp", "ce shape", "controllable", "ncfo", "performance", "working well", "not working", "what's working", "what's not"], description: "Period End Summary report" },
   variance: { keywords: ["variance", "budget", "replan", "actual vs", "favorable", "unfavorable"], description: "Budget variance analysis" },
   product: { keywords: ["product", "brand", "segment", "item", "category"], description: "Product/brand analysis" },
   trend: { keywords: ["trend", "over time", "history", "compare period", "year over year", "yoy", "growth"], description: "Trend/time series analysis" },
@@ -573,7 +573,7 @@ async function processAdHocWithLLM(message, entity) {
     };
   } catch (err) {
     return {
-      response: `Error processing query: ${err.message}`,
+      response: `I couldn't process that query automatically. Try rephrasing, or use one of these:\n\n- "Show organic growth for Mars Inc"\n- "Budget variance for Pet Care"\n- "Compare Nestle vs Mondelez"\n- "What's working well for Mars Inc?"\n\n_Technical detail: ${err.message}_`,
       data: null,
       chartConfig: null,
       sources: [],
