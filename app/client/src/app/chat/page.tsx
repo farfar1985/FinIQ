@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Send, Loader2, Database, ChevronDown, Clock, PanelRightOpen, PanelRightClose, ArrowRight } from "lucide-react";
+import { Send, Loader2, Database, ChevronDown, Clock, PanelRightOpen, PanelRightClose, ArrowRight, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import { ChartRenderer } from "@/components/charts/chart-renderer";
 import type { ChatMessage, ChartConfig, Source, SuggestedPrompt } from "@/types";
 
@@ -38,6 +38,12 @@ export default function ChatPage() {
   const [autoCompleteIndex, setAutoCompleteIndex] = useState(-1);
   // FR8.10: Split view state
   const [splitView, setSplitView] = useState(false);
+  // Voice input state
+  const [isListening, setIsListening] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  // Voice output state
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -83,6 +89,129 @@ export default function ChatPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // ============================================================
+  // Voice Input — Speech-to-Text (webkitSpeechRecognition)
+  // ============================================================
+
+  function toggleListening() {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
+      setVoiceError("Speech recognition is not supported in this browser.");
+      setTimeout(() => setVoiceError(null), 4000);
+      return;
+    }
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.maxAlternatives = 1;
+    recognitionRef.current = recognition;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setVoiceError(null);
+    };
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      setInput(transcript);
+
+      // If the result is final, auto-send
+      if (event.results[event.results.length - 1].isFinal) {
+        setIsListening(false);
+        if (transcript.trim()) {
+          // Small delay to let React render the input, then send
+          setTimeout(() => sendMessage(transcript.trim()), 100);
+        }
+      }
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      setIsListening(false);
+      if (event.error === "not-allowed") {
+        setVoiceError("Microphone permission denied. Please allow access.");
+      } else if (event.error === "no-speech") {
+        setVoiceError("No speech detected. Try again.");
+      } else {
+        setVoiceError(`Voice error: ${event.error}`);
+      }
+      setTimeout(() => setVoiceError(null), 4000);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      setVoiceError("Could not start speech recognition.");
+      setTimeout(() => setVoiceError(null), 4000);
+    }
+  }
+
+  // Cleanup recognition on unmount
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.abort();
+    };
+  }, []);
+
+  // ============================================================
+  // Voice Output — Text-to-Speech (speechSynthesis)
+  // ============================================================
+
+  function speakMessage(msgId: string, text: string) {
+    if (!window.speechSynthesis) return;
+
+    // If already speaking this message, stop
+    if (speakingMsgId === msgId) {
+      window.speechSynthesis.cancel();
+      setSpeakingMsgId(null);
+      return;
+    }
+
+    // Cancel any other ongoing speech
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-US";
+    utterance.rate = 0.95;
+    utterance.pitch = 0.9;
+
+    // Try to pick a professional voice
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find(
+      (v) => v.lang.startsWith("en") && v.name.toLowerCase().includes("google")
+    ) || voices.find(
+      (v) => v.lang.startsWith("en-US") && !v.name.toLowerCase().includes("novelty")
+    ) || voices.find((v) => v.lang.startsWith("en"));
+    if (preferred) utterance.voice = preferred;
+
+    utterance.onstart = () => setSpeakingMsgId(msgId);
+    utterance.onend = () => setSpeakingMsgId(null);
+    utterance.onerror = () => setSpeakingMsgId(null);
+
+    window.speechSynthesis.speak(utterance);
+  }
+
+  // Cleanup speech on unmount
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis?.cancel();
+    };
+  }, []);
 
   async function sendMessage(text?: string) {
     const msg = text || input.trim();
@@ -208,8 +337,28 @@ export default function ChatPage() {
                       : "bg-secondary"
                   }`}
                 >
-                  {/* Message content */}
-                  <div className="whitespace-pre-wrap text-sm">{msg.content}</div>
+                  {/* Message content + voice output */}
+                  <div className="flex items-start gap-2">
+                    <div className="whitespace-pre-wrap text-sm flex-1">{msg.content}</div>
+                    {msg.role === "assistant" && window.speechSynthesis && (
+                      <button
+                        onClick={() => speakMessage(msg.id, msg.content)}
+                        className={`mt-0.5 shrink-0 rounded p-1 transition-colors ${
+                          speakingMsgId === msg.id
+                            ? "text-primary bg-primary/10"
+                            : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                        }`}
+                        title={speakingMsgId === msg.id ? "Stop reading" : "Read aloud"}
+                        aria-label={speakingMsgId === msg.id ? "Stop reading message" : "Read message aloud"}
+                      >
+                        {speakingMsgId === msg.id ? (
+                          <VolumeX className="h-3.5 w-3.5" />
+                        ) : (
+                          <Volume2 className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    )}
+                  </div>
 
                   {/* Chart — only show inline if NOT in split view */}
                   {!splitView && msg.chartConfig && (
@@ -301,6 +450,13 @@ export default function ChatPage() {
             </div>
           )}
 
+          {/* Voice error toast */}
+          {voiceError && (
+            <div className="mt-2 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {voiceError}
+            </div>
+          )}
+
           {/* Input bar */}
           <div className="relative mt-2 flex gap-2">
             <div className="relative flex-1">
@@ -320,13 +476,15 @@ export default function ChatPage() {
                   // Delay to allow click on autocomplete item
                   setTimeout(() => setShowAutoComplete(false), 200);
                 }}
-                placeholder="Ask a financial question... (Enter to send)"
+                placeholder={isListening ? "Listening..." : "Ask a financial question... (Enter to send)"}
                 aria-label="Ask a financial question"
                 aria-describedby="chat-keyboard-hint"
                 aria-autocomplete="list"
                 aria-controls={showAutoComplete && autoCompleteSuggestions.length > 0 ? "autocomplete-list" : undefined}
                 aria-activedescendant={autoCompleteIndex >= 0 ? `autocomplete-item-${autoCompleteIndex}` : undefined}
-                className="w-full rounded-md border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className={`w-full rounded-md border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary ${
+                  isListening ? "border-red-500 ring-1 ring-red-500/50" : "border-border focus:border-primary"
+                }`}
                 onKeyDown={(e) => {
                   if (showAutoComplete && autoCompleteSuggestions.length > 0) {
                     if (e.key === "ArrowDown") {
@@ -394,6 +552,22 @@ export default function ChatPage() {
                 </ul>
               )}
             </div>
+
+            {/* Mic button — Voice Input */}
+            <button
+              onClick={toggleListening}
+              disabled={loading}
+              aria-label={isListening ? "Stop listening" : "Start voice input"}
+              className={`flex items-center justify-center rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
+                isListening
+                  ? "bg-red-500/20 text-red-400 border border-red-500/50 animate-pulse"
+                  : "border border-border text-muted-foreground hover:text-foreground hover:bg-accent"
+              } disabled:opacity-50`}
+              title={isListening ? "Stop listening" : "Voice input"}
+            >
+              {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+            </button>
+
             <button
               onClick={() => sendMessage()}
               disabled={!input.trim() || loading}

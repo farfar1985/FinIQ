@@ -105,6 +105,81 @@ function makeBarChart(data, xKey, yKeys, title) {
 }
 
 // ============================================================
+// Trend Analysis — taglines for KPI direction over recent periods
+// ============================================================
+
+/**
+ * Analyze the last 3-5 periods of a KPI to detect trend direction.
+ * @param {Array} rows - All rows for a single KPI, each with Period, Periodic_CY, Periodic_LY
+ * @returns {{ direction: string, periods: number, tagline: string }}
+ */
+function analyzeTrend(rows) {
+  // Sort ascending by period (oldest first)
+  const sorted = [...rows]
+    .filter((r) => r.Period != null)
+    .sort((a, b) => (a.Period || "").localeCompare(b.Period || ""));
+
+  // Take the last 3-5 periods
+  const recent = sorted.slice(-5);
+  if (recent.length < 2) {
+    return { direction: "stable", periods: recent.length, tagline: "Insufficient data for trend analysis" };
+  }
+
+  // Compute periodic growth for each period
+  const growths = recent.map((r) => {
+    if (r.Periodic_LY === 0) return 0;
+    return ((r.Periodic_CY - r.Periodic_LY) / Math.abs(r.Periodic_LY)) * 100;
+  });
+
+  // Count consecutive increases and decreases from the end
+  let consecutiveUp = 0;
+  let consecutiveDown = 0;
+
+  for (let i = growths.length - 1; i >= 1; i--) {
+    if (growths[i] > growths[i - 1]) {
+      if (consecutiveDown === 0) consecutiveUp++;
+      else break;
+    } else if (growths[i] < growths[i - 1]) {
+      if (consecutiveUp === 0) consecutiveDown++;
+      else break;
+    } else {
+      break;
+    }
+  }
+
+  // Check for alternating pattern (volatile)
+  let alternations = 0;
+  for (let i = 1; i < growths.length; i++) {
+    if ((growths[i] > growths[i - 1]) !== (growths[i - 1] > (i >= 2 ? growths[i - 2] : growths[i - 1]))) {
+      alternations++;
+    }
+  }
+
+  // Check stability: all growths within 1% of each other
+  const maxGrowth = Math.max(...growths);
+  const minGrowth = Math.min(...growths);
+  const isStable = (maxGrowth - minGrowth) < 1;
+
+  const periodsAnalyzed = recent.length;
+
+  if (isStable) {
+    return { direction: "stable", periods: periodsAnalyzed, tagline: `Stable across ${periodsAnalyzed} periods (< 1% variation)` };
+  }
+  if (consecutiveUp >= 2) {
+    return { direction: "improving", periods: consecutiveUp + 1, tagline: `Improving for ${consecutiveUp + 1} consecutive periods` };
+  }
+  if (consecutiveDown >= 2) {
+    return { direction: "declining", periods: consecutiveDown + 1, tagline: `Declining for ${consecutiveDown + 1} consecutive periods` };
+  }
+  if (alternations >= 2) {
+    return { direction: "volatile", periods: periodsAnalyzed, tagline: `Volatile over ${periodsAnalyzed} periods (alternating direction)` };
+  }
+
+  // Default: mixed
+  return { direction: "stable", periods: periodsAnalyzed, tagline: `Relatively stable over ${periodsAnalyzed} periods` };
+}
+
+// ============================================================
 // PES Engine (FR2.1)
 // ============================================================
 
@@ -141,6 +216,9 @@ async function generatePES(entity, format = "summary") {
       ? ((latest.Periodic_CY - latest.Periodic_LY) / Math.abs(latest.Periodic_LY)) * 100
       : 0;
 
+    // Analyze trend across recent periods
+    const trend = analyzeTrend(rows);
+
     kpiResults.push({
       kpi,
       period: latest.Period,
@@ -150,6 +228,7 @@ async function generatePES(entity, format = "summary") {
       periodic_cy: latest.Periodic_CY,
       periodic_ly: latest.Periodic_LY,
       periodic_growth: Math.round(periodicGrowth * 100) / 100,
+      trend,
     });
   }
 
@@ -171,7 +250,7 @@ async function generatePES(entity, format = "summary") {
         max_tokens: 1024,
         messages: [{
           role: "user",
-          content: `You are a financial analyst for Mars, Incorporated. Generate a ${format} for ${entity} based on this KPI data:\n\n${JSON.stringify(kpiResults, null, 2)}\n\nFormat: ${format === "www" ? "What's Working Well" : format === "wnww" ? "What's Not Working Well" : "Executive Summary"}\n\nBe concise. Use specific numbers. Never say "replace" or "fragmented".`,
+          content: `You are a financial analyst for Mars, Incorporated. Generate a ${format} for ${entity} based on this KPI data:\n\n${JSON.stringify(kpiResults, null, 2)}\n\nEach KPI includes a "trend" object with direction (improving/declining/volatile/stable) and a tagline. Incorporate these trend insights into your narrative — mention whether KPIs are improving, declining, or volatile.\n\nFormat: ${format === "www" ? "What's Working Well" : format === "wnww" ? "What's Not Working Well" : "Executive Summary"}\n\nBe concise. Use specific numbers. Never say "replace" or "fragmented".`,
         }],
       });
       narrative = msg.content[0]?.text || "";
@@ -196,13 +275,29 @@ async function generatePES(entity, format = "summary") {
 
 function formatKPITable(entity, kpis, format) {
   let text = `## ${entity} — Period End Summary\n\n`;
-  text += "| KPI | YTD CY | YTD LY | YTD Growth | Periodic CY | Periodic LY | Periodic Growth |\n";
-  text += "|-----|--------|--------|------------|-------------|-------------|----------------|\n";
+  text += "| KPI | YTD CY | YTD LY | YTD Growth | Periodic CY | Periodic LY | Periodic Growth | Trend |\n";
+  text += "|-----|--------|--------|------------|-------------|-------------|----------------|-------|\n";
   for (const k of kpis) {
     const ytdSign = k.ytd_growth >= 0 ? "+" : "";
     const pSign = k.periodic_growth >= 0 ? "+" : "";
-    text += `| ${k.kpi} | ${k.ytd_cy?.toLocaleString()} | ${k.ytd_ly?.toLocaleString()} | ${ytdSign}${k.ytd_growth}% | ${k.periodic_cy?.toLocaleString()} | ${k.periodic_ly?.toLocaleString()} | ${pSign}${k.periodic_growth}% |\n`;
+    const trendIcon = k.trend?.direction === "improving" ? "^" : k.trend?.direction === "declining" ? "v" : k.trend?.direction === "volatile" ? "~" : "-";
+    text += `| ${k.kpi} | ${k.ytd_cy?.toLocaleString()} | ${k.ytd_ly?.toLocaleString()} | ${ytdSign}${k.ytd_growth}% | ${k.periodic_cy?.toLocaleString()} | ${k.periodic_ly?.toLocaleString()} | ${pSign}${k.periodic_growth}% | ${trendIcon} ${k.trend?.tagline || ""} |\n`;
   }
+
+  // Add trend summary section
+  const improving = kpis.filter((k) => k.trend?.direction === "improving");
+  const declining = kpis.filter((k) => k.trend?.direction === "declining");
+
+  if (improving.length > 0 || declining.length > 0) {
+    text += "\n### Trend Summary\n\n";
+    if (improving.length > 0) {
+      text += `**Improving:** ${improving.map((k) => `${k.kpi} (${k.trend.tagline})`).join(", ")}\n\n`;
+    }
+    if (declining.length > 0) {
+      text += `**Declining:** ${declining.map((k) => `${k.kpi} (${k.trend.tagline})`).join(", ")}\n\n`;
+    }
+  }
+
   return text;
 }
 

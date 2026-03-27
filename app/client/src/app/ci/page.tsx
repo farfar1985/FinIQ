@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
 import { formatCompact, formatChange, getChangeColor } from "@/lib/format";
-import { Download } from "lucide-react";
+import { Download, Upload, Loader2, FileText } from "lucide-react";
+import * as XLSX from "xlsx";
 import { FinBarChart } from "@/components/charts/bar-chart";
 import {
   ScatterChart,
@@ -132,6 +133,7 @@ const TABS = [
   { id: "positioning", label: "Positioning" },
   { id: "ma", label: "M&A" },
   { id: "news", label: "News" },
+  { id: "upload", label: "Upload" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -178,6 +180,7 @@ export default function CIPage() {
         {activeTab === "positioning" && <PositioningTab />}
         {activeTab === "ma" && <MATab />}
         {activeTab === "news" && <NewsTab />}
+        {activeTab === "upload" && <UploadTab />}
       </div>
     </div>
   );
@@ -543,6 +546,36 @@ function BenchmarkTab() {
     URL.revokeObjectURL(url);
   }
 
+  function exportBenchmarkXlsx() {
+    const rows = data!.competitors.map((c) => ({
+      Company: c.company,
+      Ticker: c.ticker,
+      Revenue: c.revenue,
+      "Revenue Growth %": c.revenueGrowth,
+      "Gross Margin %": c.grossMargin,
+      "Op Margin %": c.operatingMargin,
+      "Net Margin %": c.netMargin,
+      "ROE %": c.roe,
+      "D/E": c.debtToEquity,
+      "P/E": c.peRatio ?? "",
+      "EV/EBITDA": c.evToEbitda ?? "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const headers = Object.keys(rows[0]);
+    ws["!cols"] = headers.map((h) => {
+      let maxWidth = h.length;
+      for (const row of rows) {
+        const val = (row as Record<string, unknown>)[h];
+        const len = val == null ? 0 : String(val).length;
+        if (len > maxWidth) maxWidth = len;
+      }
+      return { wch: Math.min(maxWidth + 2, 40) };
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "CI Benchmarking");
+    XLSX.writeFile(wb, `finiq_benchmark_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -552,13 +585,22 @@ function BenchmarkTab() {
           {data.averages.operatingMargin?.toFixed(1)}%, Growth{" "}
           {data.averages.revenueGrowth?.toFixed(1)}%
         </p>
-        <button
-          onClick={exportBenchmarkCsv}
-          className="flex items-center gap-1.5 rounded-md border border-border bg-secondary px-3 py-1.5 text-[10px] font-medium text-foreground hover:bg-accent"
-        >
-          <Download className="h-3 w-3" />
-          Export CSV
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportBenchmarkCsv}
+            className="flex items-center gap-1.5 rounded-md border border-border bg-secondary px-3 py-1.5 text-[10px] font-medium text-foreground hover:bg-accent"
+          >
+            <Download className="h-3 w-3" />
+            Export CSV
+          </button>
+          <button
+            onClick={exportBenchmarkXlsx}
+            className="flex items-center gap-1.5 rounded-md border border-border bg-secondary px-3 py-1.5 text-[10px] font-medium text-foreground hover:bg-accent"
+          >
+            <Download className="h-3 w-3" />
+            Export XLSX
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -918,6 +960,253 @@ function NewsTab() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Upload Tab — PDF upload for CI analysis
+// ══════════════════════════════════════════════════════════════════
+
+interface UploadResult {
+  filename: string;
+  pageCount: number;
+  wordCount: number;
+  detectedTerms: string[];
+  textPreview: string;
+  extractedText: string;
+  summary: string | null;
+}
+
+function UploadTab() {
+  const [file, setFile] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState<UploadResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [showFullText, setShowFullText] = useState(false);
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const dropped = e.dataTransfer.files[0];
+    if (dropped && dropped.type === "application/pdf") {
+      setFile(dropped);
+      setError(null);
+    } else {
+      setError("Please drop a PDF file.");
+    }
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = e.target.files?.[0];
+    if (selected) {
+      setFile(selected);
+      setError(null);
+    }
+  }
+
+  async function handleUpload() {
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/ci/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || `Upload failed: ${res.status}`);
+      }
+
+      const data: UploadResult = await res.json();
+      setResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function resetUpload() {
+    setFile(null);
+    setResult(null);
+    setError(null);
+    setShowFullText(false);
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        Upload competitor earnings PDFs for automated text extraction and analysis.
+      </p>
+
+      {/* Drop zone */}
+      {!result && (
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors ${
+            dragOver
+              ? "border-primary bg-primary/5"
+              : "border-border hover:border-muted-foreground/50"
+          }`}
+        >
+          <Upload className="mb-3 h-8 w-8 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            Drag & drop a PDF file here, or{" "}
+            <label className="cursor-pointer text-primary hover:underline">
+              browse
+              <input
+                type="file"
+                accept=".pdf"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+            </label>
+          </p>
+          <p className="mt-1 text-[10px] text-muted-foreground/70">
+            Supports earnings reports, press releases, and financial filings (PDF, max 20 MB)
+          </p>
+        </div>
+      )}
+
+      {/* Selected file + upload button */}
+      {file && !result && (
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
+          <FileText className="h-5 w-5 text-primary" />
+          <div className="flex-1">
+            <p className="text-xs font-medium">{file.name}</p>
+            <p className="text-[10px] text-muted-foreground">
+              {(file.size / 1024).toFixed(0)} KB
+            </p>
+          </div>
+          <button
+            onClick={() => { setFile(null); setError(null); }}
+            className="text-[10px] text-muted-foreground hover:text-foreground"
+          >
+            Remove
+          </button>
+          <button
+            onClick={handleUpload}
+            disabled={uploading}
+            className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {uploading ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Analyzing...
+              </>
+            ) : (
+              <>
+                <Upload className="h-3 w-3" />
+                Upload & Analyze
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div className="rounded-md border border-red-800/40 bg-red-950/30 px-4 py-2 text-xs text-red-400">
+          {error}
+        </div>
+      )}
+
+      {/* Results */}
+      {result && (
+        <div className="space-y-4">
+          {/* Metadata cards */}
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium">Analysis: {result.filename}</h2>
+            <button
+              onClick={resetUpload}
+              className="rounded-md border border-border bg-secondary px-3 py-1.5 text-[10px] font-medium text-foreground hover:bg-accent"
+            >
+              Upload Another
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <div className="rounded border border-border bg-card px-3 py-1.5">
+              <div className="text-[10px] text-muted-foreground">Pages</div>
+              <div className="text-sm font-mono font-medium">{result.pageCount}</div>
+            </div>
+            <div className="rounded border border-border bg-card px-3 py-1.5">
+              <div className="text-[10px] text-muted-foreground">Words</div>
+              <div className="text-sm font-mono font-medium">{result.wordCount.toLocaleString()}</div>
+            </div>
+            <div className="rounded border border-border bg-card px-3 py-1.5">
+              <div className="text-[10px] text-muted-foreground">Financial Terms</div>
+              <div className="text-sm font-mono font-medium">{result.detectedTerms.length}</div>
+            </div>
+          </div>
+
+          {/* Detected terms */}
+          {result.detectedTerms.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+                Detected Financial Terms
+              </h3>
+              <div className="flex flex-wrap gap-1.5">
+                {result.detectedTerms.map((term) => (
+                  <span
+                    key={term}
+                    className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] text-primary"
+                  >
+                    {term}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* AI Summary */}
+          {result.summary && (
+            <div className="rounded-lg border border-border bg-card p-4">
+              <h3 className="mb-3 flex items-center gap-2 text-xs font-medium">
+                <span className="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] text-primary">AI</span>
+                Themed Summary
+              </h3>
+              <div className="prose prose-invert prose-sm max-w-none text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                {result.summary}
+              </div>
+            </div>
+          )}
+
+          {!result.summary && (
+            <div className="rounded-md border border-amber-800/30 bg-amber-950/20 px-4 py-2 text-xs text-amber-400">
+              No Anthropic API key configured. Showing extracted text only (no AI summary).
+            </div>
+          )}
+
+          {/* Extracted text preview */}
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-medium">Extracted Text</h3>
+              <button
+                onClick={() => setShowFullText(!showFullText)}
+                className="text-[10px] text-primary hover:underline"
+              >
+                {showFullText ? "Show preview" : "Show full text"}
+              </button>
+            </div>
+            <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-[11px] leading-relaxed text-muted-foreground font-mono">
+              {showFullText ? result.extractedText : result.textPreview}
+              {!showFullText && result.extractedText.length > 2000 && "..."}
+            </pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

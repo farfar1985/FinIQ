@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { FileBarChart, Loader2, Download, ChevronDown, Settings2 } from "lucide-react";
 import { FinBarChart } from "@/components/charts/bar-chart";
+import * as XLSX from "xlsx";
 
 interface Entity {
   Entity_ID: string;
@@ -122,15 +123,38 @@ export default function ReportsPage() {
     return [];
   }
 
-  function handleExport(format: "csv" | "json") {
+  const SHEET_NAMES: Record<ReportType, string> = {
+    pes: "PES Report",
+    variance: "Budget Variance",
+    comparison: "Three-Way Comparison",
+    custom: "Custom Report",
+  };
+
+  function handleExport(format: "csv" | "json" | "xlsx") {
     const data = getCurrentData();
     if (data.length === 0) return;
     const ts = new Date().toISOString().slice(0, 10);
     const base = `finiq_${reportType}_${selectedEntity.replace(/\s+/g, "_")}_${ts}`;
     if (format === "csv") {
       downloadFile(toCsv(data), `${base}.csv`, "text/csv");
-    } else {
+    } else if (format === "json") {
       downloadFile(JSON.stringify(data, null, 2), `${base}.json`, "application/json");
+    } else if (format === "xlsx") {
+      const ws = XLSX.utils.json_to_sheet(data);
+      // Auto-column-width based on header + data content
+      const headers = Object.keys(data[0]);
+      ws["!cols"] = headers.map((h) => {
+        let maxWidth = h.length;
+        for (const row of data) {
+          const val = row[h];
+          const len = val == null ? 0 : String(val).length;
+          if (len > maxWidth) maxWidth = len;
+        }
+        return { wch: Math.min(maxWidth + 2, 40) };
+      });
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, SHEET_NAMES[reportType] || "Data");
+      XLSX.writeFile(wb, `${base}.xlsx`);
     }
     setExportOpen(false);
   }
@@ -256,6 +280,9 @@ export default function ReportsPage() {
               </button>
               <button onClick={() => handleExport("json")} className="block w-full px-3 py-1.5 text-left text-xs hover:bg-accent">
                 Export JSON
+              </button>
+              <button onClick={() => handleExport("xlsx")} className="block w-full px-3 py-1.5 text-left text-xs hover:bg-accent">
+                Export XLSX
               </button>
             </div>
           )}

@@ -3,8 +3,11 @@
  */
 
 import { Router } from "express";
+import multer from "multer";
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import config from "./config.mjs";
 import dataLayer from "./databricks.mjs";
+import cache from "./cache.mjs";
 import jobBoard from "./job-board.mjs";
 import { getStats as getWsStats } from "./websocket.mjs";
 import { processQuery, resolveVariables, SUGGESTED_PROMPTS } from "../agents/finiq-agent.mjs";
@@ -59,8 +62,13 @@ router.get("/health", async (req, res) => {
 
 router.get("/entities", async (req, res) => {
   try {
+    const cached = cache.get("entities");
+    if (cached) return res.json(cached);
+
     const entities = await dataLayer.getEntities();
-    res.json({ entities });
+    const result = { entities };
+    cache.set("entities", result, 600_000); // 10 min TTL
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -127,12 +135,18 @@ router.get("/dates", async (req, res) => {
 router.get("/reports/pes/:entity", async (req, res) => {
   try {
     const entity = req.params.entity;
+    const cacheKey = `pes:${entity}`;
+    const cached = cache.get(cacheKey);
+    if (cached) return res.json(cached);
+
     const [pl, brand, ncfo] = await Promise.all([
       dataLayer.getPLByEntity(entity),
       dataLayer.getPLByBrandProduct(entity),
       dataLayer.getNCFOByEntity(entity),
     ]);
-    res.json({ entity, pl, brand, ncfo });
+    const result = { entity, pl, brand, ncfo };
+    cache.set(cacheKey, result, 300_000); // 5 min TTL
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -142,6 +156,10 @@ router.get("/reports/pes/:entity", async (req, res) => {
 router.get("/reports/variance/:entity", async (req, res) => {
   try {
     const entity = req.params.entity;
+    const cacheKey = `variance:${entity}`;
+    const cached = cache.get(cacheKey);
+    if (cached) return res.json(cached);
+
     const rows = await dataLayer.getVariance(entity);
     const variance = rows.map((r) => ({
       entity: r.Entity,
@@ -152,7 +170,9 @@ router.get("/reports/variance/:entity", async (req, res) => {
       variance_pct: r.Variance_Pct,
       favorable: r.Variance >= 0,
     }));
-    res.json({ entity, variance });
+    const result = { entity, variance };
+    cache.set(cacheKey, result, 300_000); // 5 min TTL
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -424,6 +444,102 @@ router.get("/ci/news", async (req, res) => {
 });
 
 // ============================================================
+// CI — PDF Upload & Analysis
+// ============================================================
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB max
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === "application/pdf") {
+      cb(null, true);
+    } else {
+      cb(new Error("Only PDF files are accepted"));
+    }
+  },
+});
+
+/** POST /api/ci/upload — Upload a PDF for CI analysis */
+router.post("/ci/upload", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No PDF file provided" });
+    }
+
+    // Extract text from PDF
+    const pdfData = await pdfParse(req.file.buffer);
+    const text = pdfData.text || "";
+    const pageCount = pdfData.numpages || 0;
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
+
+    // Detect key financial terms
+    const financialTerms = [
+      "revenue", "earnings", "EBITDA", "margin", "profit", "loss",
+      "operating income", "net income", "cash flow", "dividend",
+      "organic growth", "volume", "price", "mix", "market share",
+      "guidance", "outlook", "forecast", "acquisition", "restructuring",
+      "cost savings", "inflation", "FX", "currency", "debt", "leverage",
+    ];
+    const detectedTerms = financialTerms.filter((term) =>
+      text.toLowerCase().includes(term.toLowerCase())
+    );
+
+    const result = {
+      filename: req.file.originalname,
+      pageCount,
+      wordCount,
+      detectedTerms,
+      textPreview: text.slice(0, 2000),
+      extractedText: text,
+      summary: null,
+    };
+
+    // If Anthropic API key is available, generate a themed summary
+    if (config.anthropicApiKey) {
+      try {
+        const { default: Anthropic } = await import("@anthropic-ai/sdk");
+        const client = new Anthropic({ apiKey: config.anthropicApiKey });
+
+        const message = await client.messages.create({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2000,
+          messages: [
+            {
+              role: "user",
+              content: `You are a financial analyst at Mars, Incorporated. Analyze the following text extracted from a competitor earnings document and provide a structured summary with these themes:
+1. **Organic Growth** — Revenue growth, volume, price, mix
+2. **Margins** — Gross, operating, net margin trends
+3. **Projections** — Forward guidance, outlook
+4. **Consumer Trends** — Consumer behavior, market dynamics
+5. **Key Risks** — Challenges, headwinds
+
+Keep each section to 2-3 bullet points. Be concise and data-driven.
+
+Document text (first 8000 chars):
+${text.slice(0, 8000)}`,
+            },
+          ],
+        });
+
+        const summaryText = message.content[0]?.type === "text" ? message.content[0].text : null;
+        result.summary = summaryText;
+      } catch (llmErr) {
+        console.error("[ci] LLM summary error:", llmErr.message);
+        // Continue without summary — return extracted text only
+      }
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error("[ci] Upload error:", err.message);
+    if (err.message === "Only PDF files are accepted") {
+      return res.status(400).json({ error: err.message });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
 // Suggested prompts (Batch 3 — placeholder)
 // ============================================================
 
@@ -621,6 +737,21 @@ router.get("/admin/ingestion/status", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ============================================================
+// Cache monitoring
+// ============================================================
+
+/** GET /api/cache/stats — Cache hit/miss statistics */
+router.get("/cache/stats", (req, res) => {
+  res.json(cache.stats());
+});
+
+/** POST /api/cache/clear — Clear all cached data (admin only) */
+router.post("/cache/clear", requireRole("admin"), (req, res) => {
+  cache.clear();
+  res.json({ message: "Cache cleared", stats: cache.stats() });
 });
 
 // ============================================================
