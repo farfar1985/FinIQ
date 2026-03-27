@@ -38,6 +38,11 @@ export async function processQuery(query, ctx) {
     console.log('🧠 Using Claude for intent classification and SQL generation...');
     const analysisResult = await analyzeQueryWithLLM(query);
 
+    if (!analysisResult) {
+      console.warn('⚠️  LLM returned null, falling back');
+      return fallbackProcessQuery(query);
+    }
+
     console.log(`📊 Intent: ${analysisResult.intent}`);
     console.log(`🏢 Entity: ${analysisResult.entity}`);
     console.log(`📅 Period: ${analysisResult.period || 'all periods'}`);
@@ -116,13 +121,19 @@ IMPORTANT:
 
 Return ONLY valid JSON, no other text.`;
 
-  const message = await anthropic.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
-    max_tokens: 2000,
-    messages: [
-      { role: 'user', content: prompt }
-    ],
-  });
+  let message;
+  try {
+    message = await anthropic.messages.create({
+      model: 'claude-opus-4-6',
+      max_tokens: 2000,
+      messages: [
+        { role: 'user', content: prompt }
+      ],
+    });
+  } catch (apiError) {
+    console.warn('⚠️  LLM API call failed, falling back to keyword mode:', apiError.message);
+    return null;
+  }
 
   const responseText = message.content[0].text.trim();
 
@@ -171,13 +182,19 @@ Generate a concise 1-2 sentence executive summary focusing on:
 Use professional financial language. Do NOT use words like "replace" or "fragmented".
 Return ONLY the summary text, no JSON or formatting.`;
 
-  const message = await anthropic.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
-    max_tokens: 500,
-    messages: [
-      { role: 'user', content: prompt }
-    ],
-  });
+  let message;
+  try {
+    message = await anthropic.messages.create({
+      model: 'claude-opus-4-6',
+      max_tokens: 500,
+      messages: [
+        { role: 'user', content: prompt }
+      ],
+    });
+  } catch (apiError) {
+    console.warn('⚠️  LLM summarization failed:', apiError.message);
+    return null;
+  }
 
   return message.content[0].text.trim();
 }
