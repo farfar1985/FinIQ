@@ -417,7 +417,7 @@ const matrix = [
     id: "T6", name: "LLM calls use correct model name",
     check: () => {
       const agent = readFileSync(resolve(ROOT, "server/agents/finiq-agent.mjs"), "utf-8");
-      return agent.includes("claude-sonnet-4-20250514") && !agent.includes("claude-opus-4-6");
+      return (agent.includes("claude-haiku-4-5-20251001") || agent.includes("claude-sonnet-4-20250514")) && !agent.includes("claude-opus-4-6");
     },
   },
   {

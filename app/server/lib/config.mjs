@@ -6,8 +6,14 @@
 import { config as dotenvConfig } from "dotenv";
 import { resolve } from "path";
 
-// Load .env from app root
-dotenvConfig({ path: resolve(import.meta.dirname, "../../.env") });
+// Load .env from app root (try both possible locations)
+import { existsSync } from "fs";
+const envPaths = [
+  resolve(import.meta.dirname, "../.env"),    // app/.env (when run from server/)
+  resolve(import.meta.dirname, "../../.env"),  // project root .env
+];
+const envPath = envPaths.find(p => existsSync(p));
+if (envPath) dotenvConfig({ path: envPath, override: true });
 
 const config = {
   // Server
