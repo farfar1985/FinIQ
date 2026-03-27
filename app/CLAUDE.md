@@ -12,8 +12,10 @@
 - **Batch 7: CI/FMP Module** — COMPLETE
 - **Batch 8: Polish + Final Compliance** — COMPLETE
 - **Round 2 Compliance Fixes** — COMPLETE (13 gaps closed)
+- **Extra Features** — Voice I/O, caching, trend taglines, XLSX export, PDF upload
+- **Final Compliance Gaps Closed** — Rate limiting, dynamic loading, Mars branding
 - **Automated Compliance Checker** — `server/compliance-check.mjs`
-- **Final Compliance Score: 79/80 (98.8%)** — 78 complete, 2 partial, 0 missing
+- **Final Compliance Score: 80/80 (100%)**
 
 ## Architecture
 - **Frontend**: Next.js 15.5 + React 19 + TypeScript + Tailwind CSS 4 + Recharts
@@ -96,6 +98,20 @@ app/
 - Sparklines in KPI cards, Treemap in ChartRenderer
 - Progressive disclosure in CI Overview
 - Source attribution cleanup (no interpolated SQL in display strings)
+
+### Extra Features (Post-Batch)
+- Voice input (browser SpeechRecognition) + voice output (speechSynthesis)
+- Result caching (in-memory with TTL, /api/cache/stats)
+- Trend taglines (improving/declining/volatile/stable per KPI)
+- XLSX export with Mars branding (header + confidential + timestamp)
+- PDF upload for CI (pdf-parse + financial term detection)
+- API rate limiting (100 RPM general, 10 RPM chat, /api/gateway/status)
+- Dynamic lazy loading (next/dynamic on heavy chart components)
+- FMP API live with real competitor data (key configured)
+
+### Waiting for API Keys
+- **LLM (Anthropic or OpenAI)**: Unlocks AI narratives, ad-hoc SQL, PDF summaries
+- **Databricks token**: Unlocks real Mars data (dual-mode switch ready)
 
 ## SQLite Column Mapping
 - Entity: `Child_Entity` / `Child_Entity_ID`
