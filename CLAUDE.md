@@ -7,6 +7,13 @@ Amira FinIQ is a **Unified Financial Analytics Hub** being proposed by Amira Tec
 **Prepared By**: Amira Technologies (QDT team)
 **Project Lead**: Farzaneh
 
+## IMPORTANT: Active Branch
+- **ALWAYS work on branch `v2-fresh`** — this is the active build
+- **DO NOT use `master`** — that has the old Artemis v1 code (archived)
+- If you find yourself on master, run: `git checkout v2-fresh`
+- The app code is in `app/` — read `app/CLAUDE.md` for full build context
+- v2 was built from scratch on 2026-03-27: 80/80 compliance, voice agent, AI narratives, real FMP data
+
 ## Project status
 - **SRS v3.1 CURRENT (2026-03-27)**: `FinIQ SRS v3.1 Final.docx` — Adds Section 7 (CI/FMP API integration, SWOT, Porter's Five Forces, Earnings Call Intelligence), FR4.5 (Suggested Prompt Library), FR4.6 (Prompt Variable Resolution), Appendix C (18 curated prompts). 52 functional requirements. Created by Rajiv.
 - **Frontend Design Guideline v1.0 CURRENT (2026-03-27)**: `FinIQ Frontend Design Guideline v1.0.docx` — Bloomberg-inspired dark-first design system. OKLCH colors, IBM Plex Sans + JetBrains Mono, shadcn/ui components, Recharts/lightweight-charts, Tailwind CSS. Created by Alessandro (Atlas), converted to Word by Rajiv.
