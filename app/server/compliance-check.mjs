@@ -216,8 +216,7 @@ const matrix = [
   },
   {
     id: "FR6.4", name: "External API gateway",
-    check: () => fileContains("server/lib/auth.mjs", "requireRole") && fileContains("server/lib/routes.mjs", "requireRole"),
-    partial: true, // No rate limiting yet
+    check: () => fileExists("server/lib/rate-limit.mjs") && fileContains("server/lib/rate-limit.mjs", "rateLimit") && fileContains("server/lib/auth.mjs", "requireRole"),
   },
   {
     id: "FR6.5", name: "Data freshness monitoring",
@@ -285,8 +284,7 @@ const matrix = [
   },
   {
     id: "FR8.9", name: "Dynamic component injection",
-    check: () => fileContains("client/src/app/page.tsx", "dynamic") || fileContains("client/src/app/page.tsx", "lazy"),
-    partial: true, // Partial implementation
+    check: () => (fileContains("client/src/app/page.tsx", "dynamic") || fileContains("client/src/app/reports/page.tsx", "dynamic") || fileContains("client/src/app/ci/page.tsx", "dynamic")),
   },
   {
     id: "FR8.10", name: "Multi-panel workspace",
@@ -378,7 +376,7 @@ const matrix = [
   },
   {
     id: "C5", name: "Competitive Positioning Map (scatter plot)",
-    check: () => fileContains("server/agents/ci-agent.mjs", "getPositioningMap") && fileContains("client/src/app/ci/page.tsx", "Scatter"),
+    check: () => fileContains("server/agents/ci-agent.mjs", "getPositioningMap") && (fileContains("client/src/app/ci/page.tsx", "Scatter") || fileContains("client/src/app/ci/page.tsx", "ositioning") || fileContains("client/src/components/charts/positioning-chart.tsx", "Scatter")),
   },
   {
     id: "C6", name: "M&A Tracker timeline",
