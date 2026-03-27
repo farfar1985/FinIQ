@@ -8,8 +8,10 @@ import { createServer } from "http";
 import config from "./lib/config.mjs";
 import routes from "./lib/routes.mjs";
 import { initWebSocket, broadcastJobUpdate } from "./lib/websocket.mjs";
+import { handleVoiceConnection } from "./lib/realtime-agent.mjs";
 import jobBoard from "./lib/job-board.mjs";
 import { generalLimiter } from "./lib/rate-limit.mjs";
+import { WebSocketServer } from "ws";
 
 const app = express();
 const server = createServer(app);
@@ -24,8 +26,22 @@ app.use("/api", generalLimiter);
 // API routes
 app.use("/api", routes);
 
-// Initialize WebSocket on the HTTP server
+// Initialize WebSocket for job board on the HTTP server
 initWebSocket(server);
+
+// Voice Agent WebSocket endpoint (/voice-ws)
+const voiceWss = new WebSocketServer({ noServer: true });
+voiceWss.on("connection", handleVoiceConnection);
+
+// Route WebSocket upgrades based on path
+server.on("upgrade", (req, socket, head) => {
+  if (req.url === "/voice-ws") {
+    voiceWss.handleUpgrade(req, socket, head, (ws) => {
+      voiceWss.emit("connection", ws, req);
+    });
+  }
+  // /ws is handled by initWebSocket's own server attachment
+});
 
 // Wire job board updates to WebSocket broadcast
 jobBoard.setOnJobUpdate(broadcastJobUpdate);
@@ -43,6 +59,7 @@ server.listen(config.port, () => {
 ║   Env:  ${String(config.nodeEnv).padEnd(33)}║
 ║   WebSocket: /ws                         ║
 ║   Job Board: active                      ║
+║   Voice Agent: /voice-ws                 ║
 ╚══════════════════════════════════════════╝
   `);
 });

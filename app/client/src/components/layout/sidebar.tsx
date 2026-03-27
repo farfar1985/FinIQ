@@ -10,6 +10,7 @@ import {
   Database,
   Briefcase,
   Settings,
+  Mic,
   ChevronLeft,
   ChevronRight,
   Sun,
@@ -20,6 +21,7 @@ import { useUIStore } from "@/stores/ui-store";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/voice", label: "Voice Agent", icon: Mic },
   { href: "/chat", label: "Query", icon: MessageSquare },
   { href: "/reports", label: "Reports", icon: FileBarChart },
   { href: "/ci", label: "Competitive Intel", icon: Swords },
