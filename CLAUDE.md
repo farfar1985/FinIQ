@@ -251,6 +251,16 @@ A unified platform that:
 
 **Key gap vs competitors: NO charting/visualization.** Alessandro's build has Recharts area charts, time series, data explorer with plots. Our app returns tables only — "plot me the sales" just shows a data table.
 
+### BUILD_PROMPT.md created (2026-03-27)
+- **File**: `app/BUILD_PROMPT.md` — Master build spec for fresh rebuild
+- **80-item compliance matrix** (52 functional + 15 design + 6 CI/FMP + 7 technical), target 95+
+- **8 dependency-ordered batches** from Foundation through Polish
+- **Combines**: Rajiv's compliance-driven simplicity + Cesar's multi-agent structure + our lessons learned
+- **Works for**: Artemis (single agent), Claude Code (multi-agent), or Cesar's platform
+- **Tech stack decided**: Next.js 16 + Tailwind + shadcn/ui + Recharts + Node.js + Anthropic SDK
+- **CI uses REAL data**: FMP API for all 10 competitors (no more simulated)
+- Credentials stored in `.env` only (from team's shared Google Drive)
+
 ### What needs fixing (Claude Code Pass 1 — next)
 1. Fix model name (`claude-opus-4-6` → correct Anthropic model)
 2. Fix config property mismatch (DATABRICKS_HOST vs DATABRICKS_SERVER_HOSTNAME)
