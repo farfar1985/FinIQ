@@ -605,8 +605,11 @@ export default function JobsPage() {
         priority,
         agent_type: agentType || undefined,
       });
-      // Add the new job to the list (WebSocket will also send updates)
-      setJobs((prev) => [result.job, ...prev]);
+      // Add the new job — check for duplicates since WebSocket may also deliver it
+      setJobs((prev) => {
+        if (prev.some((j) => j.id === result.job.id)) return prev;
+        return [result.job, ...prev];
+      });
       setCounts((prev) => ({
         ...prev,
         total: prev.total + 1,
