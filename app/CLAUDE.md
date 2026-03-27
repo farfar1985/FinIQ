@@ -124,9 +124,16 @@ app/
 - Ad-hoc SQL generation for freeform questions
 
 ### API Keys Configured
-- **Anthropic**: LIVE — Haiku generating narratives
+- **Anthropic**: LIVE — Haiku generating narratives (`claude-haiku-4-5-20251001`)
 - **FMP**: LIVE — real competitor data for 10 companies
+- **OpenAI**: LIVE — TTS sage voice (`tts-1`), planned: Realtime API for conversational agent
 - **Databricks**: Waiting for token from Cesar (dual-mode switch ready)
+
+### Next: OpenAI Realtime API Voice Agent
+- Full conversational voice interaction (like Amira Meet)
+- WebSocket to OpenAI Realtime API, audio streaming, function calling
+- Agent can query data mid-conversation, narrate findings naturally
+- Interrupt handling, conversation memory, auto-play responses
 
 ## SQLite Column Mapping
 - Entity: `Child_Entity` / `Child_Entity_ID`
