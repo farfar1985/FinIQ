@@ -1,12 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { FileBarChart, Loader2, Download, ChevronDown } from "lucide-react";
+import { FileBarChart, Loader2, Download, ChevronDown, Settings2 } from "lucide-react";
 import { FinBarChart } from "@/components/charts/bar-chart";
 
 interface Entity {
   Entity_ID: string;
   Entity_Alias: string;
+}
+
+interface DateInfo {
+  Year: number;
+  Period: number;
+  Quarter: number;
 }
 
 interface VarianceRow {
@@ -48,7 +54,16 @@ interface ComparisonData {
   } | null;
 }
 
-type ReportType = "pes" | "variance" | "comparison";
+type ReportType = "pes" | "variance" | "comparison" | "custom";
+
+const ALL_KPIS = [
+  "Organic Growth",
+  "MAC Shape %",
+  "A&CP Shape %",
+  "CE Shape %",
+  "Controllable Overhead Shape %",
+  "NCFO",
+];
 
 function downloadFile(content: string, filename: string, mimeType: string) {
   const blob = new Blob([content], { type: mimeType });
@@ -86,6 +101,13 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
+  // FR2.5: Custom Report Builder state
+  const [selectedKPIs, setSelectedKPIs] = useState<string[]>([...ALL_KPIS]);
+  const [comparisonBase, setComparisonBase] = useState<"ytd" | "periodic">("ytd");
+  const [customData, setCustomData] = useState<unknown>(null);
+  const [dates, setDates] = useState<DateInfo[]>([]);
+  const [selectedPeriod, setSelectedPeriod] = useState<string>("");
+
   function getCurrentData(): Record<string, unknown>[] {
     if (reportType === "pes" && pesData) {
       const d = pesData as { pl: Record<string, unknown>[]; ncfo: Record<string, unknown>[] };
@@ -93,6 +115,10 @@ export default function ReportsPage() {
     }
     if (reportType === "variance") return varianceData as unknown as Record<string, unknown>[];
     if (reportType === "comparison" && comparisonData) return comparisonData.rows as unknown as Record<string, unknown>[];
+    if (reportType === "custom" && customData) {
+      const d = customData as { pl: Record<string, unknown>[]; ncfo: Record<string, unknown>[] };
+      return [...(d.pl || []), ...(d.ncfo || [])];
+    }
     return [];
   }
 
@@ -114,7 +140,25 @@ export default function ReportsPage() {
       .then((r) => r.json())
       .then((d) => setEntities(d.entities || []))
       .catch(() => {});
+    // Load dates for custom report period selector
+    fetch("/api/dates")
+      .then((r) => r.json())
+      .then((d) => {
+        const dateList = d.dates || [];
+        setDates(dateList);
+        if (dateList.length > 0) {
+          const latest = dateList[dateList.length - 1];
+          setSelectedPeriod(`${latest.Year}-${latest.Period}`);
+        }
+      })
+      .catch(() => {});
   }, []);
+
+  function toggleKPI(kpi: string) {
+    setSelectedKPIs((prev) =>
+      prev.includes(kpi) ? prev.filter((k) => k !== kpi) : [...prev, kpi]
+    );
+  }
 
   async function loadReport() {
     setLoading(true);
@@ -131,6 +175,11 @@ export default function ReportsPage() {
         const res = await fetch(`/api/intelligence/comparison/${encodeURIComponent(selectedEntity)}`);
         const data = await res.json();
         setComparisonData(data);
+      } else if (reportType === "custom") {
+        // FR2.5: Reuse PES endpoint and filter client-side
+        const res = await fetch(`/api/reports/pes/${encodeURIComponent(selectedEntity)}`);
+        const data = await res.json();
+        setCustomData(data);
       }
     } catch (err) {
       console.error(err);
@@ -143,6 +192,7 @@ export default function ReportsPage() {
     { key: "pes", label: "Period End Summary" },
     { key: "variance", label: "Budget Variance" },
     { key: "comparison", label: "Three-Way Comparison" },
+    { key: "custom", label: "Custom Report" },
   ];
 
   return (
@@ -181,11 +231,11 @@ export default function ReportsPage() {
 
         <button
           onClick={loadReport}
-          disabled={loading}
+          disabled={loading || (reportType === "custom" && selectedKPIs.length === 0)}
           className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileBarChart className="h-3 w-3" />}
-          Generate
+          {reportType === "custom" ? "Generate Custom Report" : "Generate"}
         </button>
 
         {/* Export dropdown */}
@@ -212,6 +262,92 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      {/* FR2.5: Custom Report Builder UI */}
+      {reportType === "custom" && (
+        <div className="rounded-lg border border-border bg-card p-4 space-y-4">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Settings2 className="h-4 w-4 text-primary" />
+            Custom Report Builder
+          </div>
+
+          {/* KPI multi-select */}
+          <div>
+            <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Select KPIs
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {ALL_KPIS.map((kpi) => (
+                <label
+                  key={kpi}
+                  className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-xs transition-colors ${
+                    selectedKPIs.includes(kpi)
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border bg-secondary text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedKPIs.includes(kpi)}
+                    onChange={() => toggleKPI(kpi)}
+                    className="h-3 w-3 rounded border-border accent-primary"
+                  />
+                  {kpi}
+                </label>
+              ))}
+            </div>
+            <div className="mt-1 flex gap-2">
+              <button onClick={() => setSelectedKPIs([...ALL_KPIS])} className="text-[10px] text-primary hover:underline">Select all</button>
+              <button onClick={() => setSelectedKPIs([])} className="text-[10px] text-muted-foreground hover:underline">Clear</button>
+            </div>
+          </div>
+
+          {/* Period selector */}
+          <div className="flex flex-wrap gap-4">
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Period
+              </label>
+              <select
+                value={selectedPeriod}
+                onChange={(e) => setSelectedPeriod(e.target.value)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+              >
+                {dates.map((d) => (
+                  <option key={`${d.Year}-${d.Period}`} value={`${d.Year}-${d.Period}`}>
+                    FY{d.Year} P{d.Period} (Q{d.Quarter})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Comparison base toggle */}
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Comparison Base
+              </label>
+              <div className="flex rounded-md border border-border">
+                <button
+                  onClick={() => setComparisonBase("ytd")}
+                  className={`px-4 py-2 text-xs font-medium transition-colors ${
+                    comparisonBase === "ytd" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  YTD
+                </button>
+                <button
+                  onClick={() => setComparisonBase("periodic")}
+                  className={`px-4 py-2 text-xs font-medium transition-colors ${
+                    comparisonBase === "periodic" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Periodic
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* PES Report */}
       {reportType === "pes" && pesData && (
         <PESReport data={pesData as { entity: string; pl: Record<string, unknown>[]; ncfo: Record<string, unknown>[] }} />
@@ -226,11 +362,111 @@ export default function ReportsPage() {
       {reportType === "comparison" && comparisonData && (
         <ComparisonReport data={comparisonData} />
       )}
+
+      {/* FR2.5: Custom Report */}
+      {reportType === "custom" && customData && (
+        <CustomReport
+          data={customData as { entity: string; pl: Record<string, unknown>[]; ncfo: Record<string, unknown>[] }}
+          selectedKPIs={selectedKPIs}
+          comparisonBase={comparisonBase}
+        />
+      )}
     </div>
   );
 }
 
+// ============================================================
+// FR2.5: Custom Report Component
+// ============================================================
+
+function CustomReport({
+  data,
+  selectedKPIs,
+  comparisonBase,
+}: {
+  data: { entity: string; pl: Record<string, unknown>[]; ncfo: Record<string, unknown>[] };
+  selectedKPIs: string[];
+  comparisonBase: "ytd" | "periodic";
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const allRows = [...(data.pl || []), ...(data.ncfo || [])];
+  const kpiMap: Record<string, Record<string, unknown>> = {};
+  for (const row of allRows) {
+    const key = (row.Account_KPI || "") as string;
+    if (!kpiMap[key]) kpiMap[key] = row;
+  }
+
+  const filtered = selectedKPIs
+    .map((name) => {
+      const row = kpiMap[name];
+      if (!row) return null;
+      const cyKey = comparisonBase === "ytd" ? "YTD_CY" : "Periodic_CY";
+      const lyKey = comparisonBase === "ytd" ? "YTD_LY" : "Periodic_LY";
+      const cy = row[cyKey] as number;
+      const ly = row[lyKey] as number;
+      const growth = ly !== 0 ? ((cy - ly) / Math.abs(ly)) * 100 : 0;
+      return { name, cy, ly, growth: Math.round(growth * 100) / 100 };
+    })
+    .filter(Boolean) as { name: string; cy: number; ly: number; growth: number }[];
+
+  if (filtered.length === 0) {
+    return <p className="text-sm text-muted-foreground">No data found for the selected KPIs.</p>;
+  }
+
+  const label = comparisonBase === "ytd" ? "YTD" : "Periodic";
+  const displayRows = showAll ? filtered : filtered.slice(0, 10);
+
+  return (
+    <div className="space-y-4">
+      <FinBarChart
+        data={filtered.map((k) => ({ name: k.name, [`${label} Growth %`]: k.growth }))}
+        xKey="name"
+        yKeys={[`${label} Growth %`]}
+        title={`${data.entity} — Custom Report (${label})`}
+        colorByValue
+      />
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-border bg-secondary/50">
+              <th className="th-financial px-3 py-2 text-left">KPI</th>
+              <th className="th-financial px-3 py-2 text-right">{label} CY</th>
+              <th className="th-financial px-3 py-2 text-right">{label} LY</th>
+              <th className="th-financial px-3 py-2 text-right">Growth %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {displayRows.map((k) => (
+              <tr key={k.name} className="border-b border-border/50">
+                <td className="px-3 py-2">{k.name}</td>
+                <td className="px-3 py-2 text-right font-mono tabular-nums">{k.cy?.toLocaleString()}</td>
+                <td className="px-3 py-2 text-right font-mono tabular-nums">{k.ly?.toLocaleString()}</td>
+                <td className={`px-3 py-2 text-right font-mono tabular-nums ${k.growth >= 0 ? "text-positive" : "text-negative"}`}>
+                  {k.growth >= 0 ? "+" : ""}{k.growth}%
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {filtered.length > 10 && (
+          <button
+            onClick={() => setShowAll(!showAll)}
+            className="w-full py-1.5 text-center text-[10px] text-muted-foreground hover:text-foreground"
+          >
+            {showAll ? "Show fewer" : `Show all ${filtered.length} rows`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// PES Report — FR8.8 progressive disclosure
+// ============================================================
+
 function PESReport({ data }: { data: { entity: string; pl: Record<string, unknown>[]; ncfo: Record<string, unknown>[] } }) {
+  const [showAll, setShowAll] = useState(false);
   const allRows = [...(data.pl || []), ...(data.ncfo || [])];
   const kpiMap: Record<string, Record<string, unknown>> = {};
   for (const row of allRows) {
@@ -244,6 +480,8 @@ function PESReport({ data }: { data: { entity: string; pl: Record<string, unknow
       : 0;
     return { name, ytd_cy: row.YTD_CY as number, ytd_ly: row.YTD_LY as number, growth: Math.round(ytdGrowth * 100) / 100 };
   });
+
+  const displayRows = showAll ? kpis : kpis.slice(0, 10);
 
   return (
     <div className="space-y-4">
@@ -265,7 +503,7 @@ function PESReport({ data }: { data: { entity: string; pl: Record<string, unknow
             </tr>
           </thead>
           <tbody>
-            {kpis.map((k) => (
+            {displayRows.map((k) => (
               <tr key={k.name} className="border-b border-border/50">
                 <td className="px-3 py-2">{k.name}</td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums">{k.ytd_cy?.toLocaleString()}</td>
@@ -277,13 +515,27 @@ function PESReport({ data }: { data: { entity: string; pl: Record<string, unknow
             ))}
           </tbody>
         </table>
+        {kpis.length > 10 && (
+          <button
+            onClick={() => setShowAll(!showAll)}
+            className="w-full py-1.5 text-center text-[10px] text-muted-foreground hover:text-foreground"
+          >
+            {showAll ? "Show fewer" : `Show all ${kpis.length} rows`}
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
+// ============================================================
+// Variance Report — FR8.8 progressive disclosure
+// ============================================================
+
 function VarianceReport({ entity, data }: { entity: string; data: VarianceRow[] }) {
+  const [showAll, setShowAll] = useState(false);
   const top10 = [...data].sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance)).slice(0, 10);
+  const displayRows = showAll ? data : data.slice(0, 10);
 
   return (
     <div className="space-y-4">
@@ -307,7 +559,7 @@ function VarianceReport({ entity, data }: { entity: string; data: VarianceRow[] 
             </tr>
           </thead>
           <tbody>
-            {data.slice(0, 30).map((v, i) => (
+            {displayRows.map((v, i) => (
               <tr key={i} className="border-b border-border/50">
                 <td className="px-3 py-2">{v.account}</td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums">{v.actual?.toLocaleString()}</td>
@@ -327,12 +579,25 @@ function VarianceReport({ entity, data }: { entity: string; data: VarianceRow[] 
             ))}
           </tbody>
         </table>
+        {data.length > 10 && (
+          <button
+            onClick={() => setShowAll(!showAll)}
+            className="w-full py-1.5 text-center text-[10px] text-muted-foreground hover:text-foreground"
+          >
+            {showAll ? "Show fewer" : `Show all ${data.length} rows`}
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
+// ============================================================
+// Comparison Report — FR8.8 progressive disclosure
+// ============================================================
+
 function ComparisonReport({ data }: { data: ComparisonData }) {
+  const [showAll, setShowAll] = useState(false);
   const { rows, summary, entity, forecast_note } = data;
 
   // Build chart data: top 12 accounts by absolute actual value
@@ -345,6 +610,8 @@ function ComparisonReport({ data }: { data: ComparisonData }) {
       Replan: r.replan,
       Forecast: r.forecast ?? 0,
     }));
+
+  const displayRows = showAll ? rows : rows.slice(0, 10);
 
   return (
     <div className="space-y-4">
@@ -396,7 +663,7 @@ function ComparisonReport({ data }: { data: ComparisonData }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
+            {displayRows.map((r, i) => (
               <tr key={i} className="border-b border-border/50">
                 <td className="px-3 py-2 font-medium">{r.account}</td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums">
@@ -428,6 +695,14 @@ function ComparisonReport({ data }: { data: ComparisonData }) {
             ))}
           </tbody>
         </table>
+        {rows.length > 10 && (
+          <button
+            onClick={() => setShowAll(!showAll)}
+            className="w-full py-1.5 text-center text-[10px] text-muted-foreground hover:text-foreground"
+          >
+            {showAll ? "Show fewer" : `Show all ${rows.length} rows`}
+          </button>
+        )}
       </div>
     </div>
   );

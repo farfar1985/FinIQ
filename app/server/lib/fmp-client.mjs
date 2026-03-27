@@ -358,6 +358,141 @@ function getMockMA(limit) {
   return transactions.slice(0, limit);
 }
 
+// ══════════════════════════════════════════════════════════════════
+// FR3.4 — Competitor Monitoring & Alerts
+// ══════════════════════════════════════════════════════════════════
+
+const ALERT_THRESHOLDS = {
+  revenueGrowth: { min: -0.05, label: "Revenue growth < -5%" },
+  operatingMargin: { min: 0.10, label: "Operating margin < 10%" },
+  debtEquity: { max: 2.0, label: "Debt/Equity > 2.0" },
+};
+
+// In-memory alert store
+const competitorAlerts = [];
+
+/**
+ * Run a monitoring check across all public competitors.
+ * Compares latest financial ratios and income statements against thresholds.
+ * Returns newly generated alerts and stores them in memory.
+ */
+export async function monitorCompetitors() {
+  const newAlerts = [];
+  const checkedAt = new Date().toISOString();
+
+  const publicCompetitors = COMPETITORS.filter((c) => c.isPublic);
+
+  for (const comp of publicCompetitors) {
+    try {
+      const [incomeData, ratioData] = await Promise.all([
+        getIncomeStatement(comp.ticker, "annual", 2),
+        getFinancialRatios(comp.ticker, 1),
+      ]);
+
+      // Revenue growth check
+      if (incomeData && incomeData.length >= 2) {
+        const currentRev = incomeData[0].revenue;
+        const priorRev = incomeData[1].revenue;
+        if (priorRev > 0) {
+          const revGrowth = (currentRev - priorRev) / priorRev;
+          if (revGrowth < ALERT_THRESHOLDS.revenueGrowth.min) {
+            newAlerts.push({
+              id: `${comp.ticker}-rev-${checkedAt}`,
+              ticker: comp.ticker,
+              company: comp.name,
+              type: "revenue_decline",
+              severity: "high",
+              threshold: ALERT_THRESHOLDS.revenueGrowth.label,
+              value: Math.round(revGrowth * 10000) / 100,
+              unit: "%",
+              message: `${comp.name} (${comp.ticker}) revenue growth is ${(revGrowth * 100).toFixed(1)}%, below the -5% threshold.`,
+              checked_at: checkedAt,
+            });
+          }
+        }
+      }
+
+      // Operating margin check
+      if (ratioData && ratioData.length > 0) {
+        const opMargin = ratioData[0].operatingProfitMargin;
+        if (opMargin != null && opMargin < ALERT_THRESHOLDS.operatingMargin.min) {
+          newAlerts.push({
+            id: `${comp.ticker}-opm-${checkedAt}`,
+            ticker: comp.ticker,
+            company: comp.name,
+            type: "low_operating_margin",
+            severity: "medium",
+            threshold: ALERT_THRESHOLDS.operatingMargin.label,
+            value: Math.round(opMargin * 10000) / 100,
+            unit: "%",
+            message: `${comp.name} (${comp.ticker}) operating margin is ${(opMargin * 100).toFixed(1)}%, below the 10% threshold.`,
+            checked_at: checkedAt,
+          });
+        }
+
+        // Debt/equity check
+        const debtEquity = ratioData[0].debtEquityRatio;
+        if (debtEquity != null && debtEquity > ALERT_THRESHOLDS.debtEquity.max) {
+          newAlerts.push({
+            id: `${comp.ticker}-de-${checkedAt}`,
+            ticker: comp.ticker,
+            company: comp.name,
+            type: "high_leverage",
+            severity: "medium",
+            threshold: ALERT_THRESHOLDS.debtEquity.label,
+            value: Math.round(debtEquity * 100) / 100,
+            unit: "x",
+            message: `${comp.name} (${comp.ticker}) debt/equity ratio is ${debtEquity.toFixed(2)}x, above the 2.0x threshold.`,
+            checked_at: checkedAt,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn(`[fmp-client] Monitor error for ${comp.ticker}:`, err.message);
+    }
+  }
+
+  // Append new alerts and cap at 200
+  competitorAlerts.push(...newAlerts);
+  if (competitorAlerts.length > 200) {
+    competitorAlerts.splice(0, competitorAlerts.length - 200);
+  }
+
+  return {
+    checked_at: checkedAt,
+    competitors_checked: publicCompetitors.length,
+    new_alerts: newAlerts.length,
+    alerts: newAlerts,
+  };
+}
+
+/**
+ * Get all stored competitor alerts.
+ * Optionally filter by ticker or severity.
+ */
+export function getCompetitorAlerts(filters = {}) {
+  let results = [...competitorAlerts];
+
+  if (filters.ticker) {
+    results = results.filter((a) => a.ticker === filters.ticker);
+  }
+  if (filters.severity) {
+    results = results.filter((a) => a.severity === filters.severity);
+  }
+  if (filters.type) {
+    results = results.filter((a) => a.type === filters.type);
+  }
+
+  // Most recent first
+  results.sort((a, b) => new Date(b.checked_at) - new Date(a.checked_at));
+
+  return {
+    total: results.length,
+    alerts: results,
+    thresholds: ALERT_THRESHOLDS,
+  };
+}
+
 export default {
   COMPETITORS,
   getIncomeStatement,
@@ -369,4 +504,6 @@ export default {
   getMarketCap,
   getStockNews,
   getMergersAcquisitions,
+  monitorCompetitors,
+  getCompetitorAlerts,
 };

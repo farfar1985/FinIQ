@@ -8,8 +8,9 @@ import dataLayer from "./databricks.mjs";
 import jobBoard from "./job-board.mjs";
 import { getStats as getWsStats } from "./websocket.mjs";
 import { processQuery, resolveVariables, SUGGESTED_PROMPTS } from "../agents/finiq-agent.mjs";
-import { getThreeWayComparison, getDataFreshness, getRecommendations } from "./intelligence.mjs";
+import { getThreeWayComparison, getDataFreshness, getRecommendations, getMarketingInsights } from "./intelligence.mjs";
 import ciAgent from "../agents/ci-agent.mjs";
+import { monitorCompetitors, getCompetitorAlerts } from "./fmp-client.mjs";
 import {
   testDatabricksConnection,
   getConnectionConfig,
@@ -28,6 +29,7 @@ import {
   updatePeerGroup,
   getIngestionStatus,
 } from "./admin.mjs";
+import { requireRole } from "./auth.mjs";
 
 const router = Router();
 
@@ -208,7 +210,7 @@ router.get("/jobs", (req, res) => {
  * POST /api/jobs — Submit a new job
  * Body: { query, priority?, agent_type?, schedule?, submitter? }
  */
-router.post("/jobs", (req, res) => {
+router.post("/jobs", requireRole("admin", "analyst"), (req, res) => {
   try {
     const { query, priority, agent_type, schedule, submitter } = req.body;
     if (!query) {
@@ -263,7 +265,7 @@ router.get("/jobs/:id", (req, res) => {
  * PATCH /api/jobs/:id — Update job status
  * Body: { status, result?, error? }
  */
-router.patch("/jobs/:id", (req, res) => {
+router.patch("/jobs/:id", requireRole("admin"), (req, res) => {
   try {
     const { status, result, error } = req.body;
     if (!status) {
@@ -283,7 +285,7 @@ router.patch("/jobs/:id", (req, res) => {
 /**
  * POST /api/jobs/:id/retry — Retry a failed job
  */
-router.post("/jobs/:id/retry", (req, res) => {
+router.post("/jobs/:id/retry", requireRole("admin", "analyst"), (req, res) => {
   try {
     const job = jobBoard.retryJob(req.params.id);
 
@@ -386,6 +388,29 @@ router.get("/ci/ma", async (req, res) => {
   }
 });
 
+/** GET /api/ci/alerts — Active competitor alerts (FR3.4) */
+router.get("/ci/alerts", (req, res) => {
+  try {
+    const { ticker, severity, type } = req.query;
+    const result = getCompetitorAlerts({ ticker, severity, type });
+    res.json(result);
+  } catch (err) {
+    console.error("[ci] Alerts error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** GET /api/ci/monitor — Trigger a monitoring check (FR3.4) */
+router.get("/ci/monitor", async (req, res) => {
+  try {
+    const result = await monitorCompetitors();
+    res.json(result);
+  } catch (err) {
+    console.error("[ci] Monitor error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /** GET /api/ci/news — Competitor news feed */
 router.get("/ci/news", async (req, res) => {
   try {
@@ -436,7 +461,7 @@ router.get("/admin/config", async (req, res) => {
   }
 });
 
-router.post("/admin/config/test", async (req, res) => {
+router.post("/admin/config/test", requireRole("admin"), async (req, res) => {
   try {
     const overrideConfig = req.body.serverHostname ? req.body : null;
     const result = await testDatabricksConnection(overrideConfig);
@@ -446,7 +471,7 @@ router.post("/admin/config/test", async (req, res) => {
   }
 });
 
-router.patch("/admin/config", async (req, res) => {
+router.patch("/admin/config", requireRole("admin"), async (req, res) => {
   try {
     const updated = updateConnectionConfig(req.body);
     res.json(updated);
@@ -484,7 +509,7 @@ router.get("/admin/users", (req, res) => {
   }
 });
 
-router.post("/admin/users/:id/role", (req, res) => {
+router.post("/admin/users/:id/role", requireRole("admin"), (req, res) => {
   try {
     const { role } = req.body;
     if (!role) return res.status(400).json({ error: "role is required" });
@@ -509,7 +534,7 @@ router.get("/admin/prompts", (req, res) => {
   }
 });
 
-router.patch("/admin/prompts/:id", (req, res) => {
+router.patch("/admin/prompts/:id", requireRole("admin"), (req, res) => {
   try {
     const prompt = updatePrompt(req.params.id, req.body);
     res.json({ prompt });
@@ -521,7 +546,7 @@ router.patch("/admin/prompts/:id", (req, res) => {
   }
 });
 
-router.post("/admin/prompts/:id/toggle", (req, res) => {
+router.post("/admin/prompts/:id/toggle", requireRole("admin"), (req, res) => {
   try {
     const prompt = togglePrompt(req.params.id);
     res.json({ prompt });
@@ -543,7 +568,7 @@ router.get("/admin/templates", (req, res) => {
   }
 });
 
-router.post("/admin/templates", (req, res) => {
+router.post("/admin/templates", requireRole("admin"), (req, res) => {
   try {
     const { name, ...config } = req.body;
     if (!name) return res.status(400).json({ error: "name is required" });
@@ -554,7 +579,7 @@ router.post("/admin/templates", (req, res) => {
   }
 });
 
-router.patch("/admin/templates/:id", (req, res) => {
+router.patch("/admin/templates/:id", requireRole("admin"), (req, res) => {
   try {
     const template = updateTemplate(req.params.id, req.body);
     res.json({ template });
@@ -576,7 +601,7 @@ router.get("/admin/peer-groups", (req, res) => {
   }
 });
 
-router.patch("/admin/peer-groups/:id", (req, res) => {
+router.patch("/admin/peer-groups/:id", requireRole("admin"), (req, res) => {
   try {
     const group = updatePeerGroup(req.params.id, req.body);
     res.json({ peerGroup: group });
@@ -623,6 +648,17 @@ router.get("/intelligence/freshness", async (req, res) => {
   }
 });
 
+router.get("/intelligence/marketing/:entity", async (req, res) => {
+  try {
+    const entity = req.params.entity;
+    const result = await getMarketingInsights(entity);
+    res.json(result);
+  } catch (err) {
+    console.error("[intelligence] Marketing error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/intelligence/recommendations/:entity", async (req, res) => {
   try {
     const entity = req.params.entity;
@@ -647,14 +683,96 @@ router.get("/catalog", async (req, res) => {
       dataLayer.getCustomers(),
       dataLayer.getDates(),
     ]);
+
+    const mode = dataLayer.getMode();
+    const sourceSystem = mode === "databricks"
+      ? "Databricks FinSight"
+      : "SQLite Synthetic";
+
+    // Derive last_updated from the most recent fiscal period
+    const latestDate = dates.length > 0 ? dates[0] : null;
+    const lastUpdated = latestDate
+      ? `FY${latestDate.Year} P${latestDate.Period}`
+      : null;
+
     res.json({
-      mode: dataLayer.getMode(),
+      mode,
+      source_system: sourceSystem,
+      last_updated: lastUpdated,
+      last_updated_timestamp: new Date().toISOString(),
       tables: {
-        entities: { count: entities.length, source: "finiq_dim_entity" },
-        accounts: { count: accounts.length, source: "finiq_dim_account" },
-        products: { count: products.length, source: "finiq_composite_item" },
-        customers: { count: customers.length, source: "finiq_customer" },
-        fiscal_periods: { count: dates.length, source: "finiq_date" },
+        entities: {
+          count: entities.length,
+          source: "finiq_dim_entity",
+          source_system: sourceSystem,
+          last_updated: lastUpdated,
+          transformations: [
+            "Feeds finiq_vw_pl_entity (Entity dimension for P&L view)",
+            "Feeds finiq_vw_ncfo_entity (Entity dimension for NCFO view)",
+            "Feeds finiq_vw_pl_brand_product (Entity filter for brand/product view)",
+            "Provides org hierarchy (Parent_Entity -> Child_Entity) for roll-ups",
+          ],
+        },
+        accounts: {
+          count: accounts.length,
+          source: "finiq_dim_account",
+          source_system: sourceSystem,
+          last_updated: lastUpdated,
+          transformations: [
+            "Defines KPI account hierarchy (Parent_Account -> Child_Account)",
+            "Sign_Conversion field controls aggregation polarity in views",
+            "finiq_account_formula references accounts for KPI calculations",
+            "Feeds all 3 PES views via Account_KPI column",
+          ],
+        },
+        products: {
+          count: products.length,
+          source: "finiq_composite_item",
+          source_system: sourceSystem,
+          last_updated: lastUpdated,
+          transformations: [
+            "Feeds finiq_vw_pl_brand_product (Brand/Segment/Product_Category breakdown)",
+            "Linked to finiq_item via finiq_item_composite_item bridge table",
+          ],
+        },
+        customers: {
+          count: customers.length,
+          source: "finiq_customer",
+          source_system: sourceSystem,
+          last_updated: lastUpdated,
+          transformations: [
+            "Linked via finiq_customer_map for customer hierarchy",
+            "Used in ad-hoc NL queries for customer-level analysis",
+          ],
+        },
+        fiscal_periods: {
+          count: dates.length,
+          source: "finiq_date",
+          source_system: sourceSystem,
+          last_updated: lastUpdated,
+          transformations: [
+            "Date_Offset=100 for LY, 0 for CY in PES views",
+            "View_ID=1 for Periodic, View_ID=2 for YTD in PES views",
+            "Drives all temporal filtering across financial facts",
+          ],
+        },
+      },
+      views: {
+        finiq_vw_pl_entity: {
+          description: "P&L by Entity — maps to PES P&L Excel sheet",
+          source_tables: ["finiq_financial_cons", "finiq_dim_entity", "finiq_dim_account", "finiq_date"],
+          outputs: ["Entity", "Account_KPI", "Period", "YTD_LY", "YTD_CY", "Periodic_LY", "Periodic_CY"],
+        },
+        finiq_vw_pl_brand_product: {
+          description: "P&L by Brand/Product — maps to PES Product/Brand Excel sheets",
+          source_tables: ["finiq_financial_cons", "finiq_dim_entity", "finiq_dim_account", "finiq_composite_item", "finiq_date"],
+          outputs: ["Entity", "Brand", "Segment", "Account_KPI", "Period", "YTD_LY", "YTD_CY", "Periodic_LY", "Periodic_CY"],
+        },
+        finiq_vw_ncfo_entity: {
+          description: "NCFO by Entity — maps to PES NCFO Excel sheet",
+          source_tables: ["finiq_financial_cons", "finiq_dim_entity", "finiq_dim_account", "finiq_date"],
+          outputs: ["Entity", "Account_KPI", "Period", "YTD_LY", "YTD_CY", "Periodic_LY", "Periodic_CY"],
+        },
       },
       timestamp: new Date().toISOString(),
     });

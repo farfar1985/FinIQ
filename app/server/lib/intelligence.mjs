@@ -320,6 +320,62 @@ async function getRecommendations(entity) {
     }
   }
 
+  // FR6.3 — Incorporate marketing insights into recommendations
+  try {
+    const marketing = await getMarketingInsights(entity);
+    const m = marketing.metrics;
+
+    if (m.brand_awareness_pct < 65) {
+      recommendations.push({
+        severity: "medium",
+        category: "marketing",
+        title: "Brand awareness below target",
+        message: `${entity} brand awareness is ${m.brand_awareness_pct}%, below the 65% benchmark. Consider increasing marketing investment in high-ROI channels.`,
+        metric: "brand_awareness_pct",
+        value: m.brand_awareness_pct,
+      });
+    }
+
+    if (m.campaign_roi < 2.0) {
+      recommendations.push({
+        severity: "high",
+        category: "marketing",
+        title: "Campaign ROI underperforming",
+        message: `${entity} campaign ROI is ${m.campaign_roi}x, below the 2.0x target. Review marketing spend allocation across channels for optimization opportunities.`,
+        metric: "campaign_roi",
+        value: m.campaign_roi,
+      });
+    }
+
+    if (m.digital_engagement_rate_pct < 3.0) {
+      recommendations.push({
+        severity: "low",
+        category: "marketing",
+        title: "Low digital engagement",
+        message: `${entity} digital engagement rate is ${m.digital_engagement_rate_pct}%. Consider boosting social media and e-commerce initiatives.`,
+        metric: "digital_engagement_rate_pct",
+        value: m.digital_engagement_rate_pct,
+      });
+    }
+
+    // Identify best-performing channel for positive recommendation
+    const bestChannel = marketing.channels.reduce((best, ch) =>
+      ch.roi > best.roi ? ch : best
+    );
+    if (bestChannel.roi > 2.5) {
+      recommendations.push({
+        severity: "low",
+        category: "marketing",
+        title: `High-ROI channel: ${bestChannel.name}`,
+        message: `${bestChannel.name} delivers ${bestChannel.roi}x ROI with ${bestChannel.spend_share_pct}% spend share. Consider increasing allocation to this channel.`,
+        metric: "channel_roi",
+        value: bestChannel.roi,
+      });
+    }
+  } catch (err) {
+    console.warn("[intelligence] Marketing insights unavailable:", err.message);
+  }
+
   // Data freshness check
   const freshness = await getDataFreshness();
   if (freshness.overall_status !== "healthy") {
@@ -349,6 +405,69 @@ async function getRecommendations(entity) {
 }
 
 // ============================================================
+// FR6.2 — Marketing API stub (mock data)
+// ============================================================
+
+/**
+ * Returns mock marketing insights for an entity.
+ * In production, this would call the Amira Marketing Analytics API.
+ */
+async function getMarketingInsights(entity) {
+  // Deterministic seed from entity name for stable mock data
+  let hash = 0;
+  for (let i = 0; i < entity.length; i++) {
+    hash = ((hash << 5) - hash + entity.charCodeAt(i)) | 0;
+  }
+  const seed = Math.abs(hash);
+
+  const brandAwareness = 55 + (seed % 35);          // 55-89%
+  const campaignROI = 1.5 + (seed % 30) / 10;       // 1.5-4.5x
+  const digitalEngagement = 20 + (seed % 50) / 10;  // 2.0-7.0%
+  const socialSentiment = 60 + (seed % 30);          // 60-89%
+  const adSpendEfficiency = 0.7 + (seed % 25) / 100; // 0.70-0.94
+
+  return {
+    entity,
+    source: "Amira Marketing Analytics API (simulated)",
+    generated_at: new Date().toISOString(),
+    metrics: {
+      brand_awareness_pct: brandAwareness,
+      campaign_roi: Math.round(campaignROI * 100) / 100,
+      digital_engagement_rate_pct: Math.round(digitalEngagement * 100) / 100,
+      social_sentiment_score: socialSentiment,
+      ad_spend_efficiency: Math.round(adSpendEfficiency * 100) / 100,
+    },
+    channels: [
+      {
+        name: "Digital / E-Commerce",
+        spend_share_pct: 35 + (seed % 10),
+        roi: Math.round((campaignROI * 1.2) * 100) / 100,
+        trend: "increasing",
+      },
+      {
+        name: "TV / Broadcast",
+        spend_share_pct: 25 + (seed % 8),
+        roi: Math.round((campaignROI * 0.8) * 100) / 100,
+        trend: "stable",
+      },
+      {
+        name: "In-Store / Trade",
+        spend_share_pct: 20 + (seed % 6),
+        roi: Math.round((campaignROI * 1.1) * 100) / 100,
+        trend: "stable",
+      },
+      {
+        name: "Social Media",
+        spend_share_pct: 15 + (seed % 5),
+        roi: Math.round((campaignROI * 1.5) * 100) / 100,
+        trend: "increasing",
+      },
+    ],
+    note: "Connect Amira Marketing Analytics API for real marketing data. These values are simulated for demonstration.",
+  };
+}
+
+// ============================================================
 // Helpers
 // ============================================================
 
@@ -365,4 +484,4 @@ function formatCurrency(value) {
 // Exports
 // ============================================================
 
-export { getThreeWayComparison, getDataFreshness, getRecommendations };
+export { getThreeWayComparison, getDataFreshness, getRecommendations, getMarketingInsights };

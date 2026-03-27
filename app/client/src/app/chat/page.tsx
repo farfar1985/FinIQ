@@ -1,11 +1,30 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Send, Loader2, Database, ChevronDown, Clock } from "lucide-react";
+import { Send, Loader2, Database, ChevronDown, Clock, PanelRightOpen, PanelRightClose, ArrowRight } from "lucide-react";
 import { ChartRenderer } from "@/components/charts/chart-renderer";
 import type { ChatMessage, ChartConfig, Source, SuggestedPrompt } from "@/types";
 
 const MAX_RECENT_QUERIES = 5;
+
+/** FR8.7: Detect intent from the last assistant message for context-aware actions */
+function detectIntent(msg: ChatMessage | undefined): string | null {
+  if (!msg || msg.role !== "assistant") return null;
+  const text = msg.content.toLowerCase();
+  if (text.includes("period end summary") || text.includes("pes") || text.includes("kpi")) return "pes";
+  if (text.includes("variance") || text.includes("budget")) return "variance";
+  if (text.includes("competitor") || text.includes("competitive") || text.includes("swot") || text.includes("porter")) return "ci";
+  if (text.includes("ranking") || text.includes("top") || text.includes("bottom") || text.includes("entities")) return "ranking";
+  return null;
+}
+
+/** FR8.7: Context action bar config per intent */
+const CONTEXT_ACTIONS: Record<string, { label: string; href: string }> = {
+  pes: { label: "View full report", href: "/reports" },
+  variance: { label: "View full report", href: "/reports" },
+  ci: { label: "Open CI Dashboard", href: "/ci" },
+  ranking: { label: "See all entities", href: "/explorer" },
+};
 
 export default function ChatPage() {
   const [input, setInput] = useState("");
@@ -17,6 +36,8 @@ export default function ChatPage() {
   const [recentQueries, setRecentQueries] = useState<string[]>([]);
   const [showAutoComplete, setShowAutoComplete] = useState(false);
   const [autoCompleteIndex, setAutoCompleteIndex] = useState(-1);
+  // FR8.10: Split view state
+  const [splitView, setSplitView] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -31,6 +52,24 @@ export default function ChatPage() {
       })
       .slice(0, 6);
   }, [input, prompts]);
+
+  // FR8.10: Get the latest assistant message with data for the side panel
+  const latestDataMessage = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === "assistant" && (m.data || m.chartConfig)) return m;
+    }
+    return null;
+  }, [messages]);
+
+  // FR8.7: Detect intent of last assistant message
+  const lastAssistantMsg = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") return messages[i];
+    }
+    return undefined;
+  }, [messages]);
+  const detectedIntent = detectIntent(lastAssistantMsg);
 
   // Load suggested prompts
   useEffect(() => {
@@ -105,233 +144,293 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-[calc(100vh-var(--header-height)-var(--ticker-height)-2rem)] flex-col">
-      <h1 className="mb-3 text-base font-medium">Query Interface</h1>
+      <div className="mb-3 flex items-center justify-between">
+        <h1 className="text-base font-medium">Query Interface</h1>
+        {/* FR8.10: Split view toggle */}
+        <button
+          onClick={() => setSplitView(!splitView)}
+          className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[10px] font-medium transition-colors ${
+            splitView
+              ? "border-primary bg-primary/10 text-primary"
+              : "border-border text-muted-foreground hover:text-foreground"
+          }`}
+          title={splitView ? "Close split view" : "Open split view"}
+        >
+          {splitView ? <PanelRightClose className="h-3 w-3" /> : <PanelRightOpen className="h-3 w-3" />}
+          Split View
+        </button>
+      </div>
 
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto rounded-lg border border-border bg-card p-4 space-y-4" aria-live="polite" aria-label="Chat messages">
-        {messages.length === 0 && showPrompts && (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Ask a financial question or select a suggested prompt below.
-            </p>
-            {/* Prompt categories */}
-            {["revenue", "margin", "narrative", "cost", "bridge"].map((cat) => {
-              const catPrompts = prompts.filter((p) => p.category === cat);
-              if (catPrompts.length === 0) return null;
-              return (
-                <div key={cat}>
-                  <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    {cat}
-                  </h3>
-                  <div className="flex flex-wrap gap-2">
-                    {catPrompts.map((p) => (
-                      <button
-                        key={p.id}
-                        onClick={() => sendMessage((p as unknown as { resolved_prompt: string }).resolved_prompt || p.suggested_prompt)}
-                        className="rounded-md border border-border bg-secondary px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground text-left"
-                        title={p.description}
-                      >
-                        {(p as unknown as { resolved_prompt: string }).resolved_prompt || p.suggested_prompt}
-                      </button>
-                    ))}
-                  </div>
+      {/* FR8.10: Split layout container */}
+      <div className={`flex flex-1 gap-3 overflow-hidden ${splitView ? "" : ""}`}>
+        {/* Chat column */}
+        <div className={`flex flex-col ${splitView ? "w-[60%]" : "w-full"}`}>
+          {/* Messages area */}
+          <div className="flex-1 overflow-y-auto rounded-lg border border-border bg-card p-4 space-y-4" aria-live="polite" aria-label="Chat messages">
+            {messages.length === 0 && showPrompts && (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Ask a financial question or select a suggested prompt below.
+                </p>
+                {/* Prompt categories */}
+                {["revenue", "margin", "narrative", "cost", "bridge"].map((cat) => {
+                  const catPrompts = prompts.filter((p) => p.category === cat);
+                  if (catPrompts.length === 0) return null;
+                  return (
+                    <div key={cat}>
+                      <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {cat}
+                      </h3>
+                      <div className="flex flex-wrap gap-2">
+                        {catPrompts.map((p) => (
+                          <button
+                            key={p.id}
+                            onClick={() => sendMessage((p as unknown as { resolved_prompt: string }).resolved_prompt || p.suggested_prompt)}
+                            className="rounded-md border border-border bg-secondary px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground text-left"
+                            title={p.description}
+                          >
+                            {(p as unknown as { resolved_prompt: string }).resolved_prompt || p.suggested_prompt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {messages.map((msg) => (
+              <div key={msg.id} className={msg.role === "user" ? "flex justify-end" : ""}>
+                <div
+                  className={`max-w-[85%] rounded-lg px-4 py-3 ${
+                    msg.role === "user"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary"
+                  }`}
+                >
+                  {/* Message content */}
+                  <div className="whitespace-pre-wrap text-sm">{msg.content}</div>
+
+                  {/* Chart — only show inline if NOT in split view */}
+                  {!splitView && msg.chartConfig && (
+                    <div className="mt-3">
+                      <ChartRenderer config={msg.chartConfig} />
+                    </div>
+                  )}
+
+                  {/* Data table preview — only show inline if NOT in split view */}
+                  {!splitView && msg.data && Array.isArray(msg.data) && msg.data.length > 0 && (
+                    <DataTablePreview data={msg.data as Record<string, unknown>[]} />
+                  )}
+
+                  {/* Source attribution (FR4.4) */}
+                  {msg.sources && msg.sources.length > 0 && (
+                    <div className="mt-2 flex items-center gap-2 border-t border-border/50 pt-2">
+                      <Database className="h-3 w-3 text-muted-foreground" />
+                      <span className="text-[10px] text-muted-foreground">
+                        {msg.sources.map((s) => `${s.table} (${s.rowCount} rows)`).join(" · ")}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              );
-            })}
+              </div>
+            ))}
+
+            {loading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Processing query...
+              </div>
+            )}
+            <div ref={messagesEndRef} />
           </div>
-        )}
 
-        {messages.map((msg) => (
-          <div key={msg.id} className={msg.role === "user" ? "flex justify-end" : ""}>
-            <div
-              className={`max-w-[85%] rounded-lg px-4 py-3 ${
-                msg.role === "user"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-secondary"
-              }`}
-            >
-              {/* Message content */}
-              <div className="whitespace-pre-wrap text-sm">{msg.content}</div>
+          {/* FR8.7: Context-aware action bar */}
+          {detectedIntent && CONTEXT_ACTIONS[detectedIntent] && (
+            <div className="mt-2 flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
+              <ArrowRight className="h-3 w-3 text-primary" />
+              <a
+                href={CONTEXT_ACTIONS[detectedIntent].href}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                {CONTEXT_ACTIONS[detectedIntent].label} &rarr;
+              </a>
+            </div>
+          )}
 
-              {/* Chart */}
-              {msg.chartConfig && (
-                <div className="mt-3">
-                  <ChartRenderer config={msg.chartConfig} />
-                </div>
-              )}
-
-              {/* Data table preview */}
-              {msg.data && Array.isArray(msg.data) && msg.data.length > 0 && (
-                <DataTablePreview data={msg.data as Record<string, unknown>[]} />
-              )}
-
-              {/* Source attribution (FR4.4) */}
-              {msg.sources && msg.sources.length > 0 && (
-                <div className="mt-2 flex items-center gap-2 border-t border-border/50 pt-2">
-                  <Database className="h-3 w-3 text-muted-foreground" />
-                  <span className="text-[10px] text-muted-foreground">
-                    {msg.sources.map((s) => `${s.table} (${s.rowCount} rows)`).join(" · ")}
-                  </span>
+          {/* Quick prompts (collapsed after first message) */}
+          {messages.length > 0 && (
+            <div className="mt-2">
+              <button
+                onClick={() => setShowPrompts(!showPrompts)}
+                className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+              >
+                <ChevronDown className={`h-3 w-3 transition-transform ${showPrompts ? "rotate-180" : ""}`} />
+                Suggested prompts
+              </button>
+              {showPrompts && (
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {prompts.slice(0, 6).map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => sendMessage((p as unknown as { resolved_prompt: string }).resolved_prompt || p.suggested_prompt)}
+                      className="rounded border border-border bg-secondary px-2 py-1 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                    >
+                      {p.description}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
-          </div>
-        ))}
+          )}
 
-        {loading && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Processing query...
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Quick prompts (collapsed after first message) */}
-      {messages.length > 0 && (
-        <div className="mt-2">
-          <button
-            onClick={() => setShowPrompts(!showPrompts)}
-            className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
-          >
-            <ChevronDown className={`h-3 w-3 transition-transform ${showPrompts ? "rotate-180" : ""}`} />
-            Suggested prompts
-          </button>
-          {showPrompts && (
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {prompts.slice(0, 6).map((p) => (
+          {/* Recent queries chips (FR8.4) */}
+          {recentQueries.length > 0 && (
+            <div className="mt-2 flex items-center gap-2 overflow-x-auto" aria-label="Recent queries">
+              <Clock className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+              {recentQueries.map((q, i) => (
                 <button
-                  key={p.id}
-                  onClick={() => sendMessage((p as unknown as { resolved_prompt: string }).resolved_prompt || p.suggested_prompt)}
-                  className="rounded border border-border bg-secondary px-2 py-1 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                  key={i}
+                  onClick={() => sendMessage(q)}
+                  className="shrink-0 rounded-full border border-border bg-secondary px-2.5 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  title={q}
                 >
-                  {p.description}
+                  {q.length > 40 ? q.slice(0, 40) + "..." : q}
                 </button>
               ))}
             </div>
           )}
-        </div>
-      )}
 
-      {/* Recent queries chips (FR8.4) */}
-      {recentQueries.length > 0 && (
-        <div className="mt-2 flex items-center gap-2 overflow-x-auto" aria-label="Recent queries">
-          <Clock className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
-          {recentQueries.map((q, i) => (
-            <button
-              key={i}
-              onClick={() => sendMessage(q)}
-              className="shrink-0 rounded-full border border-border bg-secondary px-2.5 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              title={q}
-            >
-              {q.length > 40 ? q.slice(0, 40) + "..." : q}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Input bar */}
-      <div className="relative mt-2 flex gap-2">
-        <div className="relative flex-1">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              setShowAutoComplete(e.target.value.trim().length >= 2);
-              setAutoCompleteIndex(-1);
-            }}
-            onFocus={() => {
-              if (input.trim().length >= 2) setShowAutoComplete(true);
-            }}
-            onBlur={() => {
-              // Delay to allow click on autocomplete item
-              setTimeout(() => setShowAutoComplete(false), 200);
-            }}
-            placeholder="Ask a financial question... (Enter to send)"
-            aria-label="Ask a financial question"
-            aria-describedby="chat-keyboard-hint"
-            aria-autocomplete="list"
-            aria-controls={showAutoComplete && autoCompleteSuggestions.length > 0 ? "autocomplete-list" : undefined}
-            aria-activedescendant={autoCompleteIndex >= 0 ? `autocomplete-item-${autoCompleteIndex}` : undefined}
-            className="w-full rounded-md border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            onKeyDown={(e) => {
-              if (showAutoComplete && autoCompleteSuggestions.length > 0) {
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setAutoCompleteIndex((prev) => Math.min(prev + 1, autoCompleteSuggestions.length - 1));
-                  return;
-                }
-                if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setAutoCompleteIndex((prev) => Math.max(prev - 1, -1));
-                  return;
-                }
-                if (e.key === "Escape") {
-                  setShowAutoComplete(false);
+          {/* Input bar */}
+          <div className="relative mt-2 flex gap-2">
+            <div className="relative flex-1">
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  setShowAutoComplete(e.target.value.trim().length >= 2);
                   setAutoCompleteIndex(-1);
-                  return;
-                }
-                if (e.key === "Enter" && autoCompleteIndex >= 0) {
-                  e.preventDefault();
-                  const selected = autoCompleteSuggestions[autoCompleteIndex];
-                  const text = (selected as unknown as { resolved_prompt: string }).resolved_prompt || selected.suggested_prompt;
-                  sendMessage(text);
-                  return;
-                }
-              }
-              if (e.key === "Enter" && input.trim() && !loading) {
-                sendMessage();
-              }
-            }}
-            disabled={loading}
-          />
-          <span id="chat-keyboard-hint" className="sr-only">Press Enter to send, Arrow keys to navigate suggestions</span>
-
-          {/* Autocomplete dropdown (FR8.4) */}
-          {showAutoComplete && autoCompleteSuggestions.length > 0 && (
-            <ul
-              id="autocomplete-list"
-              role="listbox"
-              aria-label="Suggested prompts"
-              className="absolute bottom-full left-0 z-20 mb-1 w-full rounded-md border border-border bg-card shadow-lg"
-            >
-              {autoCompleteSuggestions.map((p, i) => {
-                const text = (p as unknown as { resolved_prompt: string }).resolved_prompt || p.suggested_prompt;
-                return (
-                  <li
-                    key={p.id}
-                    id={`autocomplete-item-${i}`}
-                    role="option"
-                    aria-selected={i === autoCompleteIndex}
-                    className={`cursor-pointer px-3 py-2 text-xs transition-colors ${
-                      i === autoCompleteIndex ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                    }`}
-                    onMouseDown={(e) => {
+                }}
+                onFocus={() => {
+                  if (input.trim().length >= 2) setShowAutoComplete(true);
+                }}
+                onBlur={() => {
+                  // Delay to allow click on autocomplete item
+                  setTimeout(() => setShowAutoComplete(false), 200);
+                }}
+                placeholder="Ask a financial question... (Enter to send)"
+                aria-label="Ask a financial question"
+                aria-describedby="chat-keyboard-hint"
+                aria-autocomplete="list"
+                aria-controls={showAutoComplete && autoCompleteSuggestions.length > 0 ? "autocomplete-list" : undefined}
+                aria-activedescendant={autoCompleteIndex >= 0 ? `autocomplete-item-${autoCompleteIndex}` : undefined}
+                className="w-full rounded-md border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                onKeyDown={(e) => {
+                  if (showAutoComplete && autoCompleteSuggestions.length > 0) {
+                    if (e.key === "ArrowDown") {
                       e.preventDefault();
+                      setAutoCompleteIndex((prev) => Math.min(prev + 1, autoCompleteSuggestions.length - 1));
+                      return;
+                    }
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setAutoCompleteIndex((prev) => Math.max(prev - 1, -1));
+                      return;
+                    }
+                    if (e.key === "Escape") {
+                      setShowAutoComplete(false);
+                      setAutoCompleteIndex(-1);
+                      return;
+                    }
+                    if (e.key === "Enter" && autoCompleteIndex >= 0) {
+                      e.preventDefault();
+                      const selected = autoCompleteSuggestions[autoCompleteIndex];
+                      const text = (selected as unknown as { resolved_prompt: string }).resolved_prompt || selected.suggested_prompt;
                       sendMessage(text);
-                    }}
-                  >
-                    <div className="truncate">{text}</div>
-                    {p.description && (
-                      <div className="mt-0.5 truncate text-[10px] text-muted-foreground/70">{p.description}</div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                      return;
+                    }
+                  }
+                  if (e.key === "Enter" && input.trim() && !loading) {
+                    sendMessage();
+                  }
+                }}
+                disabled={loading}
+              />
+              <span id="chat-keyboard-hint" className="sr-only">Press Enter to send, Arrow keys to navigate suggestions</span>
+
+              {/* Autocomplete dropdown (FR8.4) */}
+              {showAutoComplete && autoCompleteSuggestions.length > 0 && (
+                <ul
+                  id="autocomplete-list"
+                  role="listbox"
+                  aria-label="Suggested prompts"
+                  className="absolute bottom-full left-0 z-20 mb-1 w-full rounded-md border border-border bg-card shadow-lg"
+                >
+                  {autoCompleteSuggestions.map((p, i) => {
+                    const text = (p as unknown as { resolved_prompt: string }).resolved_prompt || p.suggested_prompt;
+                    return (
+                      <li
+                        key={p.id}
+                        id={`autocomplete-item-${i}`}
+                        role="option"
+                        aria-selected={i === autoCompleteIndex}
+                        className={`cursor-pointer px-3 py-2 text-xs transition-colors ${
+                          i === autoCompleteIndex ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                        }`}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          sendMessage(text);
+                        }}
+                      >
+                        <div className="truncate">{text}</div>
+                        {p.description && (
+                          <div className="mt-0.5 truncate text-[10px] text-muted-foreground/70">{p.description}</div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            <button
+              onClick={() => sendMessage()}
+              disabled={!input.trim() || loading}
+              aria-label="Send message"
+              className="flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Send
+            </button>
+          </div>
         </div>
-        <button
-          onClick={() => sendMessage()}
-          disabled={!input.trim() || loading}
-          aria-label="Send message"
-          className="flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          Send
-        </button>
+
+        {/* FR8.10: Data side panel */}
+        {splitView && (
+          <div className="flex w-[40%] flex-col overflow-y-auto rounded-lg border border-border bg-card p-4">
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Data Panel
+            </h2>
+            {latestDataMessage ? (
+              <div className="space-y-4">
+                {latestDataMessage.chartConfig && (
+                  <ChartRenderer config={latestDataMessage.chartConfig} />
+                )}
+                {latestDataMessage.data && Array.isArray(latestDataMessage.data) && latestDataMessage.data.length > 0 && (
+                  <DataTablePreview data={latestDataMessage.data as Record<string, unknown>[]} />
+                )}
+                {!latestDataMessage.chartConfig && !(latestDataMessage.data && Array.isArray(latestDataMessage.data) && latestDataMessage.data.length > 0) && (
+                  <p className="text-xs text-muted-foreground">No tabular data in last response.</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Query results will appear here. Ask a question to get started.
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
