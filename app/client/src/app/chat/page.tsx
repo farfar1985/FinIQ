@@ -195,7 +195,8 @@ export default function ChatPage() {
 
     try {
       // Use OpenAI TTS via our server endpoint (sage voice)
-      const res = await fetch("/api/tts", {
+      // Call backend directly for binary audio (Next.js proxy can mangle binary)
+      const res = await fetch("http://localhost:3001/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
