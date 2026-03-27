@@ -127,7 +127,16 @@ app/
 - **Anthropic**: LIVE — Haiku generating narratives (`claude-haiku-4-5-20251001`)
 - **FMP**: LIVE — real competitor data for 10 companies
 - **OpenAI**: LIVE — TTS sage voice (`tts-1`), planned: Realtime API for conversational agent
-- **Databricks**: Waiting for token from Cesar (dual-mode switch ready)
+- **Databricks (real)**: Credentials received from Alessandro — 195GB+ tables, needs safeguards before connecting
+  - Workspace: adb-2085958195047517.17.azuredatabricks.net
+  - Catalog: corporate_finance_analytics_prod / Schema: finsight_core_model
+  - Token: stored in local Claude Code memory only (not in git)
+
+### Next Session Priorities
+1. Connect to real Databricks (read-only schema discovery)
+2. Build safeguards: LIMIT clauses, query timeout, aggregation-first, column mapping
+3. Persistent storage for jobs/reports (discuss with Cesar first)
+4. Team convergence: combine best of each app (Alessandro's explorer + our voice/chat)
 
 ### Voice Agent (LIVE — /voice page)
 - **OpenAI Realtime API** with sage voice — full conversational experience
