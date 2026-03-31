@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
-import { Plus, ArrowUpDown, Clock, CheckCircle2, Cpu, Activity, X } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { Plus, ArrowUpDown, Clock, CheckCircle2, Cpu, Activity, X, RotateCcw, Download } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge, SeverityBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,54 +15,137 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { generateJobs, type Job } from "@/data/simulated";
+
+// ---- Types matching the API response ----------------------------------------
+
+interface JobRecord {
+  id: string;
+  query: string;
+  title: string;
+  status: "submitted" | "queued" | "processing" | "completed" | "failed";
+  priority: "critical" | "high" | "medium" | "low";
+  type: "PES" | "CI" | "Forecast" | "Ad-Hoc";
+  agent_type: string;
+  agent_name: string;
+  intent: string;
+  sla_target_minutes: number;
+  sla_deadline: string;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  submitted_by: string;
+  result: JobResult | null;
+  error: string | null;
+  retries: number;
+  max_retries: number;
+}
+
+interface JobResult {
+  summary?: string;
+  data?: {
+    type?: string;
+    columns?: string[];
+    rows?: Record<string, unknown>[];
+    chartData?: { label: string; value: number }[];
+    chartType?: string;
+  };
+  intent?: string;
+  generated_at?: string;
+}
+
+interface JobCounts {
+  submitted: number;
+  queued: number;
+  processing: number;
+  completed: number;
+  failed: number;
+  total: number;
+}
 
 const STATUS_TABS = ["All", "Queued", "Processing", "Completed", "Failed"] as const;
 
-const statusColors: Record<Job["status"], string> = {
+const statusColors: Record<string, string> = {
+  submitted: "bg-gray-500/15 text-gray-400 border border-gray-500/25",
   queued: "bg-blue-500/15 text-blue-400 border border-blue-500/25",
   processing: "bg-amber-500/15 text-amber-400 border border-amber-500/25",
   completed: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25",
   failed: "bg-red-500/15 text-red-400 border border-red-500/25",
 };
 
-const typeColors: Record<Job["type"], string> = {
+const typeColors: Record<string, string> = {
   PES: "bg-violet-500/15 text-violet-400 border border-violet-500/25",
   CI: "bg-cyan-500/15 text-cyan-400 border border-cyan-500/25",
   Forecast: "bg-teal-500/15 text-teal-400 border border-teal-500/25",
   "Ad-Hoc": "bg-zinc-500/15 text-zinc-400 border border-zinc-500/25",
 };
 
-type SortField = "id" | "title" | "type" | "priority" | "status" | "requestor" | "created_at" | "sla_target_minutes" | "agent";
+type SortField = "id" | "title" | "type" | "priority" | "status" | "submitted_by" | "created_at" | "sla_target_minutes" | "agent_name";
 type SortDir = "asc" | "desc";
 
 const priorityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-const statusOrder: Record<string, number> = { processing: 0, queued: 1, completed: 2, failed: 3 };
+const statusOrder: Record<string, number> = { processing: 0, queued: 1, submitted: 2, completed: 3, failed: 4 };
 
-const JOB_TYPES: Job["type"][] = ["PES", "CI", "Forecast", "Ad-Hoc"];
-const JOB_PRIORITIES: Job["priority"][] = ["critical", "high", "medium", "low"];
+const JOB_TYPES = ["PES", "CI", "Forecast", "Ad-Hoc"] as const;
+const JOB_PRIORITIES = ["critical", "high", "medium", "low"] as const;
+
+const POLL_INTERVAL_MS = 5000;
 
 export function JobsContent() {
-  const [jobs, setJobs] = useState<Job[]>(() => generateJobs());
+  const [jobs, setJobs] = useState<JobRecord[]>([]);
+  const [counts, setCounts] = useState<JobCounts>({ submitted: 0, queued: 0, processing: 0, completed: 0, failed: 0, total: 0 });
   const [activeTab, setActiveTab] = useState<(typeof STATUS_TABS)[number]>("All");
   const [sortField, setSortField] = useState<SortField>("created_at");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [loading, setLoading] = useState(true);
 
-  // CR-015: Submit Job modal state
+  // Submit Job modal state
   const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
-  const [newType, setNewType] = useState<Job["type"]>("PES");
-  const [newPriority, setNewPriority] = useState<Job["priority"]>("medium");
-  const [newDescription, setNewDescription] = useState("");
+  const [newQuery, setNewQuery] = useState("");
+  const [newType, setNewType] = useState<(typeof JOB_TYPES)[number]>("PES");
+  const [newPriority, setNewPriority] = useState<(typeof JOB_PRIORITIES)[number]>("medium");
+  const [submitting, setSubmitting] = useState(false);
 
-  // CR-019: Job drill-down state
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  // Job drill-down state
+  const [selectedJob, setSelectedJob] = useState<JobRecord | null>(null);
 
-  const counts = useMemo(() => {
-    const c = { queued: 0, processing: 0, completed: 0, failed: 0 };
-    for (const j of jobs) c[j.status]++;
-    return c;
-  }, [jobs]);
+  // Polling ref
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ---- Fetch jobs from API --------------------------------------------------
+
+  const fetchJobs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/jobs");
+      if (!res.ok) return;
+      const data = await res.json();
+      setJobs(data.jobs || []);
+      setCounts(data.counts || { submitted: 0, queued: 0, processing: 0, completed: 0, failed: 0, total: 0 });
+
+      // Update selected job if it changed
+      if (data.jobs) {
+        setSelectedJob((prev) => {
+          if (!prev) return null;
+          const updated = (data.jobs as JobRecord[]).find((j: JobRecord) => j.id === prev.id);
+          return updated || prev;
+        });
+      }
+    } catch {
+      // Silently fail on poll errors
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Start polling on mount
+  useEffect(() => {
+    fetchJobs();
+    pollRef.current = setInterval(fetchJobs, POLL_INTERVAL_MS);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [fetchJobs]);
+
+  // ---- Sorting --------------------------------------------------------------
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -89,14 +172,15 @@ export function JobsContent() {
       } else if (sortField === "sla_target_minutes") {
         cmp = a.sla_target_minutes - b.sla_target_minutes;
       } else {
-        cmp = String(a[sortField]).localeCompare(String(b[sortField]));
+        cmp = String(a[sortField as keyof JobRecord] ?? "").localeCompare(String(b[sortField as keyof JobRecord] ?? ""));
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
     return sorted;
   }, [jobs, activeTab, sortField, sortDir]);
 
-  // KPI calculations
+  // ---- KPI calculations -----------------------------------------------------
+
   const avgProcessingMin = useMemo(() => {
     const completed = jobs.filter((j) => j.completed_at);
     if (!completed.length) return 0;
@@ -116,6 +200,11 @@ export function JobsContent() {
     return Math.round((withinSla.length / completed.length) * 100);
   }, [jobs]);
 
+  const agentsOnline = useMemo(() => {
+    const activeTypes = new Set(jobs.filter((j) => j.status === "processing").map((j) => j.agent_type));
+    return Math.max(activeTypes.size, 4); // At least 4 agent types available
+  }, [jobs]);
+
   const formatDate = (iso: string) => {
     const d = new Date(iso);
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) +
@@ -123,43 +212,93 @@ export function JobsContent() {
       d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
-  // CR-015: Submit a new job
-  const handleSubmitJob = useCallback(() => {
-    if (!newTitle.trim()) return;
-    const now = new Date().toISOString();
-    const id = `JOB-${String(Math.floor(Math.random() * 90000) + 10000)}`;
-    const newJob: Job = {
-      id,
-      title: newTitle.trim(),
-      type: newType,
-      status: "queued",
-      priority: newPriority,
-      requestor: "current.user@mars.com",
-      created_at: now,
-      completed_at: null,
-      sla_target_minutes: newPriority === "critical" ? 15 : newPriority === "high" ? 30 : newPriority === "medium" ? 60 : 120,
-      agent: "Unassigned",
-    };
-    setJobs((prev) => [newJob, ...prev]);
-    setShowSubmitModal(false);
-    setNewTitle("");
-    setNewType("PES");
-    setNewPriority("medium");
-    setNewDescription("");
-  }, [newTitle, newType, newPriority]);
+  // ---- Submit a new job via API ---------------------------------------------
 
-  // CR-019: Cancel a job
-  const handleCancelJob = useCallback((jobId: string) => {
-    setJobs((prev) =>
-      prev.map((j) => (j.id === jobId ? { ...j, status: "failed" as const } : j))
-    );
-    setSelectedJob((prev) => (prev && prev.id === jobId ? { ...prev, status: "failed" } : prev));
+  const handleSubmitJob = useCallback(async () => {
+    if (!newQuery.trim() || submitting) return;
+    setSubmitting(true);
+
+    try {
+      const res = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: newQuery.trim(),
+          title: newQuery.trim(),
+          type: newType,
+          priority: newPriority,
+        }),
+      });
+
+      if (res.ok) {
+        setShowSubmitModal(false);
+        setNewQuery("");
+        setNewType("PES");
+        setNewPriority("medium");
+        // Immediately fetch to show the new job
+        await fetchJobs();
+      }
+    } catch {
+      // Submission failed silently
+    } finally {
+      setSubmitting(false);
+    }
+  }, [newQuery, newType, newPriority, submitting, fetchJobs]);
+
+  // ---- Retry a failed job ---------------------------------------------------
+
+  const handleRetryJob = useCallback(async (jobId: string) => {
+    try {
+      await fetch(`/api/jobs/${jobId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "retry" }),
+      });
+      await fetchJobs();
+    } catch {
+      // Retry failed silently
+    }
+  }, [fetchJobs]);
+
+  // ---- Export job result ----------------------------------------------------
+
+  const handleExportJob = useCallback(async (job: JobRecord, format: "xlsx" | "csv" | "json") => {
+    const result = job.result as JobResult | null;
+    if (!result?.data?.rows || result.data.rows.length === 0) return;
+
+    try {
+      const res = await fetch(`/api/export?format=${format}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: result.data.rows,
+          filename: `finiq-job-${job.id}`,
+          title: job.title,
+        }),
+      });
+
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `finiq-job-${job.id}.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } catch {
+      // Export failed silently
+    }
   }, []);
 
-  // CR-019: Compute duration for a job
-  const getJobDuration = (job: Job): string => {
+  // ---- Duration helper ------------------------------------------------------
+
+  const getJobDuration = (job: JobRecord): string => {
     const end = job.completed_at ? new Date(job.completed_at) : new Date();
     const mins = Math.round((end.getTime() - new Date(job.created_at).getTime()) / 60000);
+    if (mins < 1) return "<1 min";
     if (mins < 60) return `${mins} min`;
     return `${Math.floor(mins / 60)}h ${mins % 60}m`;
   };
@@ -190,7 +329,7 @@ export function JobsContent() {
         </Button>
       </div>
 
-      {/* CR-015: Submit Job Modal */}
+      {/* Submit Job Modal */}
       {showSubmitModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <Card className="w-full max-w-lg">
@@ -205,11 +344,12 @@ export function JobsContent() {
             <CardContent>
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Title</label>
-                  <Input
-                    placeholder="Enter job title..."
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
+                  <label className="text-xs text-muted-foreground">Query</label>
+                  <textarea
+                    className="flex min-h-[80px] w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:bg-input/30"
+                    placeholder="Enter your query... e.g. 'Show organic growth for Mars Petcare P06 2025'"
+                    value={newQuery}
+                    onChange={(e) => setNewQuery(e.target.value)}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -217,7 +357,7 @@ export function JobsContent() {
                     <label className="text-xs text-muted-foreground">Type</label>
                     <Select
                       value={newType}
-                      onChange={(e) => setNewType(e.target.value as Job["type"])}
+                      onChange={(e) => setNewType(e.target.value as typeof newType)}
                     >
                       {JOB_TYPES.map((t) => (
                         <SelectOption key={t} value={t}>{t}</SelectOption>
@@ -228,7 +368,7 @@ export function JobsContent() {
                     <label className="text-xs text-muted-foreground">Priority</label>
                     <Select
                       value={newPriority}
-                      onChange={(e) => setNewPriority(e.target.value as Job["priority"])}
+                      onChange={(e) => setNewPriority(e.target.value as typeof newPriority)}
                     >
                       {JOB_PRIORITIES.map((p) => (
                         <SelectOption key={p} value={p}>
@@ -238,22 +378,13 @@ export function JobsContent() {
                     </Select>
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Description</label>
-                  <textarea
-                    className="flex min-h-[80px] w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:bg-input/30"
-                    placeholder="Describe the job..."
-                    value={newDescription}
-                    onChange={(e) => setNewDescription(e.target.value)}
-                  />
-                </div>
                 <div className="flex justify-end gap-2 pt-2">
                   <Button variant="outline" onClick={() => setShowSubmitModal(false)}>
                     Cancel
                   </Button>
-                  <Button onClick={handleSubmitJob} disabled={!newTitle.trim()}>
+                  <Button onClick={handleSubmitJob} disabled={!newQuery.trim() || submitting}>
                     <Plus className="h-4 w-4" />
-                    Submit
+                    {submitting ? "Submitting..." : "Submit"}
                   </Button>
                 </div>
               </div>
@@ -304,13 +435,13 @@ export function JobsContent() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Agents Online</p>
-              <p className="text-xl font-semibold">5</p>
+              <p className="text-xl font-semibold">{agentsOnline}</p>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* CR-019: Job Detail Panel */}
+      {/* Job Detail Panel */}
       {selectedJob && (
         <Card>
           <CardHeader>
@@ -330,7 +461,7 @@ export function JobsContent() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span
-                    className={`inline-flex h-5 items-center rounded-full px-2 text-xs font-medium ${statusColors[selectedJob.status]}`}
+                    className={`inline-flex h-5 items-center rounded-full px-2 text-xs font-medium ${statusColors[selectedJob.status] || ""}`}
                   >
                     {selectedJob.status.charAt(0).toUpperCase() + selectedJob.status.slice(1)}
                   </span>
@@ -338,11 +469,17 @@ export function JobsContent() {
                     {selectedJob.priority.charAt(0).toUpperCase() + selectedJob.priority.slice(1)}
                   </SeverityBadge>
                   <span
-                    className={`inline-flex h-5 items-center rounded-full px-2 text-xs font-medium ${typeColors[selectedJob.type]}`}
+                    className={`inline-flex h-5 items-center rounded-full px-2 text-xs font-medium ${typeColors[selectedJob.type] || ""}`}
                   >
                     {selectedJob.type}
                   </span>
                 </div>
+              </div>
+
+              {/* Query text */}
+              <div className="rounded-lg border border-foreground/5 bg-muted/30 p-3">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Query</p>
+                <p className="mt-1 text-sm">{selectedJob.query}</p>
               </div>
 
               <div className="grid grid-cols-3 gap-4 rounded-lg border border-foreground/5 p-3">
@@ -358,7 +495,7 @@ export function JobsContent() {
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Requestor</p>
-                  <p className="mt-0.5 text-sm">{selectedJob.requestor}</p>
+                  <p className="mt-0.5 text-sm">{selectedJob.submitted_by}</p>
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground">SLA Target</p>
@@ -370,20 +507,84 @@ export function JobsContent() {
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Agent</p>
-                  <p className="mt-0.5 text-sm">{selectedJob.agent}</p>
+                  <p className="mt-0.5 text-sm">{selectedJob.agent_name}</p>
                 </div>
               </div>
+
+              {/* Result display for completed jobs */}
+              {selectedJob.status === "completed" && selectedJob.result && (
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+                    <p className="text-[10px] uppercase tracking-wider text-emerald-400">Result</p>
+                    <p className="mt-1 text-sm whitespace-pre-wrap">
+                      {(selectedJob.result as JobResult)?.summary || "Job completed successfully."}
+                    </p>
+                  </div>
+
+                  {/* Data table if available */}
+                  {(selectedJob.result as JobResult)?.data?.rows && (selectedJob.result as JobResult).data!.rows!.length > 0 && (
+                    <div className="overflow-x-auto rounded-lg border border-foreground/5">
+                      <table className="w-full text-xs">
+                        <thead className="bg-muted/30">
+                          <tr>
+                            {((selectedJob.result as JobResult).data!.columns || Object.keys((selectedJob.result as JobResult).data!.rows![0])).map((col) => (
+                              <th key={col} className="px-3 py-2 text-left font-medium text-muted-foreground">
+                                {col}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(selectedJob.result as JobResult).data!.rows!.slice(0, 20).map((row, i) => (
+                            <tr key={i} className="border-t border-foreground/5">
+                              {((selectedJob.result as JobResult).data!.columns || Object.keys(row)).map((col) => (
+                                <td key={col} className="px-3 py-1.5">
+                                  {String(row[col] ?? "")}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Export buttons */}
+                  {(selectedJob.result as JobResult)?.data?.rows && (selectedJob.result as JobResult).data!.rows!.length > 0 && (
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleExportJob(selectedJob, "xlsx")}>
+                        <Download className="h-3 w-3" />
+                        XLSX
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => handleExportJob(selectedJob, "csv")}>
+                        <Download className="h-3 w-3" />
+                        CSV
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => handleExportJob(selectedJob, "json")}>
+                        <Download className="h-3 w-3" />
+                        JSON
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Error display for failed jobs */}
+              {selectedJob.status === "failed" && selectedJob.error && (
+                <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
+                  <p className="text-[10px] uppercase tracking-wider text-red-400">Error</p>
+                  <p className="mt-1 text-sm text-red-300">{selectedJob.error}</p>
+                </div>
+              )}
 
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setSelectedJob(null)}>
                   Close
                 </Button>
-                {selectedJob.status !== "completed" && selectedJob.status !== "failed" && (
-                  <Button
-                    variant="destructive"
-                    onClick={() => handleCancelJob(selectedJob.id)}
-                  >
-                    Cancel Job
+                {selectedJob.status === "failed" && selectedJob.retries < selectedJob.max_retries && (
+                  <Button variant="outline" onClick={() => handleRetryJob(selectedJob.id)}>
+                    <RotateCcw className="h-4 w-4" />
+                    Retry ({selectedJob.retries}/{selectedJob.max_retries})
                   </Button>
                 )}
               </div>
@@ -409,7 +610,7 @@ export function JobsContent() {
                 {tab}
                 {tab !== "All" && (
                   <span className="ml-1.5 text-[10px] opacity-70">
-                    {counts[tab.toLowerCase() as keyof typeof counts]}
+                    {counts[tab.toLowerCase() as keyof JobCounts] ?? 0}
                   </span>
                 )}
               </button>
@@ -417,56 +618,67 @@ export function JobsContent() {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead><SortHeader field="id">ID</SortHeader></TableHead>
-                <TableHead><SortHeader field="title">Title</SortHeader></TableHead>
-                <TableHead><SortHeader field="type">Type</SortHeader></TableHead>
-                <TableHead><SortHeader field="priority">Priority</SortHeader></TableHead>
-                <TableHead><SortHeader field="status">Status</SortHeader></TableHead>
-                <TableHead><SortHeader field="requestor">Requestor</SortHeader></TableHead>
-                <TableHead><SortHeader field="created_at">Created</SortHeader></TableHead>
-                <TableHead><SortHeader field="sla_target_minutes">SLA Target</SortHeader></TableHead>
-                <TableHead><SortHeader field="agent">Agent</SortHeader></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((job) => (
-                <TableRow
-                  key={job.id}
-                  className={`cursor-pointer ${selectedJob?.id === job.id ? "bg-muted/50" : ""}`}
-                  onClick={() => setSelectedJob(job)}
-                >
-                  <TableCell className="font-mono text-xs">{job.id}</TableCell>
-                  <TableCell className="max-w-[240px] truncate font-medium">{job.title}</TableCell>
-                  <TableCell>
-                    <span
-                      className={`inline-flex h-5 items-center rounded-full px-2 text-xs font-medium ${typeColors[job.type]}`}
-                    >
-                      {job.type}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <SeverityBadge severity={job.priority}>
-                      {job.priority.charAt(0).toUpperCase() + job.priority.slice(1)}
-                    </SeverityBadge>
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={`inline-flex h-5 items-center rounded-full px-2 text-xs font-medium ${statusColors[job.status]}`}
-                    >
-                      {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-xs">{job.requestor.split("@")[0].replace(".", " ")}</TableCell>
-                  <TableCell className="text-xs">{formatDate(job.created_at)}</TableCell>
-                  <TableCell className="text-xs">{job.sla_target_minutes} min</TableCell>
-                  <TableCell className="text-xs">{job.agent}</TableCell>
+          {loading ? (
+            <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+              Loading jobs...
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-sm text-muted-foreground">
+              <p>No jobs found.</p>
+              <p className="mt-1 text-xs">Submit a new job to get started.</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead><SortHeader field="id">ID</SortHeader></TableHead>
+                  <TableHead><SortHeader field="title">Title</SortHeader></TableHead>
+                  <TableHead><SortHeader field="type">Type</SortHeader></TableHead>
+                  <TableHead><SortHeader field="priority">Priority</SortHeader></TableHead>
+                  <TableHead><SortHeader field="status">Status</SortHeader></TableHead>
+                  <TableHead><SortHeader field="submitted_by">Requestor</SortHeader></TableHead>
+                  <TableHead><SortHeader field="created_at">Created</SortHeader></TableHead>
+                  <TableHead><SortHeader field="sla_target_minutes">SLA Target</SortHeader></TableHead>
+                  <TableHead><SortHeader field="agent_name">Agent</SortHeader></TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((job) => (
+                  <TableRow
+                    key={job.id}
+                    className={`cursor-pointer ${selectedJob?.id === job.id ? "bg-muted/50" : ""}`}
+                    onClick={() => setSelectedJob(job)}
+                  >
+                    <TableCell className="font-mono text-xs">{job.id}</TableCell>
+                    <TableCell className="max-w-[240px] truncate font-medium">{job.title}</TableCell>
+                    <TableCell>
+                      <span
+                        className={`inline-flex h-5 items-center rounded-full px-2 text-xs font-medium ${typeColors[job.type] || ""}`}
+                      >
+                        {job.type}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <SeverityBadge severity={job.priority}>
+                        {job.priority.charAt(0).toUpperCase() + job.priority.slice(1)}
+                      </SeverityBadge>
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={`inline-flex h-5 items-center rounded-full px-2 text-xs font-medium ${statusColors[job.status] || ""}`}
+                      >
+                        {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-xs">{job.submitted_by.split("@")[0].replace(".", " ")}</TableCell>
+                    <TableCell className="text-xs">{formatDate(job.created_at)}</TableCell>
+                    <TableCell className="text-xs">{job.sla_target_minutes} min</TableCell>
+                    <TableCell className="text-xs">{job.agent_name}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>

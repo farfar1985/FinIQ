@@ -1,0 +1,295 @@
+/**
+ * Job Board API — FR5.1-5.7
+ *
+ * GET  /api/jobs         — List all jobs with optional status/priority filter
+ * POST /api/jobs         — Submit a new job (triggers async LLM processing)
+ *
+ * Jobs are stored in-memory (Map). Each job goes through the lifecycle:
+ * submitted -> queued -> processing -> completed/failed
+ *
+ * SLA targets: critical=2min, high=10min, medium=30min, low=120min
+ * Agent pool: PES, CI, Forecasting, Ad-hoc (auto-assigned by intent)
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { processLLMQuery } from "@/lib/llm-query";
+
+// ============================================================
+// Types & Constants
+// ============================================================
+
+export interface JobRecord {
+  id: string;
+  query: string;
+  title: string;
+  status: "submitted" | "queued" | "processing" | "completed" | "failed";
+  priority: "critical" | "high" | "medium" | "low";
+  type: "PES" | "CI" | "Forecast" | "Ad-Hoc";
+  agent_type: string;
+  agent_name: string;
+  intent: string;
+  sla_target_minutes: number;
+  sla_deadline: string;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  submitted_by: string;
+  result: unknown | null;
+  error: string | null;
+  retries: number;
+  max_retries: number;
+}
+
+const SLA_TARGETS: Record<string, { minutes: number; ms: number }> = {
+  critical: { minutes: 2, ms: 2 * 60 * 1000 },
+  high: { minutes: 10, ms: 10 * 60 * 1000 },
+  medium: { minutes: 30, ms: 30 * 60 * 1000 },
+  low: { minutes: 120, ms: 2 * 60 * 60 * 1000 },
+};
+
+const AGENT_POOL: Record<string, { id: string; name: string; intents: string[]; capacity: number; activeJobs: number }> = {
+  pes: { id: "pes", name: "PES Agent", intents: ["pes", "variance", "ranking"], capacity: 3, activeJobs: 0 },
+  ci: { id: "ci", name: "CI Agent", intents: ["ci"], capacity: 2, activeJobs: 0 },
+  forecasting: { id: "forecasting", name: "Forecasting Agent", intents: ["trend", "product"], capacity: 2, activeJobs: 0 },
+  adhoc: { id: "adhoc", name: "Ad-Hoc Agent", intents: ["adhoc"], capacity: 5, activeJobs: 0 },
+};
+
+const INTENT_KEYWORDS: Record<string, string[]> = {
+  pes: ["pes", "period end", "summary", "kpi", "organic growth", "mac shape", "a&cp", "ncfo", "performance"],
+  variance: ["variance", "budget", "replan", "actual vs", "favorable", "unfavorable"],
+  product: ["product", "brand", "segment", "item", "category"],
+  trend: ["trend", "over time", "history", "compare period", "year over year", "yoy", "growth"],
+  ranking: ["rank", "top", "bottom", "best", "worst", "highest", "lowest"],
+  ci: ["competitor", "nestle", "mondelez", "hershey", "benchmark", "peer", "competitive", "swot", "porter"],
+};
+
+// Map intent to job type for display
+const INTENT_TO_TYPE: Record<string, JobRecord["type"]> = {
+  pes: "PES",
+  variance: "PES",
+  ranking: "PES",
+  ci: "CI",
+  trend: "Forecast",
+  product: "Forecast",
+  adhoc: "Ad-Hoc",
+};
+
+// ============================================================
+// In-memory job store (exported for use by [id] route)
+// ============================================================
+
+// Using globalThis to persist across hot-reloads in dev
+const globalJobs = globalThis as unknown as { __finiq_jobs?: Map<string, JobRecord> };
+if (!globalJobs.__finiq_jobs) {
+  globalJobs.__finiq_jobs = new Map<string, JobRecord>();
+}
+export const jobs: Map<string, JobRecord> = globalJobs.__finiq_jobs;
+
+// ============================================================
+// Helpers
+// ============================================================
+
+function generateId(): string {
+  return `JOB-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+}
+
+function classifyIntent(query: string): string {
+  const lower = query.toLowerCase();
+  for (const [intent, keywords] of Object.entries(INTENT_KEYWORDS)) {
+    if (keywords.some((kw) => lower.includes(kw))) {
+      return intent;
+    }
+  }
+  return "adhoc";
+}
+
+function resolveAgentType(query: string): string {
+  const intent = classifyIntent(query);
+  for (const [agentId, agent] of Object.entries(AGENT_POOL)) {
+    if (agent.intents.includes(intent)) return agentId;
+  }
+  return "adhoc";
+}
+
+function getJobCounts() {
+  const counts = { submitted: 0, queued: 0, processing: 0, completed: 0, failed: 0, total: 0 };
+  for (const job of jobs.values()) {
+    counts.total++;
+    if (job.status in counts) {
+      counts[job.status as keyof typeof counts]++;
+    }
+  }
+  return counts;
+}
+
+// ============================================================
+// Async job processing — runs the real LLM query engine
+// ============================================================
+
+async function processJob(jobId: string) {
+  const job = jobs.get(jobId);
+  if (!job) return;
+
+  // Transition to processing
+  job.status = "processing";
+  job.updated_at = new Date().toISOString();
+
+  try {
+    const result = await processLLMQuery(job.query, { entity: undefined, period: undefined });
+
+    job.status = "completed";
+    job.completed_at = new Date().toISOString();
+    job.updated_at = job.completed_at;
+    job.result = {
+      summary: result.text || `Analysis complete for: "${job.query}"`,
+      data: result.data || null,
+      intent: result.intent,
+      generated_at: new Date().toISOString(),
+    };
+  } catch (err) {
+    job.status = "failed";
+    job.updated_at = new Date().toISOString();
+    job.error = err instanceof Error ? err.message : "Unknown error during processing";
+  } finally {
+    // Free agent capacity
+    const agent = AGENT_POOL[job.agent_type];
+    if (agent) {
+      agent.activeJobs = Math.max(0, agent.activeJobs - 1);
+    }
+  }
+}
+
+// ============================================================
+// GET /api/jobs
+// ============================================================
+
+export async function GET(request: NextRequest) {
+  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  const { allowed, headers } = checkRateLimit(ip, 100);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too Many Requests", message: "Rate limit exceeded. Max 100 requests per minute." },
+      { status: 429, headers }
+    );
+  }
+
+  const { searchParams } = new URL(request.url);
+  const statusFilter = searchParams.get("status");
+  const priorityFilter = searchParams.get("priority");
+  const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 200);
+  const offset = parseInt(searchParams.get("offset") || "0", 10);
+
+  let result = Array.from(jobs.values());
+
+  // Apply filters
+  if (statusFilter) {
+    const statuses = statusFilter.split(",");
+    result = result.filter((j) => statuses.includes(j.status));
+  }
+  if (priorityFilter) {
+    const priorities = priorityFilter.split(",");
+    result = result.filter((j) => priorities.includes(j.priority));
+  }
+
+  // Sort: priority order, then creation time (newest first)
+  const priorityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+  result.sort((a, b) => {
+    const pa = priorityOrder[a.priority] ?? 99;
+    const pb = priorityOrder[b.priority] ?? 99;
+    if (pa !== pb) return pa - pb;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+
+  const total = result.length;
+  result = result.slice(offset, offset + limit);
+
+  const responseHeaders = new Headers(headers);
+  return NextResponse.json(
+    { jobs: result, total, counts: getJobCounts() },
+    { headers: responseHeaders }
+  );
+}
+
+// ============================================================
+// POST /api/jobs
+// ============================================================
+
+export async function POST(request: NextRequest) {
+  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  const { allowed, headers } = checkRateLimit(ip, 100);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too Many Requests", message: "Rate limit exceeded. Max 100 requests per minute." },
+      { status: 429, headers }
+    );
+  }
+
+  try {
+    const body = await request.json();
+    const { query, title, priority = "medium", type } = body;
+
+    if (!query || typeof query !== "string" || query.trim().length === 0) {
+      return NextResponse.json({ error: "Missing or empty 'query' field" }, { status: 400, headers });
+    }
+
+    const validPriorities = ["critical", "high", "medium", "low"];
+    if (!validPriorities.includes(priority)) {
+      return NextResponse.json(
+        { error: `Invalid priority: ${priority}. Must be one of: ${validPriorities.join(", ")}` },
+        { status: 400, headers }
+      );
+    }
+
+    const intent = classifyIntent(query);
+    const agentType = resolveAgentType(query);
+    const agent = AGENT_POOL[agentType] || AGENT_POOL.adhoc;
+    const now = new Date().toISOString();
+    const sla = SLA_TARGETS[priority] || SLA_TARGETS.medium;
+
+    const job: JobRecord = {
+      id: generateId(),
+      query: query.trim(),
+      title: (title || query.trim()).substring(0, 200),
+      status: "submitted",
+      priority: priority as JobRecord["priority"],
+      type: (type as JobRecord["type"]) || INTENT_TO_TYPE[intent] || "Ad-Hoc",
+      agent_type: agent.id,
+      agent_name: agent.name,
+      intent,
+      sla_target_minutes: sla.minutes,
+      sla_deadline: new Date(Date.now() + sla.ms).toISOString(),
+      created_at: now,
+      updated_at: now,
+      completed_at: null,
+      submitted_by: body.submitter || "current.user@mars.com",
+      result: null,
+      error: null,
+      retries: 0,
+      max_retries: 3,
+    };
+
+    jobs.set(job.id, job);
+
+    // Transition to queued
+    job.status = "queued";
+    job.updated_at = new Date().toISOString();
+
+    // Increment agent active jobs
+    agent.activeJobs++;
+
+    // Kick off async processing (don't await — return immediately)
+    processJob(job.id).catch((err) => {
+      console.error(`[Job ${job.id}] Processing error:`, err);
+    });
+
+    const responseHeaders = new Headers(headers);
+    return NextResponse.json({ job }, { status: 201, headers: responseHeaders });
+  } catch (err) {
+    console.error("[POST /api/jobs] Error:", err);
+    return NextResponse.json(
+      { error: "Failed to create job" },
+      { status: 500, headers }
+    );
+  }
+}
