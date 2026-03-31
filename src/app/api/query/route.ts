@@ -11,11 +11,18 @@ import {
   type ReplanRow,
   type CompetitorRow,
 } from "@/data/simulated";
+import {
+  processLLMQuery,
+  classifyIntent as llmClassifyIntent,
+} from "@/lib/llm-query";
 
 // ---------------------------------------------------------------------------
 // POST /api/query
 // Accepts { query: string, context?: { entity?: string, period?: string }, history?: {role,content}[] }
 // Returns  { text, intent, data?: { type, columns?, rows?, chartData?, chartType? } }
+//
+// Strategy: Try LLM-powered query first (if ANTHROPIC_API_KEY is set),
+// then fall back to the regex-based logic below.
 // ---------------------------------------------------------------------------
 
 interface QueryRequest {
@@ -533,6 +540,35 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // -----------------------------------------------------------------------
+    // LLM-first path: if ANTHROPIC_API_KEY is configured, use the
+    // Anthropic-powered query engine with 7 intents, AI narratives,
+    // trend analysis, and ad-hoc SQL generation.
+    // -----------------------------------------------------------------------
+    if (process.env.ANTHROPIC_API_KEY) {
+      try {
+        // Check for CI intent — route competitor queries through LLM engine
+        const llmIntent = llmClassifyIntent(query);
+
+        const llmResponse = await processLLMQuery(query, {
+          entity: context?.entity ?? undefined,
+          period: context?.period ?? undefined,
+        });
+
+        // If LLM returned a valid response, use it
+        if (llmResponse && llmResponse.text) {
+          return NextResponse.json(llmResponse);
+        }
+      } catch (llmError) {
+        // LLM failed — fall through to regex-based logic
+        console.warn("[/api/query] LLM query failed, falling back to regex:", llmError);
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Regex fallback: original intent classification and handlers
+    // -----------------------------------------------------------------------
 
     // Load simulated data
     const entities = generateEntities();
