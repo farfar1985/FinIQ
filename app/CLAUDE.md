@@ -148,12 +148,52 @@ app/
 - Voice activity detection (server-side VAD)
 - Separate /voice-ws endpoint (existing /ws for jobs untouched)
 
-## SQLite Column Mapping
-- Entity: `Child_Entity` / `Child_Entity_ID`
-- Account: `Child_Account` / `Child_Account_ID`
-- Views: `Entity`, `Account_KPI`, `Period`, `YTD_LY`, `YTD_CY`, `Periodic_LY`, `Periodic_CY`
-- Date: `Year` / `Period` / `Quarter`
-- Replan: `Entity`, `Account_KPI`, `Actual_USD_Value`, `Replan_USD_Value`
+## Real Databricks Schema (discovered 2026-03-31)
+
+**Warehouse**: Serverless Starter Warehouse (ID: `de640b2f8ef3d9b2`)
+**HTTP Path**: `/sql/1.0/warehouses/de640b2f8ef3d9b2`
+**Catalog**: `corporate_finance_analytics_prod` | **Schema**: `finsight_core_model`
+
+### DANGER ZONE — Tables to NEVER query directly
+| Table | Rows |
+|-------|------|
+| `finiq_financial` | 5,758,891,376 (5.7B) |
+| `finiq_financial_cons` | 5,781,441,613 (5.8B) |
+| `finiq_financial_base` | 739,574,399 (740M) |
+
+### Safe tables (dimensions + views)
+| Table | Rows |
+|-------|------|
+| `finiq_vw_ncfo_unit` | 852,836 |
+| `finiq_vw_pl_unit` | ? (view over 5.7B — always filter by Unit_Alias) |
+| `finiq_vw_pl_brand_product` | ? (view over 5.7B — always filter by Unit_Alias) |
+| `finiq_financial_replan` | 2,740,193 |
+| `finiq_dim_unit` | 766 |
+| `finiq_dim_rl` | 725 |
+| `finiq_rl_formula` | 725 |
+| `finiq_date` | 117 |
+| `finiq_customer` | 21,204 |
+| `finiq_composite_item` | 9,478 |
+| `finiq_item` | 381,113 |
+| `finiq_economic_cell` | 175 |
+
+### Column Name Mapping: SQLite (synthetic) → Databricks (real)
+| Concept | SQLite | Databricks |
+|---------|--------|------------|
+| Entity table | `finiq_dim_entity` | `finiq_dim_unit` |
+| Entity ID | `Child_Entity_ID` | `Child_Unit_ID` |
+| Entity name | `Child_Entity` | `Child_Unit` |
+| Account table | `finiq_dim_account` | `finiq_dim_rl` |
+| Account ID | `Child_Account_ID` | `Child_RL_ID` |
+| Account name | `Child_Account` | `Child_RL` |
+| Formula table | `finiq_account_formula` | `finiq_rl_formula` |
+| Input table | `finiq_account_input` | `finiq_rl_input` |
+| View entity col | `Entity` | `Unit_Alias` |
+| View account col | `Account_KPI` | `RL_Alias` |
+| View YTD LY | `YTD_LY` | `YTD_LY_Value` |
+| View YTD CY | `YTD_CY` | `YTD_CY_Value` |
+| View Periodic LY | `Periodic_LY` | `Periodic_LY_Value` |
+| View Periodic CY | `Periodic_CY` | `Periodic_CY_Value` |
 
 ## Anti-Patterns to Avoid
 1. Use `claude-sonnet-4-20250514` — NOT `claude-opus-4-6`
@@ -164,6 +204,9 @@ app/
 6. EVERY analytics response includes a chart
 7. FMP API for CI (mock fallback when no key)
 8. OKLCH design tokens from day 1
+9. **NEVER query finiq_financial / finiq_financial_cons / finiq_financial_base** — use views only
+10. **Always filter views by Unit_Alias** — unfiltered view queries scan 5.7B rows
+11. **Query timeout: 30 seconds** — must be enforced on all Databricks queries
 
 ## npm Workaround
 ```bash

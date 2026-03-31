@@ -1,0 +1,1757 @@
+╔══════════════════════════════════════════════════════════╗
+║   DEEP DATABRICKS SCHEMA SCAN                          ║
+║   corporate_finance_analytics_prod.finsight_core_model  ║
+╚══════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 1: VIEW SQL DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+=== VIEW: finiq_vw_pl_unit ===
+  [query] Getting CREATE for finiq_vw_pl_unit...
+CREATE VIEW finsight_core_model.finiq_vw_pl_unit (
+  Date_ID,
+  Unit_Alias,
+  RL_Alias,
+  YTD_LY_Value,
+  YTD_CY_Value,
+  Periodic_LY_Value,
+  Periodic_CY_Value)
+WITH SCHEMA BINDING
+AS WITH T1 AS (  SELECT D.Date_ID,
+                     D.Date_ID - V.Source_Date_ID - CASE WHEN F.RL_ID = 5464 THEN 100 ELSE 0 END Date_Offset,
+                     V.View_ID,
+                     F.Unit_ID,
+                     F.RL_ID,
+                     SUM(F.USD_Value) Value
+                FROM FinIQ_Financial_Cons F
+                     INNER JOIN Dimensions_View_Date_Map V ON V.Target_Date_ID = F.Date_ID AND V.View_ID IN (1, 2)
+                     INNER JOIN Dimensions_Date          D ON    D.Date_ID = V.Source_Date_ID       AND F.RL_ID <> 5464
+                                                              OR D.Date_ID = V.Source_Date_ID + 100
+                                                              OR D.Date_ID = V.Source_Date_ID + 200 AND F.RL_ID = 5464
+               WHERE RL_ID IN (5534, 3767, 1666, 3803, 3770,  856,  922,  918, 6472,
+                               6473, 1000, 5737, 1010, 1027, 1028, 1072, 1085, 1086,
+                               1087, 4727, 5472, 5464, 5581, 5582, 5583, 5586, 5587)
+           GROUP BY ALL),
+ Growth AS (SELECT col1 Parent_RL_ID,
+                   col2 Child_RL_ID,
+                   col3 Pos
+              FROM VALUES ( 5723, 5472, 0), ( 5727, 5581, 0), ( 7451, 5582, 0), ( 7450, 5583, 0), (74510, 5586, 0), (74500, 5587, 0),
+                          ( 5723, 5464, 1), ( 5727, 5464, 1), ( 7451, 5464, 1), ( 7450, 5464, 1), (74510, 5464, 1), (74500, 5464, 1)),
+     T2 AS ( SELECT T1.Date_ID,
+                    T1.Date_Offset,
+                    T1.View_ID,
+                    T1.Unit_ID,
+                    Growth.Parent_RL_ID RL_ID,
+                    SUM(CASE WHEN Growth.Pos = 0 THEN T1.Value END) / NULLIF(SUM(CASE WHEN Growth.Pos = 1 THEN T1.Value END), 0) - CASE WHEN Growth.Parent_RL_ID = 5723 THEN 1 ELSE 0 END Value
+               FROM T1 INNER JOIN Growth ON Growth.Child_RL_ID = T1.RL_ID
+           GROUP BY ALL
+              UNION ALL
+             SELECT *
+               FROM T1
+              WHERE RL_ID NOT IN (5472, 5581, 5582, 5583, 5586, 5587, 5464))
+  SELECT T2.Date_ID,
+         U.Unit_Alias,
+         CASE WHEN RL_ID = 74500 THEN 'MS.Growth % - 3rd P Volume'
+              WHEN RL_ID = 74510 THEN 'MS.Growth % - 3rd P Mix'
+              ELSE RL_Alias
+         END RL_Alias,
+         ROUND(SUM(CASE WHEN T2.Date_Offset = 100 AND T2.View_ID = 2 THEN Value END), 4) YTD_LY_Value,
+         ROUND(SUM(CASE WHEN T2.Date_Offset =   0 AND T2.View_ID = 2 THEN Value END), 4) YTD_CY_Value,
+         ROUND(SUM(CASE WHEN T2.Date_Offset = 100 AND T2.View_ID = 1 THEN Value END), 4) Periodic_LY_Value,
+         ROUND(SUM(CASE WHEN T2.Date_Offset =   0 AND T2.View_ID = 1 THEN Value END), 4) Periodic_CY_Value
+    FROM T2 INNER JOIN Dimensions_Unit U USING (Unit_ID)
+             LEFT JOIN Dimensions_Reporting_Line RL USING (RL_ID)
+GROUP BY ALL
+
+
+=== VIEW: finiq_vw_pl_brand_product ===
+  [query] Getting CREATE for finiq_vw_pl_brand_product...
+CREATE VIEW finsight_core_model.finiq_vw_pl_brand_product (
+  Date_ID,
+  Unit_Alias,
+  RL_Alias,
+  Item,
+  YTD_LY_Value,
+  YTD_CY_Value,
+  Periodic_LY_Value,
+  Periodic_CY_Value)
+WITH SCHEMA BINDING
+AS WITH T0 AS (  SELECT D.Date_ID,
+                     D.Date_ID - V.Source_Date_ID - CASE WHEN F.RL_ID = 5464 THEN 100 ELSE 0 END Date_Offset,
+                     V.View_ID,
+                     F.Unit_ID,
+                     F.RL_ID,
+                     I.Brand,
+                     I.Product_Category,
+                     I.Product_Consolidation,
+                     SUM(F.USD_Value) Value
+                FROM FinIQ_Financial_Cons F
+                     INNER JOIN FinIQ_Composite_Item     I ON F.Composite_Item_ID = I.Composite_Item_ID
+                     INNER JOIN Dimensions_View_Date_Map V ON V.Target_Date_ID = F.Date_ID AND V.View_ID IN (1, 2)
+                     INNER JOIN Dimensions_Date          D ON    D.Date_ID = V.Source_Date_ID       AND F.RL_ID <> 5464
+                                                              OR D.Date_ID = V.Source_Date_ID + 100
+                                                              OR D.Date_ID = V.Source_Date_ID + 200 AND F.RL_ID = 5464
+               WHERE RL_ID IN (5534, 3767, 1666, 3803, 3770,  856,  922,  918, 6472,
+                               6473, 1000, 5737, 1010, 1027, 1028, 1072, 1085, 1086,
+                               1087, 4727, 5472, 5464, 5581, 5582, 5583, 5586, 5587)
+           GROUP BY ALL),
+     T1 AS (SELECT Date_ID,
+                   Date_Offset,
+                   View_ID,
+                   Unit_ID,
+                   RL_ID,
+                   COALESCE(Brand, "EMPTY BRAND") Item,
+                   Value
+              FROM T0
+             UNION ALL
+            SELECT Date_ID,
+                   Date_Offset,
+                   View_ID,
+                   Unit_ID,
+                   RL_ID,
+                   COALESCE(Product_Category, "EMPTY PCAT") Item,
+                   Value
+              FROM T0
+             UNION ALL
+            SELECT Date_ID,
+                   Date_Offset,
+                   View_ID,
+                   Unit_ID,
+                   RL_ID,
+                   COALESCE(Product_Consolidation, "EMPTY PCONS") Item,
+                   Value
+              FROM T0),
+ Growth AS (SELECT col1 Parent_RL_ID,
+                   col2 Child_RL_ID,
+                   col3 Pos
+              FROM VALUES ( 5723, 5472, 0), ( 5727, 5581, 0), ( 7451, 5582, 0), ( 7450, 5583, 0), (74510, 5586, 0), (74500, 5587, 0),
+                          ( 5723, 5464, 1), ( 5727, 5464, 1), ( 7451, 5464, 1), ( 7450, 5464, 1), (74510, 5464, 1), (74500, 5464, 1)),
+     T2 AS ( SELECT T1.Date_ID,
+                    T1.Date_Offset,
+                    T1.View_ID,
+                    T1.Unit_ID,
+                    Growth.Parent_RL_ID RL_ID,
+                    T1.Item,
+                    SUM(CASE WHEN Growth.Pos = 0 THEN T1.Value END) / NULLIF(SUM(CASE WHEN Growth.Pos = 1 THEN T1.Value END), 0) - CASE WHEN Growth.Parent_RL_ID = 5723 THEN 1 ELSE 0 END Value
+               FROM T1 INNER JOIN Growth ON Growth.Child_RL_ID = T1.RL_ID
+           GROUP BY ALL
+              UNION ALL
+             SELECT *
+               FROM T1
+              WHERE RL_ID NOT IN (5472, 5581, 5582, 5583, 5586, 5587, 5464))
+  SELECT T2.Date_ID,
+         U.Unit_Alias,
+         CASE WHEN RL_ID = 74500 THEN 'MS.Growth % - 3rd P Volume'
+              WHEN RL_ID = 74510 THEN 'MS.Growth % - 3rd P Mix'
+              ELSE RL_Alias
+         END RL_Alias,
+         T2.Item,
+         ROUND(SUM(CASE WHEN T2.Date_Offset = 100 AND T2.View_ID = 2 THEN Value END), 4) YTD_LY_Value,
+         ROUND(SUM(CASE WHEN T2.Date_Offset =   0 AND T2.View_ID = 2 THEN Value END), 4) YTD_CY_Value,
+         ROUND(SUM(CASE WHEN T2.Date_Offset = 100 AND T2.View_ID = 1 THEN Value END), 4) Periodic_LY_Value,
+         ROUND(SUM(CASE WHEN T2.Date_Offset =   0 AND T2.View_ID = 1 THEN Value END), 4) Periodic_CY_Value
+    FROM T2 INNER JOIN Dimensions_Unit U USING (Unit_ID)
+             LEFT JOIN Dimensions_Reporting_Line RL USING (RL_ID)
+GROUP BY ALL
+
+
+=== VIEW: finiq_vw_ncfo_unit ===
+  [query] Getting CREATE for finiq_vw_ncfo_unit...
+CREATE VIEW finsight_core_model.finiq_vw_ncfo_unit (
+  Date_ID,
+  Unit_Alias,
+  RL_Alias,
+  YTD_LY_Value,
+  YTD_CY_Value,
+  Periodic_LY_Value,
+  Periodic_CY_Value)
+WITH SCHEMA BINDING
+AS WITH T1 AS (  SELECT D.Date_ID,
+                     D.Date_ID - V.Source_Date_ID Date_Offset,
+                     V.View_ID,
+                     F.Unit_ID,
+                     F.RL_ID,
+                     SUM(F.USD_Value) Value
+                FROM FinIQ_Financial_Cons F
+                     INNER JOIN Dimensions_View_Date_Map V ON V.Target_Date_ID = F.Date_ID AND V.View_ID IN (1, 2)
+                     INNER JOIN Dimensions_Date          D ON    D.Date_ID = V.Source_Date_ID
+                                                              OR D.Date_ID = V.Source_Date_ID + 100
+               WHERE F.RL_ID IN (507299, 507499, 507699, 507899, 508099, 508299, 490099, 209699,
+                                508599, 666099, 210199, 515299, 506699, 509099, 506499, 672899)
+           GROUP BY ALL)
+  SELECT T1.Date_ID,
+         U.Unit_Alias,
+         RL.RL_Alias,
+         ROUND(SUM(CASE WHEN T1.Date_Offset = 100 AND T1.View_ID = 2 THEN Value END), 4) YTD_LY_Value,
+         ROUND(SUM(CASE WHEN T1.Date_Offset =   0 AND T1.View_ID = 2 THEN Value END), 4) YTD_CY_Value,
+         ROUND(SUM(CASE WHEN T1.Date_Offset = 100 AND T1.View_ID = 1 THEN Value END), 4) Periodic_LY_Value,
+         ROUND(SUM(CASE WHEN T1.Date_Offset =   0 AND T1.View_ID = 1 THEN Value END), 4) Periodic_CY_Value
+    FROM T1 INNER JOIN Dimensions_Unit U USING (Unit_ID)
+             LEFT JOIN Dimensions_Reporting_Line RL USING (RL_ID)
+GROUP BY ALL
+
+
+=== VIEW: anomalydetection_vw_pbi_anomaly_detector_mw_na ===
+  [query] Getting CREATE for anomalydetection_vw_pbi_anomaly_detector_mw_na...
+CREATE VIEW finsight_core_model.anomalydetection_vw_pbi_anomaly_detector_mw_na (
+  Unit_ID,
+  Unit,
+  Date_ID,
+  Year,
+  Period,
+  Business_Segment,
+  EC_Group,
+  Brand_Flag,
+  Product_Consolidation,
+  Brand_New,
+  CellKey,
+  `3rd_Party_Volume_-_Tonnes`,
+  `3rd_Pty_Purchases_-_FG`,
+  `Advertising_&_Cons_Promotion`,
+  `Advertising__Promotion_&_Display`,
+  Affiliate_Sales,
+  `Assortment_&_Placement_Discounts_Total`,
+  Carbon_Offset_COGS_Prime,
+  Cash_and_Prompt_Payment_Discounts_Total,
+  Closeout,
+  `Co-Mfg./Co-Pckg_Inven.Reval`,
+  `Co-Mfg./Co-Pckg_Non_Quality`,
+  `Co-Mfg./Co-Pckg_Overhead_Inv`,
+  `Co-Mfg./Pkg._Conv_Costs`,
+  `Co-Mfg./Pkg._Prime_Costs`,
+  `Co-Mfg_-_Usage/Excess`,
+  `CoMfg/CoPkg_Conv_Service`,
+  Controllable_Contribution,
+  Controllable_Earnings,
+  Controllable_Overhead_Costs,
+  Controllable_Profit,
+  Conversion_Costs,
+  Corporate_Affairs_Overheads,
+  Customer_Collaboration,
+  Customer_Logistic_Discounts_Total,
+  Demand_Creation,
+  Demand_Overhead,
+  `Despatch_Volume_-_Tonnes`,
+  `Display_&_Equipment_Costs`,
+  `Displays_&_Trade_Advertising_Discounts_Total`,
+  `Donated/Destroyed_Products`,
+  Efficient_Operations,
+  `Face_Val_Redeemed_Coupons/Cash_Rebates`,
+  `Franchise_&_Sales_Costs`,
+  Franchise_Overheads,
+  Freight_to_Dom_Customer,
+  Freight_to_Warehouse,
+  GSV_3rd_Party,
+  GSV_Total,
+  `General_&_Admin_Overheads`,
+  `Growth_&_Development_Incentives_Total`,
+  Intercompany_Purchases,
+  International_Agreement_Discounts,
+  Inventory_Valuation_Prime,
+  Listing_Fees,
+  Logistics,
+  Logistics_Other,
+  Margin_After_Conversion,
+  Markdown,
+  Mfg_Conversion_Costs,
+  Net_Sales_3rd_Party,
+  Net_Sales_Total,
+  `Non-saleable_Returns_Sale_Val_`,
+  `Non_Quality_-_Trade`,
+  `Other_Mfg._Costs`,
+  `PPV_Co-Mfg._Raws/Packs`,
+  Pkg_Costs,
+  Prime_Costs,
+  Production_Expenses,
+  Production_Labor,
+  Promotion_Discounts_Total,
+  `Raws/Packs_&_Bought_In`,
+  Raws_Costs,
+  Recall_Discounts,
+  Route_to_Market_and_Distributor,
+  Sales_Overheads,
+  Sales_Value_Free_Product_in_Trade,
+  `Services_-_Client_Discounts`,
+  Shopper_Price_Promotion_Discounts,
+  `Std_Co-Mfg._Raws/Packs`,
+  `Storage_&_Handling`,
+  Supply_Overhead,
+  Support_Overhead,
+  `Tonnes_Affiliate_Volume_-_Fct`,
+  Trade_Expenditures,
+  Trade_Other,
+  Unallocated_trade)
+WITH SCHEMA BINDING
+AS SELECT *
+  FROM AnomalyDetection_PBI_Anomaly_Detector
+ WHERE Unit_ID IN (SELECT Child_Unit_ID FROM Dimensions_Unit_Consolidation WHERE Parent_Unit_ID = 12128)
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 2: FORMULA & CALCULATION LOGIC
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+=== finiq_rl_formula (all 725 rows — KPI calculation definitions) ===
+  [query] RL formulas...
+    {"RL":"3RD PARTY VOLUME - TONNES","Formula":null,"Components":null}
+    {"RL":"3RD PTY PURCHASES - FG","Formula":"- \"PPV 3RD PTY FG\" + \"STD COST 3RD PTY FG PURCH\" + \"SUPPLIES & SERVICES - VET\"","Components":"[\"PPV 3RD PTY FG\",\"STD COST 3RD PTY FG PURCH\",\"SUPPLIES & SERVICES - VET\"]"}
+    {"RL":"A/P RECLASS","Formula":"- \"A/P RECLASS CFIN\" + \"A/P RECLASS NON CFIN\"","Components":"[\"A/P RECLASS CFIN\",\"A/P RECLASS NON CFIN\"]"}
+    {"RL":"A/R RECLASS","Formula":null,"Components":null}
+    {"RL":"ACC AMORT INT DEV CAP SFT-CB","Formula":null,"Components":null}
+    {"RL":"ACCOUNT MANAGEMENT EXPENSES","Formula":null,"Components":null}
+    {"RL":"ACCOUNT MANAGEMENT OVERHEADS","Formula":"+ \"ACCOUNT MANAGEMENT EXPENSES\" + \"ACCOUNT MANAGEMENT SWB\"","Components":"[\"ACCOUNT MANAGEMENT EXPENSES\",\"ACCOUNT MANAGEMENT SWB\"]"}
+    {"RL":"ACCOUNT MANAGEMENT SWB","Formula":null,"Components":null}
+    {"RL":"ACCOUNTS PAYABLE","Formula":"+ \"ACCOUNTS PAYABLE - OPTION 1\" + \"ACCOUNTS PAYABLE - OPTION 2\" + \"ACCOUNTS PAYABLE 3RD PARTY - TRADE\"","Components":"[\"ACCOUNTS PAYABLE - OPTION 1\",\"ACCOUNTS PAYABLE - OPTION 2\",\"ACCOUNTS PAYABLE 3RD PARTY - TRADE\"]"}
+    {"RL":"ACCOUNTS PAYABLE - AFFILIATES","Formula":null,"Components":null}
+    {"RL":"ACCOUNTS PAYABLE - BROKERS","Formula":null,"Components":null}
+    {"RL":"ACCOUNTS PAYABLE - OPTION 1","Formula":null,"Components":null}
+    {"RL":"ACCOUNTS PAYABLE - OPTION 2","Formula":null,"Components":null}
+    {"RL":"ACCOUNTS PAYABLE 3RD PARTY - TRADE","Formula":null,"Components":null}
+    {"RL":"ACCOUNTS RECEIVABLE - 3RD PTY","Formula":null,"Components":null}
+    {"RL":"ACCOUNTS RECEIVABLE - AFFILIAT","Formula":null,"Components":null}
+    {"RL":"ACCOUNTS RECEIVABLE - BROKER","Formula":null,"Components":null}
+    {"RL":"ACCR LIAB RECLASS","Formula":"- \"ACCR LIAB RECLASS CFIN\" + \"ACCR LIAB RECLASS NON CFIN\"","Components":"[\"ACCR LIAB RECLASS CFIN\",\"ACCR LIAB RECLASS NON CFIN\"]"}
+    {"RL":"ACCRUED INT PAYABLE 3RD PTY","Formula":null,"Components":null}
+    {"RL":"ACCRUED LIABILITIES","Formula":"+ \"ACCRUED LIABILITIES INPUT\" + \"ACCRUED LIABILITY CONTRA NON-NCFO\" + \"ACCRUED LIABILITY CONTRA TIC\"","Components":"[\"ACCRUED LIABILITIES INPUT\",\"ACCRUED LIABILITY CONTRA NON-NCFO\",\"ACCRUED LIABILITY CONTRA TIC\"]"}
+    {"RL":"ACCRUED LIABILITIES INPUT","Formula":null,"Components":null}
+    {"RL":"ACCRUED LIABILITY CONTRA NON-NCFO","Formula":null,"Components":null}
+    {"RL":"ACCRUED LIABILITY CONTRA TIC","Formula":null,"Components":null}
+    {"RL":"ACCT REC/PAY AFFILATERECLASS","Formula":null,"Components":null}
+    {"RL":"ACCT REC/PAY BROKER RECLASS","Formula":null,"Components":null}
+    {"RL":"ACCTS. REC. WELLNESS PLAN","Formula":null,"Components":null}
+    {"RL":"ACCUM AMORT - INTANGIBLES - CB","Formula":null,"Components":null}
+    {"RL":"ACCUM BOOK DEPR FURN & FIX - CB","Formula":null,"Components":null}
+    {"RL":"ACCUM BOOK DEPR INFO SYS HDWR - CB","Formula":null,"Components":null}
+    {"RL":"ACCUM BOOK DEPR VENDING EQUIP - CB","Formula":null,"Components":null}
+    {"RL":"ACCUM BOOK DEPREC BLDG & IMP - CB","Formula":null,"Components":null}
+    {"RL":"ACCUM BOOK DEPREC LAND IMP - CB","Formula":null,"Components":null}
+    {"RL":"ACCUM BOOK DEPREC MACH & EQUIP - CB","Formula":null,"Components":null}
+    {"RL":"ACQUIRED ENTITIES - CONSIDERATION PAID","Formula":null,"Components":null}
+    {"RL":"ACQUISITION COSTS","Formula":"+ \"ACQUISITION COSTS - EARNOUT AND COMP EXP\" + \"ACQUISITION COSTS - IMO INTEGRATION COST\" + \"ACQUISITION COSTS - INTEGRATION COSTS\" + \"ACQUISITION COSTS - PURCHASE ACCT ADJUST\" + \"ACQUISITION COSTS - TRANSACTION COSTS\"","Components":"[\"ACQUISITION COSTS - EARNOUT AND COMP EXP\",\"ACQUISITION COSTS - IMO INTEGRATION COST\",\"ACQUISITION COSTS - INTEGRATION COSTS\",\"ACQUISITION COSTS - PURCHASE ACCT ADJUST\",\"ACQUISITION COSTS - TRANSACTION COSTS\"]"}
+    {"RL":"ACQUISTIONS","Formula":null,"Components":null}
+    {"RL":"ACT WARRANTY COSTS","Formula":null,"Components":null}
+    {"RL":"ADDITIONS TO CAPITAL D SOFTWARE","Formula":null,"Components":null}
+    {"RL":"ADDITIONS TO LAND & IMP","Formula":null,"Components":null}
+    {"RL":"ADDNS TO BLDG & IMP","Formula":null,"Components":null}
+    {"RL":"ADDNS TO FURN & FIX","Formula":null,"Components":null}
+    {"RL":"ADDNS TO GOODWILL","Formula":null,"Components":null}
+    {"RL":"ADDNS TO INFO HARDWARE","Formula":null,"Components":null}
+    {"RL":"ADDNS TO INTANGIBLES","Formula":null,"Components":null}
+    {"RL":"ADDNS TO MACH & EQUIP","Formula":null,"Components":null}
+    {"RL":"ADDNS TO VENDING EQUIP","Formula":null,"Components":null}
+    {"RL":"ADMINISTRATION (LOG)","Formula":null,"Components":null}
+    {"RL":"ADVERT HIST DEPR VENDING EQUIP","Formula":null,"Components":null}
+    {"RL":"ADVERTISING","Formula":"+ \"NON-WORKING MEDIA\" + \"OTHER ADVERTISING\" + \"WORKING MEDIA\"","Components":"[\"NON-WORKING MEDIA\",\"OTHER ADVERTISING\",\"WORKING MEDIA\"]"}
+    {"RL":"ADVERTISING & CONS PROMOTION","Formula":"+ \"ADVERTISING\" + \"CONSUMER PROMOTIONS\"","Components":"[\"ADVERTISING\",\"CONSUMER PROMOTIONS\"]"}
+    ... and 675 more rows
+  Total: 725 formulas
+
+=== finiq_rl_input (all 110 rows — input reporting lines) ===
+  [query] RL inputs...
+    {"Statement":"BS","RL_ID":"1894","Generation":"0"}
+    {"Statement":"BS","RL_ID":"1973","Generation":"0"}
+    {"Statement":"BS","RL_ID":"99068","Generation":"0"}
+    {"Statement":"BS","RL_ID":"1974","Generation":"2"}
+    {"Statement":"BS","RL_ID":"1992","Generation":"2"}
+    {"Statement":"BS","RL_ID":"2008","Generation":"2"}
+    {"Statement":"BS","RL_ID":"1956","Generation":"3"}
+    {"Statement":"BS","RL_ID":"1895","Generation":"4"}
+    {"Statement":"BSR","RL_ID":"856","Generation":"0"}
+    {"Statement":"BSR","RL_ID":"918","Generation":"0"}
+    {"Statement":"BSR","RL_ID":"922","Generation":"0"}
+    {"Statement":"BSR","RL_ID":"1897","Generation":"0"}
+    {"Statement":"BSR","RL_ID":"1910","Generation":"0"}
+    {"Statement":"BSR","RL_ID":"1957","Generation":"0"}
+    {"Statement":"BSR","RL_ID":"1959","Generation":"0"}
+    {"Statement":"BSR","RL_ID":"3803","Generation":"0"}
+    {"Statement":"BSR","RL_ID":"5184","Generation":"0"}
+    {"Statement":"BSR","RL_ID":"5185","Generation":"0"}
+    {"Statement":"BSR","RL_ID":"5186","Generation":"0"}
+    {"Statement":"BSR","RL_ID":"5187","Generation":"0"}
+    {"Statement":"BSR","RL_ID":"5188","Generation":"0"}
+    {"Statement":"BSR","RL_ID":"9954","Generation":"0"}
+    {"Statement":"BSR","RL_ID":"9956","Generation":"0"}
+    {"Statement":"BSR","RL_ID":"9965","Generation":"0"}
+    {"Statement":"BSR","RL_ID":"5484","Generation":"1"}
+    {"Statement":"BSR","RL_ID":"9952","Generation":"1"}
+    {"Statement":"BSR","RL_ID":"9953","Generation":"1"}
+    {"Statement":"BSR","RL_ID":"9955","Generation":"1"}
+    {"Statement":"EP","RL_ID":"6323","Generation":"0"}
+    {"Statement":"EP","RL_ID":"6325","Generation":"0"}
+    ... and 80 more rows
+  Total: 110 inputs
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 3: DIMENSION TABLES — SAMPLES & CARDINALITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+=== finiq_dim_unit (766 rows — org hierarchy) ===
+  [query] dim_unit sample...
+    {"Parent_Unit_ID":null,"Parent_Unit":null,"Child_Unit_ID":"13000","Child_Unit":"MARS INCORPORATED (R)","Unit_Level":"0"}
+    {"Parent_Unit_ID":"13000","Parent_Unit":"MARS INCORPORATED (R)","Child_Unit_ID":"13034","Child_Unit":"MARS INCORPORATED EX RUSSIA","Unit_Level":"0"}
+    {"Parent_Unit_ID":"13000","Parent_Unit":"MARS INCORPORATED (R)","Child_Unit_ID":"13033","Child_Unit":"MARS RUSSIA REGION","Unit_Level":"0"}
+    {"Parent_Unit_ID":"13034","Parent_Unit":"MARS INCORPORATED EX RUSSIA","Child_Unit_ID":"13021","Child_Unit":"GBU FOOD NUTRITION & MULTISALES X RUSSIA","Unit_Level":"1"}
+    {"Parent_Unit_ID":"13034","Parent_Unit":"MARS INCORPORATED EX RUSSIA","Child_Unit_ID":"13013","Child_Unit":"GBU MARS SNACKING EX RUSSIA","Unit_Level":"1"}
+    {"Parent_Unit_ID":"13034","Parent_Unit":"MARS INCORPORATED EX RUSSIA","Child_Unit_ID":"13001","Child_Unit":"GBU PETCARE EX RUSSIA","Unit_Level":"1"}
+    {"Parent_Unit_ID":"13034","Parent_Unit":"MARS INCORPORATED EX RUSSIA","Child_Unit_ID":"10252","Child_Unit":"GBU UNASSIGNED","Unit_Level":"1"}
+    {"Parent_Unit_ID":"13034","Parent_Unit":"MARS INCORPORATED EX RUSSIA","Child_Unit_ID":"10581","Child_Unit":"GLOBAL CORPORATE","Unit_Level":"1"}
+    {"Parent_Unit_ID":"13034","Parent_Unit":"MARS INCORPORATED EX RUSSIA","Child_Unit_ID":"8800","Child_Unit":"MARS GLOBAL SERVICES","Unit_Level":"1"}
+    {"Parent_Unit_ID":"13033","Parent_Unit":"MARS RUSSIA REGION","Child_Unit_ID":"13040","Child_Unit":"GBU FOOD, NUTRITION & MS RUSSIA","Unit_Level":"1"}
+    {"Parent_Unit_ID":"13033","Parent_Unit":"MARS RUSSIA REGION","Child_Unit_ID":"13038","Child_Unit":"GBU MARS SNACKING RUSSIA","Unit_Level":"1"}
+    {"Parent_Unit_ID":"13033","Parent_Unit":"MARS RUSSIA REGION","Child_Unit_ID":"13035","Child_Unit":"GBU PETCARE RUSSIA","Unit_Level":"1"}
+    {"Parent_Unit_ID":"13021","Parent_Unit":"GBU FOOD NUTRITION & MULTISALES X RUSSIA","Child_Unit_ID":"8600","Child_Unit":"DRINKS GROUP","Unit_Level":"2"}
+    {"Parent_Unit_ID":"13021","Parent_Unit":"GBU FOOD NUTRITION & MULTISALES X RUSSIA","Child_Unit_ID":"13022","Child_Unit":"FOOD & NUTRITION DIVISION EX RUSSIA","Unit_Level":"2"}
+    {"Parent_Unit_ID":"13021","Parent_Unit":"GBU FOOD NUTRITION & MULTISALES X RUSSIA","Child_Unit_ID":"11795","Child_Unit":"MULTISALES DIVISION HIST X SOUTH AFRICA","Unit_Level":"2"}
+    {"Parent_Unit_ID":"13021","Parent_Unit":"GBU FOOD NUTRITION & MULTISALES X RUSSIA","Child_Unit_ID":"11421","Child_Unit":"SEEDS OF CHANGE GROUP","Unit_Level":"2"}
+    {"Parent_Unit_ID":"13040","Parent_Unit":"GBU FOOD, NUTRITION & MS RUSSIA","Child_Unit_ID":"10233","Child_Unit":"FOOD RUSSIA REGION","Unit_Level":"2"}
+    {"Parent_Unit_ID":"13013","Parent_Unit":"GBU MARS SNACKING EX RUSSIA","Child_Unit_ID":"15602","Child_Unit":"GBU MARS SNACKING LEGACY EX RUSSIA","Unit_Level":"2"}
+    {"Parent_Unit_ID":"13013","Parent_Unit":"GBU MARS SNACKING EX RUSSIA","Child_Unit_ID":"20049","Child_Unit":"KN KELLANOVA DIVISION","Unit_Level":"2"}
+    {"Parent_Unit_ID":"13038","Parent_Unit":"GBU MARS SNACKING RUSSIA","Child_Unit_ID":"12355","Child_Unit":"AC RUSSIA CLUSTER","Unit_Level":"2"}
+    {"Parent_Unit_ID":"13038","Parent_Unit":"GBU MARS SNACKING RUSSIA","Child_Unit_ID":"13039","Child_Unit":"MW RUSSIA & BELARUS","Unit_Level":"2"}
+    {"Parent_Unit_ID":"13001","Parent_Unit":"GBU PETCARE EX RUSSIA","Child_Unit_ID":"13044","Child_Unit":"GBU PETCARE SHARED EX RUSSIA","Unit_Level":"2"}
+    {"Parent_Unit_ID":"13001","Parent_Unit":"GBU PETCARE EX RUSSIA","Child_Unit_ID":"12820","Child_Unit":"MARS SCIENCE & DIAGNOSTICS DIVISION","Unit_Level":"2"}
+    {"Parent_Unit_ID":"13001","Parent_Unit":"GBU PETCARE EX RUSSIA","Child_Unit_ID":"13008","Child_Unit":"MARS VET HEALTH DIVISION EX RUSSIA","Unit_Level":"2"}
+    {"Parent_Unit_ID":"13001","Parent_Unit":"GBU PETCARE EX RUSSIA","Child_Unit_ID":"13002","Child_Unit":"PET NUTRITION DIVISION EX RUSSIA","Unit_Level":"2"}
+    {"Parent_Unit_ID":"13001","Parent_Unit":"GBU PETCARE EX RUSSIA","Child_Unit_ID":"13004","Child_Unit":"ROYAL CANIN DIVISION EX RUSSIA","Unit_Level":"2"}
+    {"Parent_Unit_ID":"13035","Parent_Unit":"GBU PETCARE RUSSIA","Child_Unit_ID":"12349","Child_Unit":"KSG KINSHIP RUSSIA","Unit_Level":"2"}
+    {"Parent_Unit_ID":"13035","Parent_Unit":"GBU PETCARE RUSSIA","Child_Unit_ID":"20098","Child_Unit":"PN RUSSIA & BELARUS","Unit_Level":"2"}
+    {"Parent_Unit_ID":"13035","Parent_Unit":"GBU PETCARE RUSSIA","Child_Unit_ID":"13037","Child_Unit":"RC RUSSIA AND BELARUS","Unit_Level":"2"}
+    {"Parent_Unit_ID":"10581","Parent_Unit":"GLOBAL CORPORATE","Child_Unit_ID":"10681","Child_Unit":"CORPORATE MCLEAN INCL CORP ACQUISITIONS","Unit_Level":"2"}
+
+  --- Unit hierarchy depth ---
+  [query] unit hierarchy levels...
+    {"Unit_Level":"0","cnt":"3","distinct_parents":"1","distinct_children":"3"}
+    {"Unit_Level":"1","cnt":"9","distinct_parents":"2","distinct_children":"9"}
+    {"Unit_Level":"2","cnt":"21","distinct_parents":"8","distinct_children":"21"}
+    {"Unit_Level":"3","cnt":"51","distinct_parents":"14","distinct_children":"51"}
+    {"Unit_Level":"4","cnt":"118","distinct_parents":"25","distinct_children":"118"}
+    {"Unit_Level":"5","cnt":"144","distinct_parents":"39","distinct_children":"144"}
+    {"Unit_Level":"6","cnt":"203","distinct_parents":"67","distinct_children":"203"}
+    {"Unit_Level":"7","cnt":"124","distinct_parents":"43","distinct_children":"124"}
+    {"Unit_Level":"8","cnt":"72","distinct_parents":"21","distinct_children":"72"}
+    {"Unit_Level":"9","cnt":"17","distinct_parents":"6","distinct_children":"17"}
+    {"Unit_Level":"10","cnt":"4","distinct_parents":"2","distinct_children":"4"}
+
+  --- Top-level units (Level 1) ---
+  [query] top-level units...
+    {"Parent_Unit":"MARS INCORPORATED EX RUSSIA","Child_Unit":"GBU FOOD NUTRITION & MULTISALES X RUSSIA"}
+    {"Parent_Unit":"MARS RUSSIA REGION","Child_Unit":"GBU FOOD, NUTRITION & MS RUSSIA"}
+    {"Parent_Unit":"MARS INCORPORATED EX RUSSIA","Child_Unit":"GBU MARS SNACKING EX RUSSIA"}
+    {"Parent_Unit":"MARS RUSSIA REGION","Child_Unit":"GBU MARS SNACKING RUSSIA"}
+    {"Parent_Unit":"MARS INCORPORATED EX RUSSIA","Child_Unit":"GBU PETCARE EX RUSSIA"}
+    {"Parent_Unit":"MARS RUSSIA REGION","Child_Unit":"GBU PETCARE RUSSIA"}
+    {"Parent_Unit":"MARS INCORPORATED EX RUSSIA","Child_Unit":"GBU UNASSIGNED"}
+    {"Parent_Unit":"MARS INCORPORATED EX RUSSIA","Child_Unit":"GLOBAL CORPORATE"}
+    {"Parent_Unit":"MARS INCORPORATED EX RUSSIA","Child_Unit":"MARS GLOBAL SERVICES"}
+
+=== finiq_dim_rl (725 rows — reporting line / account hierarchy) ===
+  [query] dim_rl sample...
+    {"Child_RL_ID":"856","Child_RL":"NET SALES TOTAL","Sign_Conversion":"1","parent_depth":"1"}
+    {"Child_RL_ID":"894","Child_RL":"RAWS/PACKS & BOUGHT IN","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"903","Child_RL":"STD PACKS","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"905","Child_RL":"PPV PACKAGING","Sign_Conversion":"1","parent_depth":"1"}
+    {"Child_RL_ID":"906","Child_RL":"PACKAGING OTHER VARIANCES","Sign_Conversion":"1","parent_depth":"1"}
+    {"Child_RL_ID":"908","Child_RL":"INTERCOMPANY PURCHASES","Sign_Conversion":"-1","parent_depth":"2"}
+    {"Child_RL_ID":"909","Child_RL":"STD INTERCOMPANY PURCHASES","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"910","Child_RL":"INTERCOMPANY VARIANCE","Sign_Conversion":"1","parent_depth":"1"}
+    {"Child_RL_ID":"911","Child_RL":"3RD PTY PURCHASES - FG","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"912","Child_RL":"STD COST 3RD PTY FG PURCH","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"913","Child_RL":"PPV 3RD PTY FG","Sign_Conversion":"1","parent_depth":"1"}
+    {"Child_RL_ID":"914","Child_RL":"INVENTORY VALUATION PRIME","Sign_Conversion":"1","parent_depth":"2"}
+    {"Child_RL_ID":"915","Child_RL":"CO-MFG./PKG. PRIME COSTS","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"916","Child_RL":"STD CO-MFG. RAWS/PACKS","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"917","Child_RL":"PPV CO-MFG. RAWS/PACKS","Sign_Conversion":"1","parent_depth":"1"}
+    {"Child_RL_ID":"918","Child_RL":"PRIME COSTS","Sign_Conversion":"-1","parent_depth":"3"}
+    {"Child_RL_ID":"921","Child_RL":"PRIME MARGIN","Sign_Conversion":"1","parent_depth":"1"}
+    {"Child_RL_ID":"922","Child_RL":"CONVERSION COSTS","Sign_Conversion":"-1","parent_depth":"3"}
+    {"Child_RL_ID":"964","Child_RL":"CO-MFG./PKG. CONV COSTS","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"965","Child_RL":"COMFG/COPKG CONV SERVICE","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"966","Child_RL":"CO-MFG./CO-PCKG OVERHEAD INV","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"967","Child_RL":"CO-MFG./CO-PCKG NON QUALITY","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"968","Child_RL":"CO-MFG./CO-PCKG INVEN.REVAL","Sign_Conversion":"1","parent_depth":"2"}
+    {"Child_RL_ID":"969","Child_RL":"LOGISTICS","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"970","Child_RL":"INBOUND LOGISTICS","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"974","Child_RL":"STORAGE","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"975","Child_RL":"HANDLING","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"976","Child_RL":"COST OF PALLETS","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"977","Child_RL":"DAMAGES & DISCREPANCIES","Sign_Conversion":"-1","parent_depth":"1"}
+    {"Child_RL_ID":"978","Child_RL":"ADMINISTRATION (LOG)","Sign_Conversion":"-1","parent_depth":"1"}
+
+  --- RL hierarchy depth distribution ---
+  [query] RL hierarchy depth...
+    {"hierarchy_depth":"-1","cnt":"62"}
+    {"hierarchy_depth":"1","cnt":"527"}
+    {"hierarchy_depth":"2","cnt":"117"}
+    {"hierarchy_depth":"3","cnt":"19"}
+
+  --- Distinct Statements ---
+  [query] distinct statements...
+    {"stmt":"BS"}
+    {"stmt":"BSR"}
+    {"stmt":"EP"}
+    {"stmt":"Others"}
+    {"stmt":"Overheads"}
+    {"stmt":"P&L"}
+    {"stmt":"S&U"}
+
+=== finiq_date (117 rows — fiscal calendar) ===
+  [query] date dimension...
+    {"Date_ID":"202001","Year":"2020","Period":"01","Quarter":"Q1"}
+    {"Date_ID":"202002","Year":"2020","Period":"02","Quarter":"Q1"}
+    {"Date_ID":"202003","Year":"2020","Period":"03","Quarter":"Q1"}
+    {"Date_ID":"202004","Year":"2020","Period":"04","Quarter":"Q2"}
+    {"Date_ID":"202005","Year":"2020","Period":"05","Quarter":"Q2"}
+    {"Date_ID":"202006","Year":"2020","Period":"06","Quarter":"Q2"}
+    {"Date_ID":"202007","Year":"2020","Period":"07","Quarter":"Q3"}
+    {"Date_ID":"202008","Year":"2020","Period":"08","Quarter":"Q3"}
+    {"Date_ID":"202009","Year":"2020","Period":"09","Quarter":"Q3"}
+    {"Date_ID":"202010","Year":"2020","Period":"10","Quarter":"Q4"}
+    {"Date_ID":"202011","Year":"2020","Period":"11","Quarter":"Q4"}
+    {"Date_ID":"202012","Year":"2020","Period":"12","Quarter":"Q4"}
+    {"Date_ID":"202013","Year":"2020","Period":"13","Quarter":"Q4"}
+    {"Date_ID":"202101","Year":"2021","Period":"01","Quarter":"Q1"}
+    {"Date_ID":"202102","Year":"2021","Period":"02","Quarter":"Q1"}
+    {"Date_ID":"202103","Year":"2021","Period":"03","Quarter":"Q1"}
+    {"Date_ID":"202104","Year":"2021","Period":"04","Quarter":"Q2"}
+    {"Date_ID":"202105","Year":"2021","Period":"05","Quarter":"Q2"}
+    {"Date_ID":"202106","Year":"2021","Period":"06","Quarter":"Q2"}
+    {"Date_ID":"202107","Year":"2021","Period":"07","Quarter":"Q3"}
+    {"Date_ID":"202108","Year":"2021","Period":"08","Quarter":"Q3"}
+    {"Date_ID":"202109","Year":"2021","Period":"09","Quarter":"Q3"}
+    {"Date_ID":"202110","Year":"2021","Period":"10","Quarter":"Q4"}
+    {"Date_ID":"202111","Year":"2021","Period":"11","Quarter":"Q4"}
+    {"Date_ID":"202112","Year":"2021","Period":"12","Quarter":"Q4"}
+    {"Date_ID":"202113","Year":"2021","Period":"13","Quarter":"Q4"}
+    {"Date_ID":"202201","Year":"2022","Period":"01","Quarter":"Q1"}
+    {"Date_ID":"202202","Year":"2022","Period":"02","Quarter":"Q1"}
+    {"Date_ID":"202203","Year":"2022","Period":"03","Quarter":"Q1"}
+    {"Date_ID":"202204","Year":"2022","Period":"04","Quarter":"Q2"}
+    ... and 87 more rows
+  Total dates: 117
+  Date_ID range: 202001 to 202813
+
+=== finiq_economic_cell (175 rows) ===
+  [query] economic cells...
+    {"Economic_Cell_ID":"1","Economic_Cell":"CHINA CHOCOLATES (EX DOVE)","Archetype":"GROWTH ENGINE"}
+    {"Economic_Cell_ID":"2","Economic_Cell":"CHINA DOVE","Archetype":"GROWTH ENGINE"}
+    {"Economic_Cell_ID":"3","Economic_Cell":"EUROPE BITESIZE","Archetype":"GROWTH ENGINE"}
+    {"Economic_Cell_ID":"4","Economic_Cell":"AUSTRALIA BITESIZE","Archetype":"GROWTH ENGINE"}
+    {"Economic_Cell_ID":"5","Economic_Cell":"FRUITY","Archetype":"GROWTH ENGINE"}
+    {"Economic_Cell_ID":"6","Economic_Cell":"NA BITESIZE","Archetype":"GROWTH ENGINE"}
+    {"Economic_Cell_ID":"7","Economic_Cell":"DEV. MKTS SEASONAL & GIFTING","Archetype":"FUEL FOR GROWTH"}
+    {"Economic_Cell_ID":"8","Economic_Cell":"PN CHAMPION","Archetype":"SEED"}
+    {"Economic_Cell_ID":"9","Economic_Cell":"AUSTRALIA SEASONAL","Archetype":"FUEL FOR GROWTH"}
+    {"Economic_Cell_ID":"10","Economic_Cell":"PN NEW BD","Archetype":"SEED"}
+    {"Economic_Cell_ID":"11","Economic_Cell":"CHILLED READY MEALS","Archetype":"SEED"}
+    {"Economic_Cell_ID":"12","Economic_Cell":"AUSTRALIA GIFTING","Archetype":"GROWTH ENGINE"}
+    {"Economic_Cell_ID":"13","Economic_Cell":"MEXICO & SAUDI","Archetype":"GROWTH ENGINE"}
+    {"Economic_Cell_ID":"14","Economic_Cell":"CHINA GUM & MINTS","Archetype":"GROWTH ENGINE"}
+    {"Economic_Cell_ID":"15","Economic_Cell":"CONF NON-STRATEGIC","Archetype":"OTHER"}
+    {"Economic_Cell_ID":"16","Economic_Cell":"EUROPE BARS","Archetype":"FUEL FOR GROWTH"}
+    {"Economic_Cell_ID":"17","Economic_Cell":"AUSTRALIA BARS","Archetype":"FUEL FOR GROWTH"}
+    {"Economic_Cell_ID":"18","Economic_Cell":"EUROPE GUM & MINTS","Archetype":"GROWTH ENGINE"}
+    {"Economic_Cell_ID":"19","Economic_Cell":"AUSTRALIA GUM & MINTS","Archetype":"GROWTH ENGINE"}
+    {"Economic_Cell_ID":"20","Economic_Cell":"NA BARS","Archetype":"FUEL FOR GROWTH"}
+    {"Economic_Cell_ID":"21","Economic_Cell":"NA GUM & MINTS","Archetype":"GROWTH ENGINE"}
+    {"Economic_Cell_ID":"22","Economic_Cell":"OTHER EM","Archetype":"OTHER"}
+    {"Economic_Cell_ID":"23","Economic_Cell":"CONF INDIA","Archetype":"SEED"}
+    {"Economic_Cell_ID":"24","Economic_Cell":"CONF BRAZIL","Archetype":"SEED"}
+    {"Economic_Cell_ID":"25","Economic_Cell":"ICE CREAM","Archetype":"SEED"}
+    {"Economic_Cell_ID":"26","Economic_Cell":"IMMERSIVE EXPERIENCES","Archetype":"SEED"}
+    {"Economic_Cell_ID":"27","Economic_Cell":"AFRICA SEED MARKETS","Archetype":"SEED"}
+    {"Economic_Cell_ID":"28","Economic_Cell":"CONF OTHER","Archetype":"OTHER"}
+    {"Economic_Cell_ID":"29","Economic_Cell":"EXCLUDED PN","Archetype":"OTHER"}
+    {"Economic_Cell_ID":"30","Economic_Cell":"DAPAC- EC FFG","Archetype":"FUEL FOR GROWTH"}
+
+  --- Distinct Archetypes ---
+  [query] archetypes...
+    {"Archetype":"GROWTH ENGINE","cnt":"49"}
+    {"Archetype":"SEED","cnt":"33"}
+    {"Archetype":"FUEL FOR GROWTH","cnt":"32"}
+    {"Archetype":"HARVEST","cnt":"31"}
+    {"Archetype":"OTHER","cnt":"30"}
+
+=== finiq_composite_item (9,478 rows — product master) ===
+  [query] composite_item sample...
+    {"Composite_Item_ID":"149#252#504#2#33#52#0#25618#37429","EC_Group":"EXCLUDED FOOD","Technology":"FOOD NA","Supply_Tech":"FOOD NA","Segment":"FOOD","Business_Segment":"FOOD","Market_Segment":"SPREAD","Brand_ID":"52","Brand":"MILKY WAY","Consumer_Pack_Format":"NOT APPLICABLE","Product_Consolidation":"FOOD","Product_Category":"SPREADS"}
+    {"Composite_Item_ID":"150#252#504#2#24#124#45#25618#25101","EC_Group":"MASTERFOODS FS","Technology":"FOOD NA","Supply_Tech":"FOOD NA","Segment":"FOOD","Business_Segment":"FOOD","Market_Segment":"SAUCES","Brand_ID":"124","Brand":"MASTERFOODS","Consumer_Pack_Format":"POUCH","Product_Consolidation":"FOOD","Product_Category":"SAUCES"}
+    {"Composite_Item_ID":"179#231#509#5#4#283#45#37385#40977","EC_Group":"OTHER BRAND CAT POUCH","Technology":"WET CAT POUCH","Supply_Tech":"POUCH","Segment":"PET NUTRITION","Business_Segment":"PETCARE","Market_Segment":"CATCARE","Brand_ID":"283","Brand":"OPTIMUM","Consumer_Pack_Format":"POUCH","Product_Consolidation":"CAT FOOD","Product_Category":"WET CAT POUCH"}
+    {"Composite_Item_ID":"184#224#509#5#2#145#2#80007#25081","EC_Group":"OTHER BRAND OTHER","Technology":"PN OTHER","Supply_Tech":"OTHER","Segment":"PET NUTRITION","Business_Segment":"PETCARE","Market_Segment":"BIRDCARE","Brand_ID":"145","Brand":"HOMEBRAND","Consumer_Pack_Format":"BAG","Product_Consolidation":"OTHER PETCARE","Product_Category":"BIRDCARE"}
+    {"Composite_Item_ID":"106#200#501#1#23#442#17#35864#25099","EC_Group":"BAR","Technology":"FILLED BAR","Supply_Tech":"FILLED BAR","Segment":"CHOCOLATE","Business_Segment":"CHOCOLATE","Market_Segment":"WHOLESOME SNACKS","Brand_ID":"442","Brand":"MARATHON","Consumer_Pack_Format":"COMPOSITE PACK","Product_Consolidation":"AMBIENT","Product_Category":"PERFORMANCE SNACKS"}
+    {"Composite_Item_ID":"112#224#506#5#47#589#0#80007#37419","EC_Group":"SDX ALL OTHER","Technology":"PN OTHER","Supply_Tech":"OTHER","Segment":"DIAGNOSTICS","Business_Segment":"PETCARE","Market_Segment":"PET SERVICES","Brand_ID":"589","Brand":"EUROLYSER","Consumer_Pack_Format":"NOT APPLICABLE","Product_Consolidation":"OTHER PETCARE","Product_Category":"PET SERVICES"}
+    {"Composite_Item_ID":"102#204#501#1#11#48#44#37390#25077","EC_Group":"ICE CREAM","Technology":"ICE CREAM","Supply_Tech":"ICE CREAM","Segment":"CHOCOLATE","Business_Segment":"CHOCOLATE","Market_Segment":"FROZEN SNACKS","Brand_ID":"48","Brand":"M&M'S","Consumer_Pack_Format":"CUP","Product_Consolidation":"FROZEN","Product_Category":"FROZEN SNACKS"}
+    {"Composite_Item_ID":"184#224#509#5#2#139#2#80007#25081","EC_Group":"OTHER BRAND OTHER","Technology":"PN OTHER","Supply_Tech":"OTHER","Segment":"PET NUTRITION","Business_Segment":"PETCARE","Market_Segment":"BIRDCARE","Brand_ID":"139","Brand":"ELITE","Consumer_Pack_Format":"BAG","Product_Consolidation":"OTHER PETCARE","Product_Category":"BIRDCARE"}
+    {"Composite_Item_ID":"105#209#502#8#46#253#15#68846#72465","EC_Group":"FRUITY CONF","Technology":"STARCH MOLDED","Supply_Tech":"STARCH MOLDED","Segment":"FRUITY CONFECTIONS","Business_Segment":"GUM AND CONFECTIONS","Market_Segment":"CONFECTIONERY","Brand_ID":"253","Brand":"LUCAS","Consumer_Pack_Format":"BOX/CARTON","Product_Consolidation":"FRUITY CONFECTIONS","Product_Category":"SPICY CANDIES"}
+    {"Composite_Item_ID":"102#204#500#1#11#484#15#68755#69042","EC_Group":"ICE CREAM","Technology":"ICE CREAM","Supply_Tech":"ICE CREAM","Segment":"HEALTH & WELLBEING","Business_Segment":"CHOCOLATE","Market_Segment":"FROZEN SNACKS","Brand_ID":"484","Brand":"KIND","Consumer_Pack_Format":"BOX/CARTON","Product_Consolidation":"HEALTH & WELLNESS","Product_Category":"BETTERFORYOU"}
+
+  --- Product cardinality ---
+  [query] product cardinality...
+    {"ec_groups":"205","segments":"12","biz_segments":"9","brands":"458","technologies":"54","product_consolidations":"23","product_categories":"75"}
+
+  --- EC Groups ---
+  [query] EC groups...
+    {"EC_Group":"SEASONAL","cnt":"1303"}
+    {"EC_Group":"FRUITY CONF","cnt":"783"}
+    {"EC_Group":"MW OTHER","cnt":"673"}
+    {"EC_Group":"BAR","cnt":"646"}
+    {"EC_Group":"BITESIZE","cnt":"621"}
+    {"EC_Group":"GUM","cnt":"560"}
+    {"EC_Group":"EXCLUDED FOOD","cnt":"367"}
+    {"EC_Group":"OTHER BRAND OTHER","cnt":"351"}
+    {"EC_Group":"DOVE/GALAXY","cnt":"303"}
+    {"EC_Group":"MW NON STRATEGIC","cnt":"243"}
+    {"EC_Group":"ICE CREAM","cnt":"219"}
+    {"EC_Group":"MINTS","cnt":"163"}
+    {"EC_Group":"FOOD OTHER","cnt":"148"}
+    {"EC_Group":"GIFTING","cnt":"131"}
+    {"EC_Group":"OTHER BRAND DOG DRY","cnt":"111"}
+    {"EC_Group":"MASTERFOODS FS","cnt":"109"}
+    {"EC_Group":"SUZI WAN","cnt":"108"}
+    {"EC_Group":"PEDIGREE OTHER","cnt":"106"}
+    {"EC_Group":"MIXED BRAND OTHER","cnt":"98"}
+    {"EC_Group":"OTHER BRAND CAT DRY","cnt":"87"}
+    ... and 185 more rows
+
+=== finiq_customer (21,204 rows) ===
+  [query] customer sample...
+    {"Unit_Customer_ID":"10416#S0690690011028A","Customer_ID":"S0690690011028A","Country":"UNMAPPED","Customer_Name":"SPT-BOTANIC GROUPE-MEDOR ET CIE 8A  ANIM ENS OVER 200M2","SCM_ID":"PARTNER","Customer_Level_1":"SPT","Customer_Level_2":"PSR KA BOTANIC ","Customer_Level_3":"PSR KA BOTANIC ","Customer_Channel":"PET SPECIALIST","Customer_Format":"SPECIALIST RETAIL","Customer_Subformat":"PET SUPERSTORE"}
+    {"Unit_Customer_ID":"10416#S0701350511056A","Customer_ID":"S0701350511056A","Country":"UNMAPPED","Customer_Name":"SPT-GAMM VERT-GV SO-CENTRALIMENT 6A  LISA ENS","SCM_ID":"PARTNER","Customer_Level_1":"SPT","Customer_Level_2":"PSR KA GAMM VERT ","Customer_Level_3":"PSR KA GAMM VERT ","Customer_Channel":"PET SPECIALIST","Customer_Format":"SPECIALIST RETAIL","Customer_Subformat":"FARM & FEED/COOP"}
+    {"Unit_Customer_ID":"10416#S0731000141056A","Customer_ID":"S0731000141056A","Country":"UNMAPPED","Customer_Name":"SPT-APEX-DISTRIVERT-B.D.V.SERVICES 35 6A  LISA ENS","SCM_ID":"PARTNER","Customer_Level_1":"SPT","Customer_Level_2":"PSR KA APEX ","Customer_Level_3":"PSR KA APEX ","Customer_Channel":"PET SPECIALIST","Customer_Format":"SPECIALIST RETAIL","Customer_Subformat":"FARM & FEED/COOP"}
+    {"Unit_Customer_ID":"10422#101102003","Customer_ID":"101102003","Country":"UNMAPPED","Customer_Name":"AGRINOVA VILA","SCM_ID":"PARTNER","Customer_Level_1":"PSR","Customer_Level_2":"PSR_TRD","Customer_Level_3":"PSR_TRD_SP","Customer_Channel":"PET SPECIALIST","Customer_Format":"SPECIALIST RETAIL","Customer_Subformat":"PET SHOP"}
+    {"Unit_Customer_ID":"10422#199062000","Customer_ID":"199062000","Country":"UNMAPPED","Customer_Name":"OTHERS SPT RETAIL_CAT&DOG_SPT_0_ON","SCM_ID":"PARTNER","Customer_Level_1":"PSR","Customer_Level_2":"PSR_TRD","Customer_Level_3":"PSR_TRD_SP","Customer_Channel":"PET SPECIALIST","Customer_Format":"OTHER PET SPECIALIST","Customer_Subformat":"OTHER PET SPECIALIST"}
+    {"Unit_Customer_ID":"10421#105003144","Customer_ID":"105003144","Country":"UNMAPPED","Customer_Name":"SETCEREAL","SCM_ID":"PARTNER","Customer_Level_1":"PSR","Customer_Level_2":"PSR_TRD","Customer_Level_3":"PSR_TRD_PT","Customer_Channel":"PET SPECIALIST","Customer_Format":"SPECIALIST RETAIL","Customer_Subformat":"FARM & FEED/COOP"}
+    {"Unit_Customer_ID":"10431#C10101","Customer_ID":"C10101","Country":"UNMAPPED","Customer_Name":"CAT INDEPENDENT PET SHOPS","SCM_ID":"PARTNER","Customer_Level_1":"PSR","Customer_Level_2":"PET SHOPS ","Customer_Level_3":"PET SHOPS ","Customer_Channel":"PET SPECIALIST","Customer_Format":"SPECIALIST RETAIL","Customer_Subformat":"PET SHOP"}
+    {"Unit_Customer_ID":"10418#10240","Customer_ID":"10240","Country":"UNMAPPED","Customer_Name":"TS INDIES AREA 1","SCM_ID":"PARTNER","Customer_Level_1":"SPT","Customer_Level_2":"PET SHOPS","Customer_Level_3":"PET SHOPS","Customer_Channel":"PET SPECIALIST","Customer_Format":"SPECIALIST RETAIL","Customer_Subformat":"PET SHOP"}
+    {"Unit_Customer_ID":"11606#C10902","Customer_ID":"C10902","Country":"UNMAPPED","Customer_Name":"DOG GROOMERS","SCM_ID":"PARTNER","Customer_Level_1":"PSR","Customer_Level_2":"GROOMERS","Customer_Level_3":"GROOMERS","Customer_Channel":"PET SPECIALIST","Customer_Format":"SPECIALIST RETAIL","Customer_Subformat":"GROOMER"}
+    {"Unit_Customer_ID":"12633#C20102","Customer_ID":"C20102","Country":"UNMAPPED","Customer_Name":"DOG INDEPENDENT BREEDERS","SCM_ID":"PARTNER","Customer_Level_1":"PRO","Customer_Level_2":"BREEDERS","Customer_Level_3":"PRO_SK","Customer_Channel":"PET SPECIALIST","Customer_Format":"PROFESSIONAL","Customer_Subformat":"BREEDER"}
+
+  --- Customer cardinality ---
+  [query] customer cardinality...
+    {"countries":"139","channels":"8","formats":"24","level1s":"398","level2s":"1230"}
+
+=== finiq_customer_map (210,913 rows — customer hierarchy) ===
+  [query] customer_map sample...
+    {"Child_Unit_ID":"9394","Child_Customer_ID":"101","Parent_Unit_ID":"11320","Parent_Customer_ID":"101","Unit_Customer_ID":"11320#101"}
+    {"Child_Unit_ID":"9394","Child_Customer_ID":"150","Parent_Unit_ID":"11320","Parent_Customer_ID":"150","Unit_Customer_ID":"11320#150"}
+    {"Child_Unit_ID":"9396","Child_Customer_ID":"101","Parent_Unit_ID":"12347","Parent_Customer_ID":"101","Unit_Customer_ID":"12347#101"}
+    {"Child_Unit_ID":"9396","Child_Customer_ID":"150","Parent_Unit_ID":"12347","Parent_Customer_ID":"150","Unit_Customer_ID":"12347#150"}
+    {"Child_Unit_ID":"9530","Child_Customer_ID":"101","Parent_Unit_ID":"12457","Parent_Customer_ID":"101","Unit_Customer_ID":"12457#101"}
+    {"Child_Unit_ID":"9530","Child_Customer_ID":"3431","Parent_Unit_ID":"12457","Parent_Customer_ID":"3431","Unit_Customer_ID":"12457#3431"}
+    {"Child_Unit_ID":"9530","Child_Customer_ID":"3432","Parent_Unit_ID":"12457","Parent_Customer_ID":"3432","Unit_Customer_ID":"12457#3432"}
+    {"Child_Unit_ID":"9530","Child_Customer_ID":"4380","Parent_Unit_ID":"12457","Parent_Customer_ID":"4380","Unit_Customer_ID":"12457#4380"}
+    {"Child_Unit_ID":"9530","Child_Customer_ID":"4381","Parent_Unit_ID":"12457","Parent_Customer_ID":"4381","Unit_Customer_ID":"12457#4381"}
+    {"Child_Unit_ID":"9530","Child_Customer_ID":"4382","Parent_Unit_ID":"12457","Parent_Customer_ID":"4382","Unit_Customer_ID":"12457#4382"}
+
+=== finiq_item (381,113 rows — granular product) ===
+  [query] item sample...
+    {"Item_ID":"00000693","EC_Group_ID":"183","EC_Group":"OTHER BRAND DOG TRAY","Brand_ID":"16","Brand":"CESAR","Segment":"PET NUTRITION","Market_Segment":"DOGCARE","Technology":"WET DOG TRAY","Supply_Tech":"ALUTRAY","Product_Consolidation":"DOG FOOD","Product_Category":"DRY DOG FOOD","Business_Segment":"PETCARE","Consumer_Pack_Format":"FLEXIBLE TRAY"}
+    {"Item_ID":"00001000","EC_Group_ID":"110","EC_Group":"MW OTHER","Brand_ID":"0","Brand":"NOT APPLICABLE","Segment":"CHOCOLATE","Market_Segment":"NOT APPLICABLE","Technology":"NOT APPLICABLE","Supply_Tech":"NOT APPLICABLE","Product_Consolidation":"AMBIENT","Product_Category":"CHOCOLATE MANAGEMENT ADJUSTMENT","Business_Segment":"CHOCOLATE","Consumer_Pack_Format":"NOT APPLICABLE"}
+    {"Item_ID":"00001445","EC_Group_ID":"106","EC_Group":"BAR","Brand_ID":"9","Brand":"BOUNTY","Segment":"CHOCOLATE","Market_Segment":"CONFECTIONERY","Technology":"NOT APPLICABLE","Supply_Tech":"NOT APPLICABLE","Product_Consolidation":"AMBIENT","Product_Category":"CHOCOLATE PCAT","Business_Segment":"CHOCOLATE","Consumer_Pack_Format":"NOT APPLICABLE"}
+    {"Item_ID":"00001449","EC_Group_ID":"110","EC_Group":"MW OTHER","Brand_ID":"50","Brand":"MARS","Segment":"CHOCOLATE","Market_Segment":"CONFECTIONERY","Technology":"NOT APPLICABLE","Supply_Tech":"NOT APPLICABLE","Product_Consolidation":"AMBIENT","Product_Category":"CHOCOLATE PCAT","Business_Segment":"CHOCOLATE","Consumer_Pack_Format":"NOT APPLICABLE"}
+    {"Item_ID":"00001507","EC_Group_ID":"175","EC_Group":"OTHER BRAND DOG C&T","Brand_ID":"63","Brand":"PEDIGREE","Segment":"PET NUTRITION","Market_Segment":"DOGCARE","Technology":"CARE & TREATS DOG","Supply_Tech":"C&T","Product_Consolidation":"DOG FOOD","Product_Category":"CARE & TREATS DOG","Business_Segment":"PETCARE","Consumer_Pack_Format":"NOT APPLICABLE"}
+    {"Item_ID":"00001508","EC_Group_ID":"175","EC_Group":"OTHER BRAND DOG C&T","Brand_ID":"63","Brand":"PEDIGREE","Segment":"PET NUTRITION","Market_Segment":"DOGCARE","Technology":"CARE & TREATS DOG","Supply_Tech":"C&T","Product_Consolidation":"DOG FOOD","Product_Category":"CARE & TREATS DOG","Business_Segment":"PETCARE","Consumer_Pack_Format":"NOT APPLICABLE"}
+    {"Item_ID":"00001509","EC_Group_ID":"175","EC_Group":"OTHER BRAND DOG C&T","Brand_ID":"63","Brand":"PEDIGREE","Segment":"PET NUTRITION","Market_Segment":"DOGCARE","Technology":"CARE & TREATS DOG","Supply_Tech":"C&T","Product_Consolidation":"DOG FOOD","Product_Category":"CARE & TREATS DOG","Business_Segment":"PETCARE","Consumer_Pack_Format":"NOT APPLICABLE"}
+    {"Item_ID":"00001541","EC_Group_ID":"184","EC_Group":"OTHER BRAND OTHER","Brand_ID":"247","Brand":"FREIGHT TRADERS","Segment":"KINSHIP","Market_Segment":"FREIGHT TRADERS","Technology":"PN OTHER","Supply_Tech":"OTHER","Product_Consolidation":"OTHER PETCARE","Product_Category":"FREIGHT SERVICES","Business_Segment":"DEVELOPING BUSINESS","Consumer_Pack_Format":"NOT APPLICABLE"}
+    {"Item_ID":"00001561","EC_Group_ID":"118","EC_Group":"ROYAL CANIN","Brand_ID":"264","Brand":"ROYAL CANIN","Segment":"ROYAL CANIN","Market_Segment":"DOGCARE","Technology":"DRY DOG FOOD","Supply_Tech":"DRY","Product_Consolidation":"DOG FOOD","Product_Category":"DRY DOG FOOD","Business_Segment":"PETCARE","Consumer_Pack_Format":"NOT APPLICABLE"}
+    {"Item_ID":"00001562","EC_Group_ID":"118","EC_Group":"ROYAL CANIN","Brand_ID":"264","Brand":"ROYAL CANIN","Segment":"ROYAL CANIN","Market_Segment":"DOGCARE","Technology":"DRY DOG FOOD","Supply_Tech":"DRY","Product_Consolidation":"DOG FOOD","Product_Category":"DRY DOG FOOD","Business_Segment":"PETCARE","Consumer_Pack_Format":"NOT APPLICABLE"}
+
+=== finiq_item_composite_item (388,782 rows — item-to-product bridge) ===
+  [query] item_composite_item bridge sample...
+    {"Item_ID":"00000693","Composite_Item_ID":"183#235#509#5#7#16#28#37384#25085","IT_EC_Group_ID":"183"}
+    {"Item_ID":"00001000","Composite_Item_ID":"110#207#501#1#0#0#0#35864#25103","IT_EC_Group_ID":"110"}
+    {"Item_ID":"00001445","Composite_Item_ID":"106#207#501#1#46#9#0#35864#25076","IT_EC_Group_ID":"106"}
+    {"Item_ID":"00001449","Composite_Item_ID":"110#207#501#1#46#50#0#35864#25076","IT_EC_Group_ID":"110"}
+    {"Item_ID":"00001491","Composite_Item_ID":"145#0#511#3#0#0#0#80023#25107","IT_EC_Group_ID":"145"}
+    {"Item_ID":"00001492","Composite_Item_ID":"145#0#511#3#44#162#0#37402#54910","IT_EC_Group_ID":"145"}
+    {"Item_ID":"00001493","Composite_Item_ID":"145#0#511#3#44#244#0#37403#54912","IT_EC_Group_ID":"145"}
+    {"Item_ID":"00001494","Composite_Item_ID":"145#0#511#3#45#244#0#37403#54911","IT_EC_Group_ID":"145"}
+    {"Item_ID":"00001496","Composite_Item_ID":"145#0#511#3#34#244#0#37403#54912","IT_EC_Group_ID":"145"}
+    {"Item_ID":"00001497","Composite_Item_ID":"145#0#511#3#34#162#0#37402#54910","IT_EC_Group_ID":"145"}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 4: FACT TABLE SAMPLES (5 rows each — safe)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+=== finiq_financial (5-row sample) ===
+  [query] finiq_financial sample...
+  Columns: Date_ID, Year, Period, Quarter, Parent_Unit, Unit, Unit_Level, Parent_Reporting_Line, Reporting_Line_KPI, Statement, EC_Group, Brand, Segment, Market_Segment, Technology, Supply_Tech, Product_Consolidation, Product_Category, Business_Segment, Pack_Format, Economic_Cell, Archetype, Customer_ID, Country, Customer_Name, SCM_ID, Customer_Level_1, Customer_Level_2, Customer_Level_3, Customer_Channel, Customer_Format, Customer_Subformat, Currency, Sign_Conversion, Unit_ID, Reporting_Line_ID, Brand_ID, USD_Value, Local_Value
+    {"Date_ID":"202001","Year":"2020","Period":"01","Quarter":"Q1","Parent_Unit":"MW AUSTRIA AND SWITZERLAND","Unit":"MW SWITZERLAND MARKET","Unit_Level":"7","Parent_Reporting_Line":"[\"CONTROLLABLE OVERHEAD COSTS\"]","Reporting_Line_KPI":"DEMAND OVERHEAD","Statement":"[\"Overheads\"]","EC_Group":"GUM","Brand":"HUBBA BUBBA","Segment":"GUM & MINTS","Market_Segment":"CONFECTIONERY","Technology":"BUBBLE","Supply_Tech":"BUBBLE","Product_Consolidation":"GUM & MINTS","Product_Category":"GUM","Business_Segment":"GUM AND CONFECTIONS","Pack_Format":"CLAMSHELL","Economic_Cell":"EUROPE GUM & MINTS","Archetype":"GROWTH ENGINE","Customer_ID":"5315","Country":"SWITZERLAND","Customer_Name":"LEKKERLAND","SCM_ID":"OTHER","Customer_Level_1":"OOH","Customer_Level_2":"LEKKERLAND","Customer_Level_3":"LEKKERLAND","Customer_Channel":"CONVENIENCE","Customer_Format":"TRADT'L CONVENIENCE","Customer_Subformat":"INDEPENDENT RETAIL","Currency":"CHF","Sign_Conversion":"-1","Unit_ID":"11712","Reporting_Line_ID":"6492","Brand_ID":"352","USD_Value":"435.9347","Local_Value":"350.3389"}
+    {"Date_ID":"202001","Year":"2020","Period":"01","Quarter":"Q1","Parent_Unit":"MW CCA MARKETS","Unit":"MW PUERTO RICO MARKET","Unit_Level":"7","Parent_Reporting_Line":"[\"INTERCOMPANY PURCHASES\"]","Reporting_Line_KPI":"STD INTERCOMPANY PURCHASES","Statement":"[\"P&L\"]","EC_Group":"BAR","Brand":"SNICKERS","Segment":"CHOCOLATE","Market_Segment":"CONFECTIONERY","Technology":"FILLED BAR","Supply_Tech":"FILLED BAR","Product_Consolidation":"AMBIENT","Product_Category":"CHOCOLATE PCAT","Business_Segment":"CHOCOLATE","Pack_Format":"POUCH","Economic_Cell":"OTHER EM","Archetype":"OTHER","Customer_ID":"2084","Country":"UNMAPPED","Customer_Name":"WALMART","SCM_ID":"OTHER","Customer_Level_1":"CAR","Customer_Level_2":"CAR","Customer_Level_3":"CAR","Customer_Channel":"MODERN GROCERY","Customer_Format":"HYPERMARKET","Customer_Subformat":"HYPERMARKET","Currency":"USD","Sign_Conversion":"-1","Unit_ID":"12370","Reporting_Line_ID":"909","Brand_ID":"76","USD_Value":"1230.57","Local_Value":"1230.57"}
+    {"Date_ID":"202001","Year":"2020","Period":"01","Quarter":"Q1","Parent_Unit":"MW MEXICO MARKET","Unit":"MW EFFEM MEXICO MARKET","Unit_Level":"8","Parent_Reporting_Line":"[\"FRANCHISE & SALES COSTS\",\"DEMAND OVERHEAD\"]","Reporting_Line_KPI":"SALES OVERHEADS","Statement":"[\"Overheads\",\"P&L\"]","EC_Group":"BITESIZE","Brand":"SICAO","Segment":"CHOCOLATE","Market_Segment":"CONFECTIONERY","Technology":"OTHERS","Supply_Tech":"OTHERS","Product_Consolidation":"AMBIENT","Product_Category":"CHOCOLATE PCAT","Business_Segment":"CHOCOLATE","Pack_Format":"NOT APPLICABLE","Economic_Cell":"MEXICO & SAUDI","Archetype":"GROWTH ENGINE","Customer_ID":"18888","Country":"MEXICO","Customer_Name":"DISTRIBUIDORA TITOS S.A.","SCM_ID":"EMERGING STAR","Customer_Level_1":"TRADITIONAL","Customer_Level_2":"AREA NIELSEN 5","Customer_Level_3":"DISTRIBUIDORA TITOS S.A.","Customer_Channel":"TRADT'L INDEPENDENCE","Customer_Format":"TRADT'L INDEPENDENCE","Customer_Subformat":"TRADT'L INDEPENDENCE","Currency":"MXN","Sign_Conversion":"-1","Unit_ID":"12919","Reporting_Line_ID":"5803","Brand_ID":"467","USD_Value":"5.1441","Local_Value":"94.78"}
+    {"Date_ID":"202001","Year":"2020","Period":"01","Quarter":"Q1","Parent_Unit":"MARS INCORPORATED (R)","Unit":"MARS INCORPORATED EX RUSSIA","Unit_Level":"0","Parent_Reporting_Line":"[\"SALES SUPPORT OVERHEADS\"]","Reporting_Line_KPI":"SALES SUPPORT EXPENSES","Statement":"[\"P&L\"]","EC_Group":"WHISKAS CAN","Brand":"WHISKAS","Segment":"PET NUTRITION","Market_Segment":"CATCARE","Technology":"WET CAT CAN","Supply_Tech":"CAN","Product_Consolidation":"CAT FOOD","Product_Category":"WET CAT CAN","Business_Segment":"PETCARE","Pack_Format":"CAN","Economic_Cell":"RGM- EC GE","Archetype":"GROWTH ENGINE","Customer_ID":"7755","Country":"UNMAPPED","Customer_Name":"LA PATAGONIA","SCM_ID":null,"Customer_Level_1":"GROCERY CHANNEL","Customer_Level_2":"GROCERY","Customer_Level_3":"LA PATAGONIA","Customer_Channel":"MODERN GROCERY","Customer_Format":"SUPERMARKET","Customer_Subformat":"SUPERMARKET","Currency":"USD","Sign_Conversion":"-1","Unit_ID":"13034","Reporting_Line_ID":"1022","Brand_ID":"94","USD_Value":"0.0227","Local_Value":"0.0227"}
+    {"Date_ID":"202001","Year":"2020","Period":"01","Quarter":"Q1","Parent_Unit":"MARS INCORPORATED EX RUSSIA","Unit":"GBU MARS SNACKING EX RUSSIA","Unit_Level":"1","Parent_Reporting_Line":"[\"CONTROLLABLE EARNINGS\",\"CONTROLLABLE CASH FROM P&L\"]","Reporting_Line_KPI":"CONTROLLABLE PROFIT","Statement":"[\"P&L\",\"S&U\"]","EC_Group":"SEASONAL","Brand":"UNBRANDED","Segment":"CHOCOLATE","Market_Segment":"CONFECTIONERY","Technology":"NOT APPLICABLE","Supply_Tech":"NOT APPLICABLE","Product_Consolidation":"AMBIENT","Product_Category":"CHOCOLATE PCAT","Business_Segment":"CHOCOLATE","Pack_Format":"BULK","Economic_Cell":"DEV. MKTS SEASONAL & GIFTING","Archetype":"FUEL FOR GROWTH","Customer_ID":null,"Country":null,"Customer_Name":null,"SCM_ID":null,"Customer_Level_1":null,"Customer_Level_2":null,"Customer_Level_3":null,"Customer_Channel":null,"Customer_Format":null,"Customer_Subformat":null,"Currency":"USD","Sign_Conversion":"1","Unit_ID":"13013","Reporting_Line_ID":"1085","Brand_ID":"89","USD_Value":"276718.6","Local_Value":"276718.6"}
+
+=== finiq_financial_base (5-row sample) ===
+  [query] finiq_financial_base sample...
+  Columns: Date_ID, Unit_ID, RL_ID, Composite_Item_ID, Economic_Cell_ID, Unit_Customer_ID, USD_Value
+    {"Date_ID":"202001","Unit_ID":"13034","RL_ID":"1000","Composite_Item_ID":"105#207#502#8#0#0#0#68846#68848","Economic_Cell_ID":"67","Unit_Customer_ID":null,"USD_Value":"-2436905.0"}
+    {"Date_ID":"202001","Unit_ID":"13034","RL_ID":"894","Composite_Item_ID":"100#211#501#1#46#243#66#35864#64848","Economic_Cell_ID":"13","Unit_Customer_ID":null,"USD_Value":"-265.1848"}
+    {"Date_ID":"202001","Unit_ID":"13034","RL_ID":"908","Composite_Item_ID":"170#231#509#5#4#94#45#37385#40977","Economic_Cell_ID":"156","Unit_Customer_ID":null,"USD_Value":"-292772.28"}
+    {"Date_ID":"202001","Unit_ID":"13034","RL_ID":"3776","Composite_Item_ID":"90#229#509#5#7#63#2#37384#25085","Economic_Cell_ID":"75","Unit_Customer_ID":null,"USD_Value":"-66719.42"}
+    {"Date_ID":"202001","Unit_ID":"13034","RL_ID":"3770","Composite_Item_ID":"150#246#504#2#27#124#1#25618#25069","Economic_Cell_ID":"80","Unit_Customer_ID":null,"USD_Value":"-4476.0547"}
+
+=== finiq_financial_cons (5-row sample) ===
+  [query] finiq_financial_cons sample...
+  Columns: Date_ID, Unit_ID, RL_ID, Composite_Item_ID, Economic_Cell_ID, Unit_Customer_ID, Currency_ID, USD_Value, Local_Value
+    {"Date_ID":"202511","Unit_ID":"13002","RL_ID":"1010","Composite_Item_ID":"104#218#503#8#46#380#15#50945#52698","Economic_Cell_ID":"160","Unit_Customer_ID":"12456#2647","Currency_ID":"USD","USD_Value":"0.1223","Local_Value":"0.1223"}
+    {"Date_ID":"202511","Unit_ID":"14144","RL_ID":"6472","Composite_Item_ID":"83#229#509#5#7#283#2#37384#25085","Economic_Cell_ID":"105","Unit_Customer_ID":"10628#15138","Currency_ID":"USD","USD_Value":"2.0E-4","Local_Value":"2.0E-4"}
+    {"Date_ID":"202511","Unit_ID":"13034","RL_ID":"7374","Composite_Item_ID":"106#200#501#1#46#50#81#35864#25076","Economic_Cell_ID":"16","Unit_Customer_ID":"11828#10485","Currency_ID":"USD","USD_Value":"37.0658","Local_Value":"37.0658"}
+    {"Date_ID":"202511","Unit_ID":"13034","RL_ID":"912","Composite_Item_ID":"108#207#501#1#46#36#45#35864#25076","Economic_Cell_ID":"28","Unit_Customer_ID":"11828#12399","Currency_ID":"USD","USD_Value":"-129.4907","Local_Value":"-129.4907"}
+    {"Date_ID":"202511","Unit_ID":"13000","RL_ID":"912","Composite_Item_ID":"88#226#509#5#4#283#2#37385#25091","Economic_Cell_ID":"105","Unit_Customer_ID":"12709#24201","Currency_ID":"USD","USD_Value":"1.0E-4","Local_Value":"1.0E-4"}
+
+=== finiq_financial_replan (5-row sample) ===
+  [query] finiq_financial_replan sample...
+  Columns: Submission_Type_ID, Date_ID, Year, Quarter, Parent_Unit, Unit, Unit_Level, Parent_Reporting_Line, Reporting_Line_KPI, Statement, Currency, Sign_Conversion, Unit_ID, Reporting_Line_ID, Actual_USD_Value, Actual_Local_Value, Replan_USD_Value, Replan_Local_Value
+    {"Submission_Type_ID":"1","Date_ID":"202506","Year":"2025","Quarter":"Q2","Parent_Unit":"PN USA","Unit":"PN USA MARKET","Unit_Level":"6","Parent_Reporting_Line":"[\"RAWS/PACKS & BOUGHT IN\",\"DPO - COST BASIS\"]","Reporting_Line_KPI":"INTERCOMPANY PURCHASES","Statement":"[\"BSR\",\"P&L\"]","Currency":"USD","Sign_Conversion":"-1","Unit_ID":"11634","Reporting_Line_ID":"908","Actual_USD_Value":"1.99311888E8","Actual_Local_Value":"1.99311888E8","Replan_USD_Value":null,"Replan_Local_Value":null}
+    {"Submission_Type_ID":"1","Date_ID":"202506","Year":"2025","Quarter":"Q2","Parent_Unit":null,"Unit":"MARS INCORPORATED (R)","Unit_Level":"0","Parent_Reporting_Line":"[\"GSV TOTAL\",\"NET SALES 3RD PARTY\"]","Reporting_Line_KPI":"GSV 3RD PARTY","Statement":"[\"Others\",\"P&L\"]","Currency":"USD","Sign_Conversion":"1","Unit_ID":"13000","Reporting_Line_ID":"3767","Actual_USD_Value":"5.6506051E9","Actual_Local_Value":"5.6506051E9","Replan_USD_Value":null,"Replan_Local_Value":null}
+    {"Submission_Type_ID":"1","Date_ID":"202506","Year":"2025","Quarter":"Q2","Parent_Unit":"MARS WRIGLEY DIVISION EX RUSSIA","Unit":"MW EUROPE & CENTRAL EURASIA REGION","Unit_Level":"4","Parent_Reporting_Line":"[\"CONTROLLABLE CONTRIBUTION\"]","Reporting_Line_KPI":"MARGIN AFTER CONVERSION","Statement":"[\"P&L\",\"S&U\"]","Currency":"USD","Sign_Conversion":"1","Unit_ID":"11908","Reporting_Line_ID":"1000","Actual_USD_Value":"1.85816272E8","Actual_Local_Value":"1.85816272E8","Replan_USD_Value":null,"Replan_Local_Value":null}
+    {"Submission_Type_ID":"1","Date_ID":"202506","Year":"2025","Quarter":"Q2","Parent_Unit":null,"Unit":"MARS INCORPORATED (R)","Unit_Level":"0","Parent_Reporting_Line":"[\"PRIME MARGIN\"]","Reporting_Line_KPI":"NET SALES TOTAL","Statement":"[\"P&L\"]","Currency":"USD","Sign_Conversion":"1","Unit_ID":"13000","Reporting_Line_ID":"856","Actual_USD_Value":"4.315753E9","Actual_Local_Value":"4.315753E9","Replan_USD_Value":null,"Replan_Local_Value":null}
+    {"Submission_Type_ID":"1","Date_ID":"202506","Year":"2025","Quarter":"Q2","Parent_Unit":"PET NUTRITION DIVISION EX RU EX CHAMPION","Unit":"PN RAPID GROWTH MARKETS","Unit_Level":"4","Parent_Reporting_Line":"[\"ADVERTISING\"]","Reporting_Line_KPI":"OTHER ADVERTISING","Statement":"[\"P&L\"]","Currency":"USD","Sign_Conversion":"-1","Unit_ID":"10190","Reporting_Line_ID":"7367","Actual_USD_Value":"85339.41","Actual_Local_Value":"85339.41","Replan_USD_Value":null,"Replan_Local_Value":null}
+
+=== finiq_financial_replan_cons (5-row sample) ===
+  [query] finiq_financial_replan_cons sample...
+  Columns: Date_ID, Unit_ID, RL_ID, Currency_ID, USD_Value, Local_Value
+    {"Date_ID":"202603","Unit_ID":"13000","RL_ID":"6325","Currency_ID":"USD","USD_Value":"1.18135053E9","Local_Value":"1.18135053E9"}
+    {"Date_ID":"202603","Unit_ID":"13022","RL_ID":"6324","Currency_ID":"USD","USD_Value":"1.2136524E7","Local_Value":"1.2136524E7"}
+    {"Date_ID":"202603","Unit_ID":"11254","RL_ID":"6329","Currency_ID":"USD","USD_Value":"3.55857376E8","Local_Value":"3.55857376E8"}
+    {"Date_ID":"202606","Unit_ID":"12465","RL_ID":"6324","Currency_ID":"USD","USD_Value":"1641641.5","Local_Value":"1641641.5"}
+    {"Date_ID":"202606","Unit_ID":"10171","RL_ID":"6330","Currency_ID":"USD","USD_Value":"1338104.1","Local_Value":"1338104.1"}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 5: CROSS-TABLE RELATIONSHIPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+=== Unit_ID join verification ===
+  [query] Unit_ID distinct counts across tables...
+  Failed: 
+[PARSE_SYNTAX_ERROR] Syntax error at or near 'UNION'. SQLSTATE: 42601 (line 2, pos 7)
+
+== SQL ==
+SELECT 'finiq_financial' as tbl, COUNT(DISTINCT Unit_ID) as distinct_ids FROM corporate_finance_analyt
+  Trying without finiq_financial (too large)...
+  [query] Unit_ID (without finiq_financial)...
+    {"tbl":"finiq_dim_unit","distinct_ids":"766"}
+    {"tbl":"finiq_financial_replan","distinct_ids":"716"}
+    {"tbl":"finiq_customer_map","distinct_ids":"553"}
+
+=== RL_ID / Reporting_Line_ID join verification ===
+  [query] RL_ID across tables...
+    {"tbl":"finiq_dim_rl","distinct_ids":"725"}
+    {"tbl":"finiq_rl_formula","distinct_ids":"725"}
+    {"tbl":"finiq_rl_input","distinct_ids":"103"}
+    {"tbl":"finiq_financial_replan","distinct_ids":"642"}
+
+=== Date_ID range verification ===
+  [query] Date_ID ranges...
+    {"tbl":"finiq_date","min_id":"202001","max_id":"202813","cnt":"117"}
+    {"tbl":"finiq_financial_replan","min_id":"202501","max_id":"202613","cnt":"19"}
+
+=== Composite_Item_ID bridge verification ===
+  [query] product bridge cardinality...
+    {"tbl":"finiq_composite_item","distinct_ids":"9478"}
+    {"tbl":"finiq_item_composite_item","distinct_ids":"9478"}
+    {"tbl":"finiq_item","distinct_ids":"381113"}
+    {"tbl":"finiq_item_composite_item (items)","distinct_ids":"388782"}
+
+=== Economic_Cell_ID join verification ===
+  [query] economic cell join...
+    {"tbl":"finiq_economic_cell","distinct_ids":"175"}
+    {"tbl":"finiq_financial_base","distinct_ids":"123"}
+
+=== Customer join verification ===
+  [query] customer join cardinality...
+    {"tbl":"finiq_customer","distinct_ids":"21204"}
+    {"tbl":"finiq_customer_map","distinct_ids":"21204"}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 6: VIEW SAMPLE DATA (filtered, safe)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  [query] getting sample unit...
+Using sample unit: "GLOBAL CORPORATE"
+
+=== finiq_vw_pl_unit (filtered) ===
+  [query] vw_pl_unit filtered sample...
+    (empty)
+
+=== finiq_vw_ncfo_unit (filtered) ===
+  [query] vw_ncfo_unit filtered sample...
+    (empty)
+
+=== finiq_vw_pl_brand_product (filtered) ===
+  [query] vw_pl_brand_product filtered sample...
+    (empty)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 7: DISTINCT VALUES FOR FILTERS/DROPDOWNS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+=== All distinct Unit names (from dim_unit) ===
+  [query] all unit names...
+  766 distinct units:
+    AC ACCELERATOR DIVISION SHARED
+    AC ASIA CLUSTER
+    AC AUSTRIA MARKET
+    AC BELGIUM MARKET
+    AC BENELUX CLUSTER
+    AC CENTRAL EUROPE CLUSTER
+    AC DACH CLUSTER
+    AC DENMARK MARKET
+    AC EMEA CLUSTER
+    AC EMEA SUPPLY
+    AC FINLAND MARKET
+    AC FRANCE CLUSTER
+    AC FRANCE MARKET
+    AC GERMANY MARKET
+    AC IRELAND MARKET
+    AC ISRAEL MARKET
+    AC ITALY MARKET
+    AC KIND NA UNITS
+    AC KIND NORTH AMERICA REGION
+    AC KIND USA MARKET
+    AC NATURES BAKERY NA REGION
+    AC NETHERLANDS MARKET
+    AC NORDICS CLUSTER
+    AC NORWAY MARKET
+    AC PORTUGAL MARKET
+    AC ROMANIA MARKET
+    AC RUSSIA CLUSTER
+    AC SOUTH EUROPE CLUSTER
+    AC SPAIN MARKET
+    AC SWEDEN MARKET
+    AC SWITZERLAND MARKET
+    AC TRU FRU NA REGION
+    AC UK & IRELAND CLUSTER
+    AC UK MARKET
+    ACCELERATOR DIVISION EX RUSSIA
+    CORPORATE ACQUISITIONS
+    CORPORATE MCLEAN
+    CORPORATE MCLEAN INCL CORP ACQUISITIONS
+    CORPORATE SERVICE FEE
+    DRINKS GLOBAL OFFICE-OLD
+    DRINKS GROUP
+    DRINKS INTERNATIONAL MARKET-OLD
+    FOOD & NUTRITION DIVISION EX RUSSIA
+    FOOD AUSTRALIA MARKET
+    FOOD AUSTRALIA REGION
+    FOOD AUSTRALIA REGION MARKET
+    FOOD AUSTRALIA REGION SUPPLY
+    FOOD AUSTRALIA SHARED
+    FOOD AUSTRIA MARKET
+    FOOD BELGIUM MARKET
+    FOOD BOLTON SUPPLY
+    FOOD BULGARIA
+    FOOD BULGARIA MARKET
+    FOOD BULGARIA MARKET EUR
+    FOOD CANADA MARKET
+    FOOD CORE DIVISION
+    FOOD CORE EX RUSSIA
+    FOOD CORE MARKET SHARED
+    FOOD CORE SHARED
+    FOOD CORE SUPPLY SHARED
+    FOOD CORE UNIT SHARED
+    FOOD CROATIA MARKET
+    FOOD CZECH REPUBLIC MARKET
+    FOOD DENMARK MARKET
+    FOOD DISCONTINUED
+    FOOD DIVISION EX RUSSIA
+    FOOD EBLY SUPPLY
+    FOOD ESTONIA MARKET
+    FOOD EURASIA REGION
+    FOOD EURASIA REGION MARKET
+    FOOD EURASIA REGION SHARED
+    FOOD EURASIA REGION SUPPLY
+    FOOD FINLAND MARKET
+    FOOD FRANCE MARKET
+    FOOD GERMANY & AUSTRIA MARKET
+    FOOD GERMANY MARKET
+    FOOD GREECE MARKET
+    FOOD GREENVILLE SUPPLY
+    FOOD HUNGARY MARKET
+    FOOD INDIA MARKET
+    FOOD IRELAND MARKET
+    FOOD ITALY MARKET
+    FOOD KING'S LYNN SUPPLY
+    FOOD LATVIA MARKET
+    FOOD LITHUANIA MARKET
+    FOOD NORDICS
+    FOOD NORTH AMERICA MARKET
+    FOOD NORTH AMERICA REGION
+    FOOD NORTH AMERICA REGION SHARED
+    FOOD NORTH AMERICA SUPPLY
+    FOOD NORWAY MARKET
+    FOOD OLEN SUPPLY
+    FOOD OUD BEIJERLAND SUPPLY
+    FOOD PORTUGAL MARKET
+    FOOD REGIONAL EMERGING MARKETS
+    FOOD ROMANIA MARKET
+    FOOD RUSSIA REGION
+    FOOD SERBIA MARKET
+    FOOD SLOVAKIA MARKET
+    FOOD SLOVENIA MARKET
+    FOOD SOUTH/EAST EUROPE
+    FOOD SPAIN MARKET
+    FOOD SWEDEN MARKET
+    FOOD SWITZERLAND MARKET
+    FOOD TASTY BITE - OLD
+    FOOD TASTY BITE INDIA
+    FOOD UK & IRELAND MARKET
+    FOOD UK MARKET
+    FOOD USA MARKET
+    FOOD USA MARKET COMBINED
+    FOOD USA TASTY BITE
+    FOOD WYONG SUPPLY
+    FOODSPRING GROUP
+    GBU FOOD NUTRITION & MULTISALES X RUSSIA
+    GBU FOOD, NUTRITION & MS RUSSIA
+    GBU MARS SNACKING EX RUSSIA
+    GBU MARS SNACKING LEGACY EX RUSSIA
+    GBU MARS SNACKING RUSSIA
+    GBU PETCARE EX RUSSIA
+    GBU PETCARE RUSSIA
+    GBU PETCARE SHARED EX RUSSIA
+    GBU UNASSIGNED
+    GLOBAL CORPORATE
+    GLOBAL FOOD SAFETY CENTER
+    HC HOTEL CHOCOLAT ST LUCIA
+    HC HOTEL CHOCOLAT UK
+    HC HOTEL CHOCOLAT US
+    HOTEL CHOCOLAT DIVISION
+    KEVINS NATURAL FOODS USA
+    KINSHIP PLATFORM EX RUSSIA
+    KN KELLANOVA ADJUSTMENTS
+    KN KELLANOVA AMEA
+    KN KELLANOVA DIVISION
+    KN KELLANOVA ECE
+    KN KELLANOVA HUB
+    KN KELLANOVA LATAM
+    KN KELLANOVA NA
+    KSG KINSHIP CHINA
+    KSG KINSHIP EU
+    KSG KINSHIP HISTORICAL
+    KSG KINSHIP RUSSIA
+    KSG KINSHIP UK
+    KSG KINSHIP USA
+    KSG WHISTLE MARKET
+    KSG WISDOM HEALTH USA
+    MANI
+    MARS CARBON
+    MARS FOOD & NUTRITION DIVISION SHARED
+    MARS GLOBAL SERVICES
+    MARS GLOBAL SERVICES - FINANCE
+    MARS GLOBAL SERVICES - IS
+    MARS HOLDING COMPANIES
+    MARS IMPACT FUND UNIT
+    MARS INC LICENSOR SHARED
+    MARS INCORPORATED (R)
+    MARS INCORPORATED EX RUSSIA
+    MARS INVESTMENT FUNDS
+    MARS RUSSIA REGION
+    MARS SCIENCE & DIAGNOSTICS DIVISION
+    MARS SCIENCE & DIAGNOSTICS DIVISION SHR
+    MARS SCIENCE & DIAGNOSTICS EX VETSOURCE
+    MARS VET HEALTH DIVISION EX RUSSIA
+    MARS VET HEALTH DIVISION SHARED
+    MARS VET HEALTH EUROPE CENTRAL OU
+    MARS VET HEALTH EUROPE EX RUSSIA
+    MARS VET HEALTH EUROPE MED & CEE OU
+    MARS VET HEALTH EUROPE NORTH WEST OU
+    MARS VET HEALTH EUROPE SHARED
+    MARS VET HEALTH EUROPE UK & I OU
+    MARS VET HEALTH NORTH AMERICA REGION
+    MARS VET HEALTH RGM REGION
+    MARS WIND INC
+    MARS WRIGLEY DIVISION EX RUSSIA
+    MARS WRIGLEY DIVISION SHARED
+    MULTISALES DIVISION HIST X SOUTH AFRICA
+    MVH ASIA
+    MVH BLUEPEARL
+    MVH BRAZIL
+    MVH HONG KONG
+    MVH HONG KONG VETERINARY SPECIALISTS
+    MVH JAPAN
+    MVH MMI
+    MVH NORTH AMERICA REGION SHARED
+    MVH PET PARTNERS
+    MVH RGM SHARED
+    MVH SINGAPORE
+    MVH SOUTH & CENTRAL AMERICA
+    MVH THAILAND
+    MVH VCA
+    MW 6TH OF OCTOBER CITY SUPPLY
+    MW AFRICA DEVELOPMENT MARKET
+    MW AMEA REGION
+    MW AMEA SHARED
+    MW ASIA REGION
+    MW ASIA SUPPLY
+    MW AUSTRALIA
+    MW AUSTRALIA MARKET
+    MW AUSTRALIA SUPPLY
+    MW AUSTRIA AND SWITZERLAND
+    MW AUSTRIA MARKET
+    MW AZERBAIJAN MARKET
+    MW BALKANS
+    MW BALKANS/GREECE
+    MW BALTICS
+    MW BALTICS AND POLAND
+    MW BELARUS
+    MW BELARUS MARKET
+    MW BELGIUM EXPORT MARKET
+    MW BELGIUM MARKET
+    MW BENELUX AND ITR
+    MW BIESHEIM BASE SUPPLY
+    MW BRAZIL
+    MW BRAZIL EFFBOO MARKET
+    MW BRAZIL MARKET
+    MW BRAZIL MARKETS
+    MW BRAZIL SUPPLY
+    MW BREITENBRUNN SUPPLY
+    MW BULGARIA
+    MW BULGARIA MARKET
+    MW BULGARIA MARKET EUR
+    MW CAFOSA BASE SUPPLY
+    MW CANADA MARKET
+    MW CAPE TOWN SUPPLY
+    MW CCA MARKETS
+    MW CEAB
+    MW CEAB BELARUS MARKET
+    MW CEAB KAZAKHSTAN MARKET
+    MW CEAB OTHER MKT
+    MW CEAB OTHERS MARKET
+    MW CEAB OTHERS MOHI
+    MW CEIPA MARKET
+    MW CENTRAL AMERICA MARKET
+    MW CENTRAL EURASIA MARKETS
+    MW CENTRAL EUROPE
+    MW CHINA
+    MW CHINA MARKET
+    MW CHINA SHARED
+    MW CHINA SUPPLY
+    MW COCOA ENTERPRISE
+    MW COCOA ENTERPRISE SHARED
+    MW COCOA FARM ECUADOR
+    MW COCOA SCIENCE BRAZIL
+    MW COSTA RICA MARKET
+    MW CROATIA MARKET
+    MW CSAC EXPORT MARKET
+    MW CZECH REPUBLIC MARKET
+    MW CZECHIA/SLOVAKIA/HUNGARY
+    MW DACH
+    MW DDS MARKET
+    MW DENMARK MARKET
+    MW DIRECT FRANCE
+    MW DOMINICANA MARKET
+    MW EAST AFRICA CLUSTER
+    MW EAST AFRICA MARKET
+    MW EAST MEDITERRANEAN MARKET
+    MW EF ASIA MARKETS
+    MW EFFEM MEXICO MARKET
+    MW EGYPT MARKET
+    MW EMERGING MARKETS CLUSTER SHARED
+    MW ESTONIA MARKET
+    MW ETHEL M MARKET
+    MW EUROPE & CENTRAL EURASIA REGION
+    MW EUROPE & CENTRAL EURASIA REGION SHARE
+    MW EUROPE & CENTRAL EURASIA SUPPLY
+    MW FINLAND MARKET
+    MW FRANCE MARKET
+    MW FRANCE MARKETS
+    MW GEORGIA MARKET
+    MW GERMANY MARKET
+    MW GLOBAL OFFICES SHARED
+    MW GREECE MARKET
+    MW GUATEMALA MARKET
+    MW GULF MARKETS
+    MW HAGUENAU SUPPLY
+    MW HISTORICAL
+    MW HONG KONG MARKET
+    MW HUAIROU SUPPLY
+    MW HUNGARY MARKET
+    MW IBERIA MARKET
+    MW INDIA
+    MW INDIA ISC OTHER MARKET
+    MW INDIA MARKET
+    MW INDIA SUPPLY
+    MW INDONESIA MARKET
+    MW INTERNATIONAL MCCA MARKET
+    MW INTL TRAVEL RETAIL MARKET
+    MW IRELAND MARKET
+    MW ISRAEL/PALESTINE MARKET
+    MW ITALY MARKET
+    MW JANASZOWEK SUPPLY
+    MW JIAXING SUPPLY
+    MW KING ABDULLAH ECONOMIC CITY SUPPLY
+    MW KOREA MARKET
+    MW KORKUNOV SUPPLY
+    MW LATAM REGION
+    MW LATAM SHARED
+    MW LATVIA MARKET
+    MW LEVANT & MAGHREB MARKET
+    MW LITHUANIA MARKET
+    MW LOWER GULF MARKET
+    MW LUCAS MARKET
+    MW MAKASSAR
+    MW MALAYSIA MARKET
+    MW MEA IDBU
+    MW MEA NON-STRATEGIC MARKETS
+    MW MEA STRATEGIC MARKETS
+    MW MEA SUPPLY
+    MW MENA MARKET
+    MW MEXICO MARKET
+    MW MEXICO REGION
+    MW MEXICO SUPPLY
+    MW MIDDLE EAST AFRICA REGION
+    MW MOROCCO MARKET
+    MW NAIROBI SUPPLY
+    MW NETHERLANDS / ITR
+    MW NETHERLANDS HUB
+    MW NETHERLANDS MARKET
+    MW NETHERLANDS SUPPLY
+    MW NIGERIA MARKET
+    MW NORDICS
+    MW NORTH AMERICA REGION
+    MW NORTH AMERICA SUPPLY
+    MW NORTH LATAM REGION
+    MW NORWAY MARKET
+    MW OTHER
+    MW PANAMA MARKET
+    MW PHILIPPINES MARKET
+    MW PHILIPPINES SUPPLY
+    MW PLYMOUTH SUPPLY
+    MW POLAND MARKET
+    MW PORTUGAL MARKET
+    MW POZNAN SUPPLY
+    MW PUERTO RICO MARKET
+    MW RETAIL
+    MW RETAIL CHINA MARKET
+    MW RETAIL GERMANY MARKET
+    MW RETAIL UK MARKET
+    MW RETAIL USA
+    MW ROMANIA MARKET
+    MW RUSSIA
+    MW RUSSIA & BELARUS
+    MW RUSSIA MARKET
+    MW RUSSIA SHARED
+    MW RUSSIA STP GUM SUPPLY
+    MW RUSSIA SUPPLY
+    MW RUSSIA TOTAL SUPPLY
+    MW SAUDI ARABIA MARKET
+    MW SERBIA MARKET
+    MW SHANGHAI SUPPLY
+    MW SLOUGH SUPPLY
+    MW SLOVAKIA MARKET
+    MW SLOVENIA MARKET
+    MW SOUTH AFRICA MARKETS
+    MW SOUTH AFRICA REGION
+    MW SOUTH EUROPE
+    MW SPAIN MARKET
+    MW STEINBOURG SUPPLY
+    MW SWEDEN MARKET
+    MW SWITZERLAND MARKET
+    MW TAIWAN HONG KONG MARKETS
+    MW TAIWAN MARKET
+    MW TAIWAN SUPPLY
+    MW THAILAND MARKET
+    MW TURKIYE MARKET
+    MW UAE MARKET
+    MW UK & IRELAND
+    MW UK DRINKS & TREATS MARKET
+    MW UK MARKET
+    MW UKRAINE MARKET
+    MW USA
+    MW USA MARKET
+    MW UZBEKISTAN MARKET
+    MW VEGHEL SUPPLY
+    MW VIERSEN SUPPLY
+    MW VIETNAM MARKET
+    MW WEST ASIA MARKETS
+    MW YEMEN MARKET
+    MW YONGHE SUPPLY
+    PET NUTRITION DIVISION EX RU EX CHAMPION
+    PET NUTRITION DIVISION EX RUSSIA
+    PET NUTRITION DIVISION SHARED
+    PETCARE CORPORATE SHARED OFFICE
+    PETCARE ELIMINATIONS
+    PN & FOOD POLAND MARKET
+    PN ANZ
+    PN AREVALO SUPPLY
+    PN ARGENTINA ARS
+    PN ARGENTINA MARKET
+    PN ARGENTINA MARKET USD
+    PN ARGENTINA TOTAL
+    PN ARGENTINA USD
+    PN ASIA PAKCHONG SUPPLY
+    PN ASIA SB SHARED OFFICE
+    PN AUSTRALIA
+    PN AUSTRALIA MARKET
+    PN AUSTRALIA SUPPLY
+    PN AUSTRIA MARKET
+    PN AZERBAIJAN MARKET
+    PN BALKANS
+    PN BALKANS/GREECE
+    PN BALKANS/GREECE/ISRAEL MARKET
+    PN BALTICS
+    PN BALTICS/UKRAINE
+    PN BELARUS
+    PN BELARUS MARKET
+    PN BELGIUM MARKET
+    PN BENELUX
+    PN BIRDCARE AUSTRALIA
+    PN BIRSTALL SUPPLY
+    PN BOKROS SUPPLY
+    PN BRAZIL
+    PN BRAZIL EFFBOO MARKET
+    PN BRAZIL MARKET
+    PN BRAZIL MARKETS
+    PN BRAZIL SUPPLY
+    PN BULGARIA
+    PN BULGARIA MARKET
+    PN BULGARIA MARKET EUR
+    PN CANADA
+    PN CANADA MARKET
+    PN CANADA SUPPLY
+    PN CEAB BELARUS MARKET
+    PN CEAB OTHERS MARKET
+    PN CENTRAL EURASIA
+    PN CENTRAL EURASIA MARKETS
+    PN CENTRAL EURASIA SUPPLY
+    PN CENTRAL EUROPE
+    PN CHAMPION PETFOODS
+    PN CHAMPION PETFOODS AUSTRALIA MARKET
+    PN CHAMPION PETFOODS CANADA MARKET
+    PN CHAMPION PETFOODS CHINA MARKET
+    PN CHAMPION PETFOODS EUROPE MARKET
+    PN CHAMPION PETFOODS MEXICO MARKET
+    PN CHAMPION PETFOODS NETHERLANDS MARKET
+    PN CHAMPION PETFOODS UK MARKET
+    PN CHAMPION PETFOODS USA MARKET
+    PN CHILE MARKET
+    PN CHINA
+    PN CHINA MARKET
+    PN CHINA SUPPLY
+    PN COLOMBIA MARKET
+    PN CROATIA MARKET
+    PN CZECH REPUBLIC MARKET
+    PN CZECHIA/SLOVAKIA/HUNGARY/ROMANIA
+    PN D2C NORTH AMERICA
+    PN D2C NORTH AMERICA MARKET
+    PN DACH
+    PN DENMARK MARKET
+    PN DEVELOPED APAC REGION
+    PN DEVELOPING CLUSTER
+    PN DIGITAL EUROPE MARKETS
+    PN DIGITAL NFT
+    PN DIRECT2PET EUROPE MARKET
+    PN DTS MEXICO MARKET
+    PN EF ASIA MARKET
+    PN ESTONIA MARKET
+    PN EUROPE ECOMMERCE MARKETS
+    PN EUROPE REGION
+    PN EUROPE REGION SHARED
+    PN EUROPE SUPPLY
+    PN FINLAND MARKET
+    PN FISHCARE
+    PN FISHCARE EUROPE MARKET
+    PN FISHCARE USA MARKET
+    PN FRANCE AND BENELUX
+    PN FRANCE ECOMMERCE MARKET
+    PN FRANCE MARKET
+    PN FRANCE SUPPLY
+    PN GARGZDAI SUPPLY
+    PN GEORGIA MARKET
+    PN GERMANY ECOMMERCE MARKET
+    PN GERMANY MARKET
+    PN GERMANY SUPPLY
+    PN GLOBAL SHARED OFFICE
+    PN GREECE MARKET
+    PN HORSECARE
+    PN HORSECARE UK
+    PN HORSECARE USA
+    PN HUNGARY MARKET
+    PN IBERIA MARKET
+    PN INDIA
+    PN INDIA MARKET
+    PN INDIA SUPPLY
+    PN INDONESIA MARKET
+    PN INTERNATIONAL ANDEAN MARKET
+    PN IRELAND MARKET
+    PN ISRAEL/PALESTINE MARKET
+    PN ITALY MARKET
+    PN JAPAN
+    PN JAPAN MARKET
+    PN JWB UK SUPPLY
+    PN KAZAKHSTAN MARKET
+    PN LATIN AMERICA SHARED OFFICE
+    PN LATVIA MARKET
+    PN LITHUANIA MARKET
+    PN MALAYSIA MARKET
+    PN MERCEDES SUPPLY
+    PN MERCEDES SUPPLY USD
+    PN MEXICO
+    PN MEXICO MARKET
+    PN MEXICO MARKETS
+    PN MEXICO SUPPLY
+    PN NETHERLANDS MARKET
+    PN NETHERLANDS SUPPLY
+    PN NEW BUSINESS DEVELOPMENT
+    PN NEW ZEALAND MARKET
+    PN NORDICS
+    PN NORTH AMERICA REGION
+    PN NORTH AMERICA REGION SHARED
+    PN NORTH EUROPE
+    PN NORWAY MARKET
+    PN PERU MARKET
+    PN PHILIPPINES MARKET
+    PN POLAND CO-PACK
+    PN POLAND ECOMMERCE MARKET
+    PN POLAND SUPPLY
+    PN PONTA GROSSA RAW SUPPLY
+    PN PORTUGAL MARKET
+    PN PRETTY LITTER
+    PN RAPID GROWTH MARKETS
+    PN ROMANIA MARKET
+    PN RUSSIA
+    PN RUSSIA & BELARUS
+    PN RUSSIA MARKET
+    PN RUSSIA SUPPLY
+    PN SEA MARKETS
+    PN SERBIA MARKET
+    PN SLOVAKIA MARKET
+    PN SLOVENIA MARKET
+    PN SOUTH EAST ASIA REGION
+    PN SOUTH EAST ASIA REGION SHARED
+    PN SOUTH EUROPE
+    PN SOUTH LATAM
+    PN SPAIN MARKET
+    PN SWEDEN MARKET
+    PN SWITZERLAND MARKET
+    PN THAILAND MARKET
+    PN TURKIYE MARKET
+    PN UK & IRELAND
+    PN UK ECOMMERCE MARKET
+    PN UK MARKET
+    PN UK SHARED OFFICE
+    PN UK SUPPLY
+    PN UKRAINE MARKET
+    PN USA
+    PN USA MARKET
+    PN USA SPT MARKET
+    PN USA SUPPLY
+    PN UZBEKISTAN MARKET
+    PN VENEZUELA MARKET
+    PN VIETNAM MARKET
+    RC AIMARGUES SUPPLY
+    RC ANZ
+    RC ARGENTINA ARS
+    RC ARGENTINA EUR
+    RC ARGENTINA IMPORTERS ARS
+    RC ARGENTINA IMPORTERS EUR
+    RC ARGENTINA IMPORTERS TOTAL
+    RC ARGENTINA SUPPLY ARS
+    RC ARGENTINA SUPPLY EUR
+    RC ARGENTINA SUPPLY TOTAL
+    RC ARGENTINA TOTAL
+    RC ASIA PACIFIC REGION EX RUSSIA
+    RC ASIA PACIFIC REGION SHARED
+    RC ASIA PACIFIC SUPPLY
+    RC AUSTRALIA
+    RC AUSTRIA MARKET
+    RC BALTICS
+    RC BELARUS
+    RC BELARUS MARKET
+    RC BELGIUM MARKET
+    RC BENELUX
+    RC BRAZIL
+    RC BRAZIL SUPPLY
+    RC BRUCK SUPPLY
+    RC BULGARIA
+    RC BULGARIA MARKET
+    RC BULGARIA MARKET EUR
+    RC CAMBRAI SUPPLY
+    RC CANADA MARKET
+    RC CANADA SUPPLY
+    RC CANADA VCO
+    RC CENTRAL EAST EUROPE
+    RC CENTRAL SOUTH EUROPE
+    RC CHILE
+    RC CHINA
+    RC CHINA SUPPLY
+    RC COLOMBIA
+    RC CORPORATE ELIMINATIONS UNIT EX RUSSIA
+    RC CORPORATE SHARED OFFICE
+    RC CZECH AND SLOVAKIA
+    RC CZECH REPUBLIC MARKET
+    RC D2C EUROPE
+    RC DACH
+    RC DENMARK MARKET
+    RC EKA MARKET
+    RC ESTONIA MARKET
+    RC EURASIA
+    RC EUROPE REGION
+    RC EUROPE REGION SHARED
+    RC EUROPE SUPPLY
+    RC FINLAND MARKET
+    RC FRANCE
+    RC FRANCE IMPORTERS
+    RC FRANCE INDIVIDUALS MIXING CENTERS
+    RC FRENCH ANTILLES
+    RC FRENCH REUNION
+    RC GERMANY HOLDING
+    RC GERMANY MARKET
+    RC GLOBAL SUPPLY EX RUSSIA
+    RC GLOBAL SUPPLY SHARED
+    RC GREECE MARKET
+    RC GUELPH SUPPLY
+    RC HONG KONG
+    RC HUNGARY MARKET
+    RC IBERIA
+    RC IMPORTER
+    RC INDIA
+    RC INDIA SUPPLY
+    RC INDONESIA
+    RC INTERNATIONAL DIVISION
+    RC ISRAEL MARKET
+    RC ITALY
+    RC JAPAN
+    RC JAPAN - INDIVIDUALS MIXING CENTERS
+    RC JAPAN SUPPLY
+    RC KAZAKHSTAN MARKET
+    RC KOREA
+    RC KOREA SUPPLY
+    RC LATIN AMERICA
+    RC LATVIA MARKET
+    RC LITHUANIA MARKET
+    RC MALAYSIA
+    RC MEXICO
+    RC MIXING CENTERS
+    RC MOROCCO IMPORTERS
+    RC MYSG MARKET
+    RC NETHERLANDS HOLDING
+    RC NETHERLANDS MARKET
+    RC NEW ZEALAND
+    RC NOM NOM USA
+    RC NORDICS
+    RC NORTH AMERICA REGION
+    RC NORTH AMERICA REGION SHARED
+    RC NORTH AMERICA SUPPLY
+    RC NORTH ASIA
+    RC NORTH EUROPE
+    RC NORWAY MARKET
+    RC PERU
+    RC PHILIPPINES
+    RC POLAND MARKET
+    RC POLAND SUPPLY
+    RC PORTUGAL MARKET
+    RC PUERTO RICO
+    RC RAPID GROWTH MARKETS
+    RC RAPID GROWTH REGION SHARED
+    RC RAPID GROWTH SUPPLY
+    RC ROMANIA MARKET
+    RC RUB ELIMINATION
+    RC RUSSIA
+    RC RUSSIA AND BELARUS
+    RC RUSSIA MARKET
+    RC RUSSIA SUPPLY
+    RC SHANGHAI SUPPLY
+    RC SINGAPORE
+    RC SLOVAKIA MARKET
+    RC SLOVENIA MARKET
+    RC SOUTH AFRICA
+    RC SOUTH AFRICA IMPORTERS
+    RC SOUTH AFRICA SUPPLY
+    RC SOUTH EAST ASIA
+    RC SOUTH EUROPE
+    RC SPAIN MARKET
+    RC SWEDEN MARKET
+    RC SWITZERLAND MARKET
+    RC TAIWAN
+    RC THAILAND
+    RC TIANJIN SUPPLY
+    RC TURKIYE MARKET
+    RC UK AND IRELAND
+    RC UK HOLDING
+    RC UKRAINE
+    RC USA - FREMONT SUPPLY
+    RC USA - INDIVIDUALS MIXING CENTERS
+    RC USA - LEBANON SUPPLY
+    RC USA - LEWISBURG SUPPLY
+    RC USA - NORTH SIOUX CITY SUPPLY
+    RC USA - ROLLA SUPPLY
+    RC USA - VCO
+    RC USA MARKET
+    RC USA SUPPLY
+    RC WEST EUROPE
+    ROYAL CANIN DIVISION EX RUSSIA
+    ROYAL CANIN DIVISION SHARED EX RUSSIA
+    SDX ANTECH ANTAGENE
+    SDX ANTECH CERBEVET & ANTAGENE EUROPE
+    SDX ANTECH CERBEVET EUROPE
+    SDX ANTECH VET DX BELGIUM
+    SDX ANTECH VET DX CANADA
+    SDX ANTECH VET DX FRANCE
+    SDX ANTECH VET DX GERMANY
+    SDX ANTECH VET DX ITALY
+    SDX ANTECH VET DX NETHERLANDS
+    SDX ANTECH VET DX POLAND
+    SDX ANTECH VET DX SPAIN
+    SDX ANTECH VET DX SWITZERLAND
+    SDX ANTECH VET DX UK
+    SDX ANTECH VET DX USA
+    SDX ANTECH VET SOFTWARE
+    SDX DIAGNOSTICS
+    SDX SCIENCE
+    SDX VET & AT-HOME DIAGNOSTICS INTERNATIONAL
+    SDX VET DIAGNOSTICS APAC/NEW MARKETS
+    SDX VET DIAGNOSTICS EU & APAC
+    SDX VET DIAGNOSTICS EUROPE
+    SDX VET DIAGNOSTICS NORTH AMERICA & GLOBAL AT HOME
+    SDX VET DX ANTECH ANZ
+    SDX VET DX ANTECH ASIA
+    SDX VET DX ANTECH CENTRAL EUROPE
+    SDX VET DX ANTECH EUROLYSER
+    SDX VET DX ANTECH NEW MARKETS
+    SDX VET DX ANTECH NORTH EUROPE
+    SDX VET DX ANTECH SOUTH EUROPE
+    SDX VET DX APAC/NEW MARKETS & SOFTWARE
+    SDX VETSOURCE
+    SDX VETSOURCE INTERNATIONAL
+    SDX VETSOURCE USA
+    SDX WISDOM HEALTH FINLAND
+    SDX WISDOM HEALTH UK
+    SEEDS OF CHANGE GROUP
+    STRATEGIC INITIATIVES
+    SYMBIOSCIENCE
+    TASTY BITE UK & AUSTRALIA MARKET
+    TREASURY
+    TREASURY AUSTRALIA
+    TREASURY BELGIUM
+    TREASURY FRANCE
+    TREASURY GERMANY
+    TREASURY NETHERLANDS
+    TREASURY UK
+    TREASURY US
+    WWY BIESHEIM EX MAN SUPPLY
+    WWY BIESHEIM SUPPLY
+    WWY CAUCASUS MARKET
+    WWY CHICAGO CHAIN SUPPLY
+    WWY CHINA 0016 EXMAN SUPPLY
+    WWY CHINA 0046 EXMAN SUPPLY
+    WWY DEVELOPING MEA MARKET
+    WWY DUBAI CSAC EXPORT MARKET
+    WWY DUBAI MEA REG EXP
+    WWY EDISON LA DREYFUS SUPPLY
+    WWY EUROPE SUPPLY PLANNING
+    WWY GUANGZHOU SUPPLY
+    WWY HOLDINGS
+    WWY IRAN MARKET
+    WWY PANYU SUPPLY
+    WWY PAPUA NEW GUINEA MARKET
+    WWY PLYMOUTH SUPPLY
+    WWY PORICI EX MAN SUPPLY
+    WWY PORICI SUPPLY
+    WWY POZNAN EX MAN SUPPLY
+    WWY RUSSIA EX MAN SUPPLY
+    WWY SAINT PETERSBURG SUPPLY
+    WWY SHANGHAI BASE SUPPLY
+    WWY UK EX MAN SUPPLY
+    WWY USA 0072 HOLDING
+
+=== All distinct RL names (top 50) ===
+  [query] RL names sample...
+  Showing 50 of 725:
+    3RD PARTY VOLUME - TONNES
+    3RD PTY PURCHASES - FG
+    A/P RECLASS
+    A/R RECLASS
+    ACC AMORT INT DEV CAP SFT-CB
+    ACCOUNT MANAGEMENT EXPENSES
+    ACCOUNT MANAGEMENT OVERHEADS
+    ACCOUNT MANAGEMENT SWB
+    ACCOUNTS PAYABLE
+    ACCOUNTS PAYABLE - AFFILIATES
+    ACCOUNTS PAYABLE - BROKERS
+    ACCOUNTS PAYABLE - OPTION 1
+    ACCOUNTS PAYABLE - OPTION 2
+    ACCOUNTS PAYABLE 3RD PARTY - TRADE
+    ACCOUNTS RECEIVABLE - 3RD PTY
+    ACCOUNTS RECEIVABLE - AFFILIAT
+    ACCOUNTS RECEIVABLE - BROKER
+    ACCR LIAB RECLASS
+    ACCRUED INT PAYABLE 3RD PTY
+    ACCRUED LIABILITIES
+    ACCRUED LIABILITIES INPUT
+    ACCRUED LIABILITY CONTRA NON-NCFO
+    ACCRUED LIABILITY CONTRA TIC
+    ACCT REC/PAY AFFILATERECLASS
+    ACCT REC/PAY BROKER RECLASS
+    ACCTS. REC. WELLNESS PLAN
+    ACCUM AMORT - INTANGIBLES - CB
+    ACCUM BOOK DEPR FURN & FIX - CB
+    ACCUM BOOK DEPR INFO SYS HDWR - CB
+    ACCUM BOOK DEPR VENDING EQUIP - CB
+    ACCUM BOOK DEPREC BLDG & IMP - CB
+    ACCUM BOOK DEPREC LAND IMP - CB
+    ACCUM BOOK DEPREC MACH & EQUIP - CB
+    ACQUIRED ENTITIES - CONSIDERATION PAID
+    ACQUISITION COSTS
+    ACQUISTIONS
+    ACT WARRANTY COSTS
+    ADDITIONS TO CAPITAL D SOFTWARE
+    ADDITIONS TO LAND & IMP
+    ADDNS TO BLDG & IMP
+    ADDNS TO FURN & FIX
+    ADDNS TO GOODWILL
+    ADDNS TO INFO HARDWARE
+    ADDNS TO INTANGIBLES
+    ADDNS TO MACH & EQUIP
+    ADDNS TO VENDING EQUIP
+    ADMINISTRATION (LOG)
+    ADVERT HIST DEPR VENDING EQUIP
+    ADVERTISING
+    ADVERTISING & CONS PROMOTION
+
+=== All Years and Periods ===
+  [query] all periods...
+    {"Year":"2020","Period":"01","Quarter":"Q1","Date_ID":"202001"}
+    {"Year":"2020","Period":"02","Quarter":"Q1","Date_ID":"202002"}
+    {"Year":"2020","Period":"03","Quarter":"Q1","Date_ID":"202003"}
+    {"Year":"2020","Period":"04","Quarter":"Q2","Date_ID":"202004"}
+    {"Year":"2020","Period":"05","Quarter":"Q2","Date_ID":"202005"}
+    {"Year":"2020","Period":"06","Quarter":"Q2","Date_ID":"202006"}
+    {"Year":"2020","Period":"07","Quarter":"Q3","Date_ID":"202007"}
+    {"Year":"2020","Period":"08","Quarter":"Q3","Date_ID":"202008"}
+    {"Year":"2020","Period":"09","Quarter":"Q3","Date_ID":"202009"}
+    {"Year":"2020","Period":"10","Quarter":"Q4","Date_ID":"202010"}
+    {"Year":"2020","Period":"11","Quarter":"Q4","Date_ID":"202011"}
+    {"Year":"2020","Period":"12","Quarter":"Q4","Date_ID":"202012"}
+    {"Year":"2020","Period":"13","Quarter":"Q4","Date_ID":"202013"}
+    {"Year":"2021","Period":"01","Quarter":"Q1","Date_ID":"202101"}
+    {"Year":"2021","Period":"02","Quarter":"Q1","Date_ID":"202102"}
+    {"Year":"2021","Period":"03","Quarter":"Q1","Date_ID":"202103"}
+    {"Year":"2021","Period":"04","Quarter":"Q2","Date_ID":"202104"}
+    {"Year":"2021","Period":"05","Quarter":"Q2","Date_ID":"202105"}
+    {"Year":"2021","Period":"06","Quarter":"Q2","Date_ID":"202106"}
+    {"Year":"2021","Period":"07","Quarter":"Q3","Date_ID":"202107"}
+    {"Year":"2021","Period":"08","Quarter":"Q3","Date_ID":"202108"}
+    {"Year":"2021","Period":"09","Quarter":"Q3","Date_ID":"202109"}
+    {"Year":"2021","Period":"10","Quarter":"Q4","Date_ID":"202110"}
+    {"Year":"2021","Period":"11","Quarter":"Q4","Date_ID":"202111"}
+    {"Year":"2021","Period":"12","Quarter":"Q4","Date_ID":"202112"}
+    {"Year":"2021","Period":"13","Quarter":"Q4","Date_ID":"202113"}
+    {"Year":"2022","Period":"01","Quarter":"Q1","Date_ID":"202201"}
+    {"Year":"2022","Period":"02","Quarter":"Q1","Date_ID":"202202"}
+    {"Year":"2022","Period":"03","Quarter":"Q1","Date_ID":"202203"}
+    {"Year":"2022","Period":"04","Quarter":"Q2","Date_ID":"202204"}
+    {"Year":"2022","Period":"05","Quarter":"Q2","Date_ID":"202205"}
+    {"Year":"2022","Period":"06","Quarter":"Q2","Date_ID":"202206"}
+    {"Year":"2022","Period":"07","Quarter":"Q3","Date_ID":"202207"}
+    {"Year":"2022","Period":"08","Quarter":"Q3","Date_ID":"202208"}
+    {"Year":"2022","Period":"09","Quarter":"Q3","Date_ID":"202209"}
+    {"Year":"2022","Period":"10","Quarter":"Q4","Date_ID":"202210"}
+    {"Year":"2022","Period":"11","Quarter":"Q4","Date_ID":"202211"}
+    {"Year":"2022","Period":"12","Quarter":"Q4","Date_ID":"202212"}
+    {"Year":"2022","Period":"13","Quarter":"Q4","Date_ID":"202213"}
+    {"Year":"2023","Period":"01","Quarter":"Q1","Date_ID":"202301"}
+    {"Year":"2023","Period":"02","Quarter":"Q1","Date_ID":"202302"}
+    {"Year":"2023","Period":"03","Quarter":"Q1","Date_ID":"202303"}
+    {"Year":"2023","Period":"04","Quarter":"Q2","Date_ID":"202304"}
+    {"Year":"2023","Period":"05","Quarter":"Q2","Date_ID":"202305"}
+    {"Year":"2023","Period":"06","Quarter":"Q2","Date_ID":"202306"}
+    {"Year":"2023","Period":"07","Quarter":"Q3","Date_ID":"202307"}
+    {"Year":"2023","Period":"08","Quarter":"Q3","Date_ID":"202308"}
+    {"Year":"2023","Period":"09","Quarter":"Q3","Date_ID":"202309"}
+    {"Year":"2023","Period":"10","Quarter":"Q4","Date_ID":"202310"}
+    {"Year":"2023","Period":"11","Quarter":"Q4","Date_ID":"202311"}
+    {"Year":"2023","Period":"12","Quarter":"Q4","Date_ID":"202312"}
+    {"Year":"2023","Period":"13","Quarter":"Q4","Date_ID":"202313"}
+    {"Year":"2024","Period":"01","Quarter":"Q1","Date_ID":"202401"}
+    {"Year":"2024","Period":"02","Quarter":"Q1","Date_ID":"202402"}
+    {"Year":"2024","Period":"03","Quarter":"Q1","Date_ID":"202403"}
+    {"Year":"2024","Period":"04","Quarter":"Q2","Date_ID":"202404"}
+    {"Year":"2024","Period":"05","Quarter":"Q2","Date_ID":"202405"}
+    {"Year":"2024","Period":"06","Quarter":"Q2","Date_ID":"202406"}
+    {"Year":"2024","Period":"07","Quarter":"Q3","Date_ID":"202407"}
+    {"Year":"2024","Period":"08","Quarter":"Q3","Date_ID":"202408"}
+    {"Year":"2024","Period":"09","Quarter":"Q3","Date_ID":"202409"}
+    {"Year":"2024","Period":"10","Quarter":"Q4","Date_ID":"202410"}
+    {"Year":"2024","Period":"11","Quarter":"Q4","Date_ID":"202411"}
+    {"Year":"2024","Period":"12","Quarter":"Q4","Date_ID":"202412"}
+    {"Year":"2024","Period":"13","Quarter":"Q4","Date_ID":"202413"}
+    {"Year":"2025","Period":"01","Quarter":"Q1","Date_ID":"202501"}
+    {"Year":"2025","Period":"02","Quarter":"Q1","Date_ID":"202502"}
+    {"Year":"2025","Period":"03","Quarter":"Q1","Date_ID":"202503"}
+    {"Year":"2025","Period":"04","Quarter":"Q2","Date_ID":"202504"}
+    {"Year":"2025","Period":"05","Quarter":"Q2","Date_ID":"202505"}
+    {"Year":"2025","Period":"06","Quarter":"Q2","Date_ID":"202506"}
+    {"Year":"2025","Period":"07","Quarter":"Q3","Date_ID":"202507"}
+    {"Year":"2025","Period":"08","Quarter":"Q3","Date_ID":"202508"}
+    {"Year":"2025","Period":"09","Quarter":"Q3","Date_ID":"202509"}
+    {"Year":"2025","Period":"10","Quarter":"Q4","Date_ID":"202510"}
+    {"Year":"2025","Period":"11","Quarter":"Q4","Date_ID":"202511"}
+    {"Year":"2025","Period":"12","Quarter":"Q4","Date_ID":"202512"}
+    {"Year":"2025","Period":"13","Quarter":"Q4","Date_ID":"202513"}
+    {"Year":"2026","Period":"01","Quarter":"Q1","Date_ID":"202601"}
+    {"Year":"2026","Period":"02","Quarter":"Q1","Date_ID":"202602"}
+    {"Year":"2026","Period":"03","Quarter":"Q1","Date_ID":"202603"}
+    {"Year":"2026","Period":"04","Quarter":"Q2","Date_ID":"202604"}
+    {"Year":"2026","Period":"05","Quarter":"Q2","Date_ID":"202605"}
+    {"Year":"2026","Period":"06","Quarter":"Q2","Date_ID":"202606"}
+    {"Year":"2026","Period":"07","Quarter":"Q3","Date_ID":"202607"}
+    {"Year":"2026","Period":"08","Quarter":"Q3","Date_ID":"202608"}
+    {"Year":"2026","Period":"09","Quarter":"Q3","Date_ID":"202609"}
+    {"Year":"2026","Period":"10","Quarter":"Q4","Date_ID":"202610"}
+    {"Year":"2026","Period":"11","Quarter":"Q4","Date_ID":"202611"}
+    {"Year":"2026","Period":"12","Quarter":"Q4","Date_ID":"202612"}
+    {"Year":"2026","Period":"13","Quarter":"Q4","Date_ID":"202613"}
+    {"Year":"2027","Period":"01","Quarter":"Q1","Date_ID":"202701"}
+    {"Year":"2027","Period":"02","Quarter":"Q1","Date_ID":"202702"}
+    {"Year":"2027","Period":"03","Quarter":"Q1","Date_ID":"202703"}
+    {"Year":"2027","Period":"04","Quarter":"Q2","Date_ID":"202704"}
+    {"Year":"2027","Period":"05","Quarter":"Q2","Date_ID":"202705"}
+    {"Year":"2027","Period":"06","Quarter":"Q2","Date_ID":"202706"}
+    {"Year":"2027","Period":"07","Quarter":"Q3","Date_ID":"202707"}
+    {"Year":"2027","Period":"08","Quarter":"Q3","Date_ID":"202708"}
+    {"Year":"2027","Period":"09","Quarter":"Q3","Date_ID":"202709"}
+    {"Year":"2027","Period":"10","Quarter":"Q4","Date_ID":"202710"}
+    {"Year":"2027","Period":"11","Quarter":"Q4","Date_ID":"202711"}
+    {"Year":"2027","Period":"12","Quarter":"Q4","Date_ID":"202712"}
+    {"Year":"2027","Period":"13","Quarter":"Q4","Date_ID":"202713"}
+    {"Year":"2028","Period":"01","Quarter":"Q1","Date_ID":"202801"}
+    {"Year":"2028","Period":"02","Quarter":"Q1","Date_ID":"202802"}
+    {"Year":"2028","Period":"03","Quarter":"Q1","Date_ID":"202803"}
+    {"Year":"2028","Period":"04","Quarter":"Q2","Date_ID":"202804"}
+    {"Year":"2028","Period":"05","Quarter":"Q2","Date_ID":"202805"}
+    {"Year":"2028","Period":"06","Quarter":"Q2","Date_ID":"202806"}
+    {"Year":"2028","Period":"07","Quarter":"Q3","Date_ID":"202807"}
+    {"Year":"2028","Period":"08","Quarter":"Q3","Date_ID":"202808"}
+    {"Year":"2028","Period":"09","Quarter":"Q3","Date_ID":"202809"}
+    {"Year":"2028","Period":"10","Quarter":"Q4","Date_ID":"202810"}
+    {"Year":"2028","Period":"11","Quarter":"Q4","Date_ID":"202811"}
+    {"Year":"2028","Period":"12","Quarter":"Q4","Date_ID":"202812"}
+    {"Year":"2028","Period":"13","Quarter":"Q4","Date_ID":"202813"}
+
+=== finiq_rls_last_change ===
+  [query] last change...
+    {"Last_Change":"2026-03-31T11:00:42.012Z","Version":"8289"}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 8: TABLE SIZE ESTIMATES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  [query] information_schema sizes...
+  Failed: [UNRESOLVED_COLUMN.WITH_SUGGESTION] A column, variable, or function parameter with name `data_size_in_bytes` cannot be resolved. Did you mean one of the following? [`data_source_format`, `table_name`,
+
+
+╔══════════════════════════════════════════════════════════╗
+║   DEEP SCAN COMPLETE                                     ║
+╚══════════════════════════════════════════════════════════╝

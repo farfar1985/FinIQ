@@ -22,7 +22,8 @@ Amira FinIQ is a **Unified Financial Analytics Hub** being proposed by Amira Tec
 - **SRS Addendum A ARCHIVED**: `FinIQ SRS Addendum A - Databricks Integration.docx` — folded into v3.0
 - **SRS v2.0 ARCHIVED**: `FinIQ SRS IEEE Format by Claude.docx` — Claude-only IEEE 830 (41 reqs)
 - **SRS v1.0 ARCHIVED**: `Amira_FinIQ_SRS_v1.0.docx` — original 10-section format
-- **Databricks Schema Reference COMPLETE (2026-03-26)**: `Matt's databricks schema/FinIQ Databricks Schema Reference (claude generated).docx` — all 20 tables/views
+- **Databricks Schema Reference COMPLETE (2026-03-26)**: `Matt's databricks schema/FinIQ Databricks Schema Reference (claude generated).docx` — all 20 tables/views (synthetic schema)
+- **Real Databricks Schema Reference COMPLETE (2026-03-31)**: `app/REAL_DATABRICKS_SCHEMA.md` + Word doc on Desktop — Deep scan of production Databricks: 21 objects, 5.7B row tables, all relationships, view SQL, 725 formulas, 766 org units. Column mapping: Entity→Unit, Account→RL
 - **MVP deadline**: April 21, 2026 MLT meeting — working demo needed
 - **"Purely vibe coding" approach (2026-03-26)**: Team decided no manual coding — strong spec writing, coding orchestrator (agent) builds the app from specs
 - **Fresh start decision (2026-03-27)**: Next build iteration uses clean slate with combined SRS v3.1 + Frontend Guideline v1.0. Not appending to existing code.
@@ -95,6 +96,10 @@ A unified platform that:
 | `generate_srs.py` | Python-docx script that generates SRS v2.0 |
 | `Amira_FinIQ_SRS_v1.0.docx` | SRS v1.0 Word document (archived) |
 | `generate_synthetic_data_sqlite.py` | Standalone Python script: generates SQLite DB with all 20 FinSight objects (no dependencies) |
+| `app/REAL_DATABRICKS_SCHEMA.md` | Comprehensive real Databricks schema reference — 21 objects, relationships, view SQL, formulas, hierarchies |
+| `app/deep-scan-raw-output.txt` | Raw output from Pass 1 Databricks discovery (table sizes, columns, samples) |
+| `app/deep-scan-pass2-output.txt` | Raw output from Pass 2 (full 725 RLs, 725 formulas, 766 units, 175 cells, 110 inputs) |
+| `generate_schema_docx.mjs` | Generates Word doc from REAL_DATABRICKS_SCHEMA.md → Desktop |
 | `finiq_synthetic.db` | SQLite database: 17 tables + 3 views, 165K rows, 21.4 MB — ready to share with team |
 | `databricks_synthetic_data.py` | PySpark notebook: generates all 20 FinSight objects in Databricks (needs write permissions from Cesar) |
 | `Matt's databricks schema/` | 46 screenshot pages of Matt's FinIQ UC Documentation (Databricks schema) |
@@ -176,6 +181,22 @@ A unified platform that:
 - **View SQL pattern**: Date_Offset=100 for LY, 0 for CY; View_ID=1 for Periodic, 2 for YTD; growth KPIs derived via parent-child numerator/denominator pattern; account S900077 has special +200 offset treatment
 - **External dependencies in views**: Dimensions_View_Date_Map, Dimensions_Date, Dimensions_Entity, Dimensions_Account (not finiq_ prefixed)
 - **Schema is actively used** — tables created Jul 2025 through Mar 2026, views created Mar 2026 (very recent), RLS tracking present
+
+## Real Databricks Schema (PRODUCTION — discovered 2026-03-31)
+- **Full reference**: `app/REAL_DATABRICKS_SCHEMA.md` + Word doc on Desktop
+- **Workspace**: `adb-2085958195047517.17.azuredatabricks.net`
+- **Catalog**: `corporate_finance_analytics_prod` | **Schema**: `finsight_core_model`
+- **Warehouse**: Serverless Starter Warehouse (`de640b2f8ef3d9b2`) | **HTTP Path**: `/sql/1.0/warehouses/de640b2f8ef3d9b2`
+- **21 objects**: 17 tables + 4 views (includes anomaly detection view)
+- **DANGER: 3 fact tables are BILLIONS of rows**: finiq_financial (5.7B), finiq_financial_cons (5.8B), finiq_financial_base (740M)
+- **Column naming differs from synthetic**: Entity→Unit, Account→RL (Reporting Line), value cols have `_Value` suffix
+- **Views use Title Case** Unit_Alias (e.g., "MW Estonia Market") vs UPPERCASE in dim_unit
+- **766 org units** across 11 hierarchy levels, 725 reporting lines, 458 brands, 139 countries
+- **13-period fiscal year**, data from FY2020 to FY2028, replan data FY2025-FY2026
+- **View SQL extracted**: Growth KPIs = numerator RL / RL 5464 - 1, Date_Offset 0=CY 100=LY
+- **External dims in `finsight_core_model_mvp3`**: 35 Dimensions_* tables (views cross-reference)
+- **Data actively updated**: Last change 2026-03-31 (version 8289)
+- **Next step**: Rebuild synthetic DB to match real schema (rename tables/columns), then update app queries
 
 ## Upcoming work / open items
 - **Synthetic data LIVE IN DATABRICKS (2026-03-26)** — 17 tables + 3 views populated in `workspace.default`. All team members have access. Also available as SQLite (`finiq_synthetic.db`, 21.4 MB). Uploaded via `upload_sqlite_to_databricks.py`.
