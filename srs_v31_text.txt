@@ -1,0 +1,685 @@
+Amira FinIQ
+Unified Financial Analytics Hub
+Software Requirements Specification
+IEEE 830 / ISO/IEC/IEEE 29148 Format
+Table of Contents
+[Table of Contents will auto-generate when opened in Word: References > Update Table]
+1. Introduction
+1.1 Purpose
+This Software Requirements Specification (SRS) defines the functional and non-functional requirements for Amira FinIQ, a Unified Financial Analytics Hub proposed for Mars, Incorporated. This document is intended for use by Amira Technologies' engineering and product teams, Mars's IT and digital leadership, and key business stakeholders who will evaluate, approve, and ultimately use the platform.
+This SRS follows the IEEE 830-1998 and ISO/IEC/IEEE 29148:2018 standards for software requirements specifications.
+This is the final unified specification incorporating all Databricks/FinSight data layer requirements and dual-mode operation (simulated and real data) into a single document.
+1.2 Scope
+Amira FinIQ is a unified financial analytics hub designed to consolidate and augment Mars, Incorporated's existing analytical capabilities, transitioning from a dispersed setup to a single, intelligent platform. The system will unify internal financial reporting and external competitive intelligence into one hub, enabling on-demand report generation, natural language queries, and enterprise-scale agent-based job processing.
+The platform will integrate with Amira's existing Financial Forecasting and Marketing Analytics services, enabling forward-looking recommendations alongside historical analysis.
+1.2.1 In Scope
+Internal financial data ingestion via Databricks/FinSight (primary) and Excel workbooks (fallback)
+External competitor document ingestion (earnings releases, presentations, transcripts)
+Financial Modeling Prep (FMP) API integration for real-time competitor financial data, earnings transcripts, analyst estimates, M&A tracking, and ESG scores
+Acquired research and third-party data integration
+Natural language query interface for ad-hoc and structured reporting
+Curated suggested prompt library with 18+ pre-configured analytical query templates (Appendix C)
+Period End Summary generation (Summary, WWW, WNWW formats) with full configurability
+Budget variance reporting (actual vs. replan from Databricks)
+Peer-to-peer competitive benchmarking with quantitative comparison tables
+Enterprise job board with agent queue, priority routing, and SLA management
+Integration APIs for Amira Financial Forecasting and Marketing Analytics platforms
+Dynamic, configurable user interface with real-time updates
+Role-based access control (RBAC) aligned with Mars organizational hierarchy
+Audit trail and data lineage for all generated reports
+Caching and performance optimization for sub-second cached retrieval
+Dual-mode operation: simulated data for development/testing, real Databricks data for production
+1.2.2 Out of Scope
+Direct SAP/ERP integration (financial data provided via Databricks/FinSight data layer; Excel exports retained as fallback during transition period)
+Real-time streaming data (batch processing model)
+Mobile native applications (responsive web application)
+Multi-language report generation (English only initially)
+1.3 Definitions, Acronyms, and Abbreviations
+1.4 References
+IEEE 830-1998: IEEE Recommended Practice for Software Requirements Specifications
+ISO/IEC/IEEE 29148:2018: Systems and software engineering — Life cycle processes — Requirements engineering
+Mars Period End Summary Technical Documentation (internal, 11 pages)
+Mars Competitive Intelligence System Architecture (internal)
+Amira Financial Forecasting API Specification (internal)
+Amira Marketing Analytics API Specification (internal)
+FinIQ UC Documentation, finsight_core_model_mvp3 schema (Mars internal, 46 pages, 2026-03-25)
+FinIQ Databricks Schema Reference (Amira internal, compiled 2026-03-26)
+Financial Modeling Prep (FMP) API Documentation (https://site.financialmodelingprep.com/developer/docs)
+FMP Earnings Transcript API Specification (https://site.financialmodelingprep.com/developer/docs#earnings-transcript)
+1.5 Document Overview
+Section 2 provides an overall description of the product including its context, capabilities, users, and constraints. Section 3 contains the detailed specific requirements organized by external interfaces, functional requirements, performance requirements, design constraints, and system attributes. Sections 4-5 cover data model and system architecture. Section 6 covers the Databricks/FinSight schema and precomputed view mapping. Section 7 defines the enhanced Competitive Intelligence module with Financial Modeling Prep (FMP) API integration, standard analytical views (SWOT, Porter’s Five Forces, Financial Benchmarking, Earnings Call Intelligence, and others), and AI/NLP requirements. Section 8 covers dual-mode operation (simulated vs. real data). Sections 9-11 cover deployment, phased rollout, and acceptance criteria. Appendices provide supplementary reference material, including the suggested prompt catalog (Appendix C).
+2. Overall Description
+2.1 Product Perspective
+Mars currently operates two separate AI-powered analytical tools: a Period End Summary (PES) system for generating internal financial performance narratives, and a Competitive Intelligence (CI) system for analyzing competitor earnings documents. These systems operate independently, require engineering effort for even minor changes to report templates or data sources, and do not share a common data layer.
+Amira FinIQ consolidates these capabilities into a unified platform while augmenting them with new functionality: on-demand reporting via natural language queries, an enterprise agent job board for scalable analytics processing, cross-platform intelligence through integration with Amira's Forecasting and Marketing Analytics services, a dynamic configurable user interface, and self-service configuration for business users.
+2.1.1 Current System: Period End Summary (PES)
+Function: Transforms raw financial Excel data into AI-generated executive performance summaries
+Input: Preprocessed Excel workbooks (P&L, Product, Brand, NCFO sheets) from Azure Blob Storage
+Processing: 6 parallel GPT-4.1 pipelines (one per KPI: Organic Growth, MAC Shape, A&CP Shape, CE Shape, Overhead Shape, NCFO)
+Output: Markdown narratives with trend taglines, sub-unit rankings, and HTML KPI tables
+Performance: 10-15 seconds first generation, < 1 second cached retrieval
+Formats: Summary (balanced), What's Working Well (positive), What's Not Working Well (negative)
+2.1.2 Current System: Competitive Intelligence (CI)
+Function: Ingests competitor earnings documents and generates structured competitive analysis
+Input: PDF documents (press releases, earnings presentations, prepared remarks)
+Pipeline: Upload > Parse/Extract metadata > Chunk/Embed to Azure AI Search > Generate themed summaries > Peer-to-peer benchmarking
+Output: Themed summaries (Organic Growth, Margins, Projections, Consumer, Products, etc.), P2P quantitative tables, Q&A chat
+Infrastructure: Azure Blob Storage, Azure Document Intelligence, Azure OpenAI, Azure AI Search, Cosmos DB
+2.1.3 Current System: FinSight Data Layer
+Function: Mars's centralized Databricks-based financial data platform, providing the upstream data layer that feeds both PES and other analytical tools
+Schema: finsight_core_model_mvp3 in the corporate_finance_analytics_dev catalog
+Structure: 20 objects — 11 dimension tables, 5 fact tables, 3 precomputed analytics views, 1 system table
+Fact tables: finiq_financial (39-col denormalized), finiq_financial_base (7-col normalized), finiq_financial_cons (9-col consolidated with multi-currency), finiq_financial_replan (18-col actual vs. budget), finiq_financial_replan_cons (6-col consolidated replan)
+Precomputed views: P&L by entity, P&L by brand/product, NCFO by entity — each providing YTD and Periodic comparisons vs. Last Year
+Storage: Delta Lake format on Azure Blob Storage (ABFSS protocol)
+Significance: This data layer is the direct source of the Excel files currently used by PES. FinIQ will connect directly to these Databricks tables/views, bypassing the Excel export step.
+2.1.4 Gap Analysis
+2.2 Product Functions
+Amira FinIQ provides the following high-level capabilities:
+Unified Platform: One hub consolidating two existing tools, with a single data layer and query interface
+On-Demand Reporting: Any financial report generated in seconds from natural language queries
+Enterprise Agent Queue: 100+ users submit queries simultaneously; AI agents process them autonomously with SLAs and priority routing
+Cross-Platform Intelligence: Recommendations enriched by Amira's Financial Forecasting and Marketing Analytics engines
+Dynamic User Interface: Configurable dashboards, real-time updates, adaptive query interface, and responsive design
+Self-Service Configuration: Business users modify report templates, KPI definitions, and data sources without code changes
+Comprehensive Data Coverage: Internal financials, competitor intelligence, commodity markets, acquired research, and third-party data in one place
+Dual-Mode Operation: System operates against both simulated data (development/testing) and real Databricks data (production) via a single configuration toggle
+2.3 User Characteristics
+2.3.1 Stakeholder Map
+2.3.2 User Personas
+Persona 1: The Finance Director (Primary User)
+Needs: Generate period-end summaries for their GBU, compare performance across divisions, drill into KPI drivers
+Pain today: Waits for reports to be generated, cannot customize output format, no cross-referencing with forecasts
+With FinIQ: Self-service report generation, configurable KPIs, integrated forecast comparisons
+Persona 2: The Strategy Analyst (Power User)
+Needs: Deep competitive analysis, cross-competitor benchmarking, ad-hoc queries across all data sources
+Pain today: Manually downloads competitor PDFs, uses separate CI tool, no connection to internal data
+With FinIQ: Unified query across internal + external data, automated competitor monitoring, job queue for complex analyses
+Persona 3: The Executive (Consumer)
+Needs: Board-ready summaries, key takeaways, trend indicators, strategic recommendations
+Pain today: Receives static reports, cannot ask follow-up questions, no forward-looking insights
+With FinIQ: Interactive Q&A, forecast-enriched summaries, one-click export to presentation format
+2.4 Constraints
+All infrastructure must be deployed within Mars's Azure tenant (no data egress to public internet)
+LLM access via Azure OpenAI Foundry with data processing agreement ensuring no training on Mars data
+Authentication must integrate with Mars's existing Azure Entra ID (SSO)
+Primary data ingestion via direct Databricks/FinSight connectivity (finsight_core_model_mvp3 schema). Excel ingestion retained as fallback path during transition and for any data not yet available in Databricks. No direct SAP/ERP integration (SAP data flows through Databricks).
+English-only report generation initially
+2.5 Assumptions and Dependencies
+Mars will provide access to Azure tenant with sufficient quota for Azure OpenAI, AI Search, and compute resources
+Mars will provide and maintain Databricks/FinSight connectivity credentials (service principal or managed identity) with read access to the finsight_core_model_mvp3 schema. The schema structure (20 tables/views) will remain stable or changes will be communicated in advance. Excel workbook ingestion is retained as a fallback and will follow the existing naming convention.
+The external dimension tables referenced by FinSight views (Dimensions_View_Date_Map, Dimensions_Date, Dimensions_Entity, Dimensions_Account) will be accessible to FinIQ with the same credentials as the finiq_ prefixed tables.
+Amira Financial Forecasting and Marketing Analytics APIs will be available and documented
+Mars's organizational hierarchy data will be provided and maintained by Mars IT
+Competitor earnings documents will be sourced via existing public filings and Mars's research subscriptions
+3. Specific Requirements
+3.1 External Interface Requirements
+3.1.1 User Interfaces
+The system shall provide a React-based single-page application (SPA) with responsive design, accessible via modern web browsers (Chrome, Edge, Safari). The UI shall include:
+Interactive dashboards with configurable widget layout
+Conversational query interface (chat-style) with streaming responses
+Job board dashboard showing active jobs, statuses, and SLA compliance
+Administration console for templates, KPIs, peer groups, and user management
+Real-time updates via Server-Sent Events (SSE) for report generation progress and job status
+Embeddable widgets for integration into existing Mars portals
+Databricks connection administration panel for managing data source connectivity
+3.1.2 Hardware Interfaces
+No direct hardware interfaces. All interaction through web browser on standard desktop/laptop devices.
+3.1.3 Software Interfaces
+Amira FinIQ integrates with the following external systems:
+Databricks / FinSight Data Layer
+Amira Financial Forecasting API
+Integration Pattern: Request-response with 30-second timeout. Responses cached for 1 hour. Fallback: if Forecasting API unavailable, reports generated without forecast data (clearly labeled).
+Amira Marketing Analytics API
+Integration Pattern: Same as Forecasting API. Marketing data enriches reports only when the user's organizational unit has marketing data available and the user has marketing-authorized access.
+3.1.4 Communication Interfaces
+Amira FinIQ exposes the following RESTful API for third-party consumers and programmatic access:
+3.2 Functional Requirements
+3.2.1 FR1: Unified Data Ingestion Engine
+The ingestion engine is the foundation of Amira FinIQ. It normalizes data from all sources into a unified data layer that the analytics engine queries against.
+FR1.1: Internal Financial Data Ingestion (Databricks Primary)
+The system shall ingest internal financial data via direct connectivity to Mars's Databricks/FinSight data layer (catalog: corporate_finance_analytics_dev, schema: finsight_core_model_mvp3). The primary ingestion path shall query the 3 precomputed views (finiq_vw_pl_entity, finiq_vw_pl_brand_product, finiq_vw_ncfo_entity) for Period End Summary analytics, and the normalized fact tables (finiq_financial_cons, finiq_financial_base) for ad-hoc queries. The 11 dimension tables shall be synchronized to the FinIQ data layer for entity hierarchy resolution, account structure, product taxonomy, and customer classification. Column mapping, KPI resolution, unit filtering (150+ organizational units via finiq_dim_entity), and derived metric calculations shall be applied automatically. Excel workbook ingestion (preprocessed_output_{Period}_{YearShort}.xlsx) shall be retained as a fallback path.
+Priority: Critical | Category: Functional
+FR1.2: Competitor Document Ingestion
+The system shall ingest PDF documents (earnings releases, presentations, transcripts) via upload or automated scraping. Documents shall be parsed using Azure Document Intelligence, chunked, embedded, and indexed in a vector search store. Metadata extraction (company, quarter, document type) shall be automatic.
+Priority: High | Category: Functional
+FR1.3: Third-Party Data Connectors
+The system shall provide a connector framework for integrating third-party data sources including commodity price feeds, acquired research databases, and market data providers. Each connector shall normalize data into the unified schema with source lineage metadata.
+Priority: High | Category: Functional
+FR1.4: Data Catalog & Lineage
+All ingested data shall be cataloged with metadata (source, ingestion timestamp, schema version, quality score). Every derived metric and generated insight shall maintain a provenance chain back to its source data.
+Priority: High | Category: Functional
+FR1.5: Incremental & Scheduled Ingestion
+The system shall support both manual uploads and scheduled ingestion jobs. Incremental ingestion shall detect changes and update only affected records. Ingestion status and errors shall be visible in the admin dashboard.
+Priority: High | Category: Functional
+FR1.6: Databricks Connection Management
+The system shall maintain a configurable connection to the Databricks/FinSight environment with the following specifications: (a) Authentication via Azure service principal or managed identity with least-privilege read access, (b) Connection parameters (catalog, schema, warehouse/cluster endpoint) configurable via admin interface without code deployment, (c) Connection health monitoring with automatic retry (3 attempts, exponential backoff), (d) Query timeout of 60 seconds with graceful fallback to cached data, (e) Connection pooling with a maximum of 10 concurrent Databricks sessions, (f) All queries logged with execution time, row count, and data freshness timestamp for audit purposes.
+Priority: High | Category: Functional
+3.2.2 FR2: Financial Analytics & Reporting Engine
+The analytics engine generates structured financial reports from the unified data layer. It evolves the current PES system into a more flexible, configurable architecture. When Databricks connectivity is available, the engine queries precomputed FinSight views directly, eliminating the Excel preprocessing step.
+FR2.1: Period End Summary Generation (Databricks-Enabled)
+The system shall generate executive performance summaries for any organizational unit, time period, and output format. When Databricks connectivity is available, the system shall query the precomputed FinSight views directly: finiq_vw_pl_entity for P&L by entity (maps to P&L sheet), finiq_vw_pl_brand_product for P&L by brand/product (maps to Product and Brand sheets), and finiq_vw_ncfo_entity for NCFO (maps to NCFO sheet). Each view provides Date_ID, Entity_Alias, Account_Alias, and four value columns (YTD_LY_Value, YTD_CY_Value, Periodic_LY_Value, Periodic_CY_Value) that directly feed the KPI narrative generation pipeline. This eliminates the Excel preprocessing step from the current 10-step pipeline. Six KPI narratives (Organic Growth, MAC Shape, A&CP Shape, CE Shape, Controllable Overhead Shape, NCFO) shall be generated in parallel, with trend analysis taglines injected from multi-period historical data. Output formats: Summary, What's Working Well, What's Not Working Well. When Databricks is unavailable, the system shall fall back to the Excel-based pipeline.
+Priority: Critical | Category: Functional
+FR2.2: Configurable KPI Framework
+Business users shall be able to define, modify, and add KPIs without code changes. Each KPI definition shall include: formula, data sources, display name, narrative prompt template, and threshold parameters for trend analysis. KPI changes shall take effect on the next report generation. The finiq_account_formula table shall serve as the authoritative source for KPI calculation logic, enabling dynamic KPI configuration from Databricks metadata.
+Priority: High | Category: Functional
+FR2.3: Sub-Unit Ranking & Driver Analysis
+For each KPI, the system shall automatically identify and rank sub-units (child business units) by performance for both Periodic and YTD timeframes. Driver analysis shall explain what is driving each sub-unit's performance, with explicit rank labels (RANK 1, TOP 3, BOTTOM 3).
+Priority: High | Category: Functional
+FR2.4: Interactive KPI Tables
+Every generated summary shall include interactive HTML KPI tables with the underlying data, enabling users to cross-reference AI-generated narratives with source numbers. Tables shall support sorting, filtering, and drill-down.
+Priority: High | Category: Functional
+FR2.5: Custom Report Builder
+Users shall be able to compose custom reports by selecting KPIs, organizational units, time periods, comparison bases (vs LY, vs Budget, vs Forecast), and output sections. Reports shall be saveable as templates for reuse.
+Priority: High | Category: Functional
+FR2.6: Export Capabilities
+Reports shall be exportable to PDF, Word (.docx), PowerPoint (.pptx), Excel (.xlsx), and email. PowerPoint exports shall use Mars-branded templates with charts and tables pre-formatted for board presentation.
+Priority: High | Category: Functional
+FR2.7: Budget Variance Reporting
+The system shall generate actual-vs-budget (replan) variance reports by querying the finiq_financial_replan table. For each organizational unit and time period, the system shall display: Actual_USD_Value, Replan_USD_Value, variance (Actual - Replan), and variance percentage. Both USD and Local currency values shall be supported. Variance reports shall be available as a standalone report type and as an enrichment layer on Period End Summaries (e.g., 'Petcare Organic Growth was 6.3% vs. a replan target of 5.5%, exceeding budget by 80 basis points'). The Submission_Type_ID column shall be used to distinguish between different forecast revisions.
+Priority: High | Category: Functional
+3.2.3 FR3: Competitive Intelligence Module
+The CI module evolves the current standalone Competitive Intelligence tool into an integrated component of the analytics hub, with cross-referencing to internal data.
+FR3.1: Themed Competitor Summaries
+The system shall generate structured summaries of competitor earnings organized by themes: Organic Growth, Margins, Projections, Consumer Trends, Product Launches, and Miscellaneous. Each bullet shall include source references (clickable links to source document sections).
+Priority: High | Category: Functional
+FR3.2: Peer-to-Peer Benchmarking
+The system shall generate quantitative P2P comparison tables across predefined competitor peer groups (e.g., Petcare segment: Mars, Nestle PetCare, Colgate-Palmolive, Freshpet, IDEXX, J.M. Smucker). Metrics shall include OG%, Price, Volume, Mix, Adj. Core Operating Profit %, with both Quarterly and YTD views. Narrative analysis shall identify leaders, laggards, and drivers.
+Priority: High | Category: Functional
+FR3.3: Internal-External Cross-Reference
+The system shall enable queries that combine internal Mars data with competitor data. Example: 'Compare our Petcare organic growth vs Nestle PetCare and Freshpet for Q2 2024, and show our forecast for Q3.' This requires joining the unified data layer across internal and external sources.
+Priority: Critical | Category: Functional
+FR3.4: Competitor Monitoring & Alerts
+The system shall support automated monitoring of competitor document sources. When new earnings documents are detected, the system shall automatically ingest, process, and notify relevant users. Users shall configure alert rules based on competitor, metric thresholds, or keywords.
+Priority: High | Category: Functional
+3.2.4 FR4: Natural Language Query Interface
+The query interface is the primary user interaction layer. Users ask questions in natural language and receive structured, sourced answers.
+FR4.1: Conversational Query Engine
+The system shall accept natural language queries and return structured answers with supporting data tables and source references. Examples: 'What was Nestle's organic growth in Q2 2024?', 'Show me our Petcare MAC Shape vs last year by division', 'Which competitor had the highest margin improvement this quarter?'
+Priority: High | Category: Functional
+FR4.2: Multi-Turn Conversations
+The system shall maintain conversation context across multiple turns, allowing follow-up questions ('Break that down by region', 'What about YTD?', 'Compare that with our forecast'). Conversation history shall be persisted per user session.
+Priority: High | Category: Functional
+FR4.3: Query Intent Classification
+The system shall classify queries into types: factual lookup, comparison, trend analysis, recommendation, report generation, or job submission. Each type shall route to the appropriate processing pipeline (direct answer, analytics engine, forecasting API, or agent queue).
+Priority: High | Category: Functional
+FR4.4: Source Attribution
+Every answer shall include source attribution: document name, section, page number (for PDFs), or cell reference (for Excel data). Users shall be able to click through to the source material.
+Priority: High | Category: Functional
+FR4.5: Suggested Prompt Library
+The system shall provide a curated library of suggested prompts — pre-configured analytical query templates that users can select and execute with one click. Each suggested prompt shall include: a natural language template with dynamic variables ({unit}, {current_year}, {current_period}, {current_quarter}), a human-readable description, associated KPI tags, an organizational unit scope, and a usage counter (runs) for analytics. The prompt library shall be managed as a Cosmos DB collection (see Appendix C for the initial catalog of 18 prompts). Suggested prompts shall be displayed contextually in the query interface based on the user’s organizational unit, role, and recent query history. The system shall support the following variable resolution at execution time:
+{unit} — resolved from the user’s active organizational unit selection or RBAC-scoped default entity (e.g., “MARS INC”, “GBU PETCARE”)
+{current_year} — resolved to the current fiscal year from finiq_date
+{current_period} — resolved to the most recent closed period from finiq_date (via Dimensions_View_Date_Map)
+{current_quarter} — resolved to the current fiscal quarter number
+Administrators shall be able to add, edit, disable, and re-order suggested prompts via the administration console. Prompts shall be taggable (e.g., #SuggestedbyFinIQTeam, #Popular, #NewThisPeriod) for filtering and organization. The system shall track prompt usage (runs counter) to surface the most popular prompts and inform the recommendation engine. Users shall be able to save custom prompts to their personal library and share them with their team.
+Priority: High | Category: Functional
+FR4.6: Prompt Variable Resolution Engine
+The system shall implement a variable resolution engine that dynamically substitutes template variables in suggested prompts prior to execution. The engine shall: (a) resolve {unit} against finiq_dim_entity with fallback to the user’s default unit, (b) resolve {current_year} and {current_period} from the most recent Date_ID in the active FinSight views, (c) resolve {current_quarter} from the finiq_date dimension, (d) validate that all variables are resolved before submission to the query engine, and (e) allow users to override any resolved variable before execution. The engine shall support compound prompts that reference multiple dimensions (e.g., brand within unit within period). Template variable resolution shall complete in < 200ms.
+Priority: High | Category: Functional
+3.2.5 FR5: Enterprise Job Board & Agent Queue
+The job board is a critical differentiator. It transforms Amira FinIQ from a single-user query tool into an enterprise-scale analytics service that can handle hundreds of concurrent requests.
+FR5.1: Job Submission
+Users shall submit analytical jobs via: (a) the query interface (complex queries auto-routed to queue), (b) a dedicated job submission form with fields for query, priority, deadline, recipients, and output format, (c) email integration (forward a question to finiq@mars.com), (d) API for programmatic submission.
+Priority: Critical | Category: Functional
+FR5.2: Agent Pool & Specialization
+The system shall maintain a pool of specialized AI agents, each optimized for specific query types: Period End Summary Agent, Competitive Analysis Agent, Forecasting Agent, Marketing Analytics Agent, Ad-Hoc Query Agent, and Data Quality Agent. Agents shall be horizontally scalable based on queue depth.
+Priority: High | Category: Functional
+FR5.3: Priority Routing & SLA Management
+Jobs shall be assigned priority levels (Critical, High, Medium, Low) with corresponding SLA targets. Critical jobs: < 2 minutes. High: < 10 minutes. Medium: < 30 minutes. Low: < 2 hours. The system shall monitor SLA compliance and escalate breaches to administrators.
+Priority: High | Category: Functional
+FR5.4: Job Lifecycle Management
+Each job shall have a visible lifecycle: Submitted > Queued > Assigned (to agent) > Processing > Review > Completed/Failed. Users shall see real-time status updates. Failed jobs shall include error details and retry options.
+Priority: High | Category: Functional
+FR5.5: Job Dashboard
+An enterprise dashboard shall show: active jobs by status, agent utilization, SLA compliance rates, average processing times by query type, top requestors, and historical trends. Filterable by department, priority, agent type, and date range.
+Priority: High | Category: Functional
+FR5.6: Scheduled & Recurring Jobs
+Users shall schedule recurring jobs (e.g., 'Generate Petcare Period End Summary on the 5th of every month' or 'Run competitive benchmarking weekly for all peer groups'). The scheduler shall support cron-like expressions with timezone awareness.
+Priority: High | Category: Functional
+FR5.7: Collaborative Review & Approval
+Jobs producing sensitive or high-visibility reports shall support a review workflow: the AI agent generates a draft, a designated reviewer approves/edits, and the final version is distributed. Review assignments shall be configurable per report type and organizational unit.
+Priority: High | Category: Functional
+3.2.6 FR6: Integration Layer
+Amira FinIQ integrates with Amira's existing platform services to provide forward-looking recommendations alongside historical analysis.
+FR6.1: Amira Financial Forecasting Integration (Three-Way Comparison)
+The system shall call the Amira Financial Forecasting API to enrich reports with forward-looking projections. In addition, the system shall leverage the finiq_financial_replan table for Mars's internal replan/budget data. This enables a three-way comparison: Actual (from finiq_financial_cons) vs. Replan (from finiq_financial_replan) vs. Amira Forecast (from Forecasting API). Example output: 'Q2 Organic Growth was 6.3% (Actual) vs. 5.5% (Mars Replan) vs. 6.1% (Amira Forecast). Actual exceeded both targets. Based on current trends, Amira projects 5.8% for Q3.' Confidence intervals shall be displayed for the Amira Forecast; replan figures shall be labeled as Mars internal budget targets. Forecasts shall be clearly labeled as projections.
+Priority: Critical | Category: Functional
+FR6.2: Amira Marketing Analytics Integration
+The system shall call the Amira Marketing Analytics API to correlate financial performance with marketing spend and effectiveness. Example: 'Royal Canin posted 11.3% OG in Q2. Marketing analytics shows a 15% increase in digital ad spend with a 2.3x ROAS, suggesting the growth is partially marketing-driven.' Marketing data shall be available as a dimension in custom reports.
+Priority: Critical | Category: Functional
+FR6.3: Unified Recommendation Engine
+When both forecasting and marketing data are available, the system shall generate actionable recommendations: 'Based on forecasted cocoa price increases of 12% in Q3 and your current marketing ROI on Confectionery brands, consider shifting 5% of Confectionery marketing budget to Petcare, which shows stronger pricing power.' Recommendations shall be flagged as AI-generated suggestions.
+Priority: High | Category: Functional
+FR6.4: External API Gateway
+The system shall expose a RESTful API gateway for third-party integrations. Endpoints shall include: report generation, job submission, query execution, data catalog browsing, and webhook registration for event notifications.
+Priority: High | Category: Functional
+FR6.5: Databricks Data Freshness Monitoring
+The system shall monitor data freshness in the Databricks/FinSight schema by tracking: (a) the most recent Date_ID available in each fact table and view, (b) the Last_Change timestamp from finiq_rls_last_change for security policy currency, (c) row counts per entity and period for completeness validation. Data freshness indicators shall be displayed on all reports (e.g., 'Data as of Period 6, 2026'). Stale data alerts shall be triggered when expected period data is not available within a configurable window (default: 5 business days after period close).
+Priority: High | Category: Functional
+3.2.7 FR7: Administration & Configuration
+FR7.1: Template Management
+Administrators shall manage report templates through a visual editor. Templates define: sections, KPI selection, narrative tone, data filters, and output format. Templates shall be versionable with rollback capability.
+Priority: High | Category: Functional
+FR7.2: Organizational Hierarchy Management
+The system shall maintain Mars's organizational hierarchy (Mars Inc > GBUs > Divisions > Regions > Sub-units) with the ability to add, modify, or reorganize units. Hierarchy changes shall automatically propagate to report generation and access control.
+Priority: High | Category: Functional
+FR7.3: Peer Group Configuration
+Administrators shall define and modify competitor peer groups for benchmarking. Each peer group specifies: segment name, included companies, relevant metrics, and data source mappings.
+Priority: High | Category: Functional
+FR7.4: Prompt Management
+LLM prompts shall be managed as configurable assets, not hardcoded. Each prompt shall have: system message, dynamic sections (output format selection), user message template, and injected data variables. Prompt changes shall take effect immediately without deployment.
+Priority: High | Category: Functional
+FR7.5: User & Access Management
+RBAC aligned with Mars organizational hierarchy. Roles: Admin, Analyst, Viewer, API Consumer. Data access scoped by organizational unit (a Petcare analyst cannot access Snacking financials unless explicitly granted). SSO integration with Mars identity provider.
+Priority: High | Category: Functional
+FR7.6: Databricks Connection Administration
+Administrators shall manage Databricks/FinSight connectivity through a dedicated admin interface. Configuration shall include: (a) Databricks workspace URL and warehouse/cluster endpoint, (b) Authentication credentials (service principal client ID/secret or managed identity), (c) Catalog and schema selection with object discovery (list available tables/views), (d) View-to-report mapping configuration (which views feed which report types), (e) Dimension table sync schedule (frequency for refreshing local copies of dimension data), (f) Connection test functionality with diagnostic output, (g) Fallback toggle: switch between Databricks primary mode and Excel fallback mode without code deployment.
+Priority: High | Category: Functional
+3.2.8 FR8: Dynamic User Interface
+The user interface shall be dynamic, adaptive, and configurable — enabling users to personalize their experience, interact with data in real time, and work within a context-aware workspace that adjusts its layout and components based on user intent and workflow stage. The UI shall support progressive disclosure, multi-panel workspaces, and persistent state management.
+FR8.1: Configurable Dashboard Layout
+Users shall be able to arrange, resize, and pin dashboard widgets (KPI cards, charts, tables, job queue status panels) via drag-and-drop. Dashboard configurations shall be saved per user and shareable across teams. Administrators shall define default layouts per role.
+Priority: High | Category: Functional
+FR8.2: Dynamic Report Viewer
+Reports shall render dynamically based on content type. The viewer shall support interactive charts (zoom, hover tooltips, click-to-drill-down), expandable/collapsible sections, inline data tables with sorting and filtering, and side-by-side comparisons of multiple reports or time periods.
+Priority: High | Category: Functional
+FR8.3: Real-Time UI Updates
+The interface shall update in real time via Server-Sent Events (SSE) without requiring page refresh. This includes: report generation progress (streaming tokens), job status transitions, new data ingestion notifications, alert triggers, and collaborative review status changes.
+Priority: High | Category: Functional
+FR8.4: Adaptive Query Interface
+The query interface shall adapt based on user context: suggesting relevant filters and organizational units, auto-completing entity names (companies, KPIs, periods), displaying recent queries for quick re-execution, surfacing suggested prompts from the curated prompt library (FR4.5) ranked by relevance to the user’s current context and role, and recommending follow-up questions based on the current conversation context.
+Priority: High | Category: Functional
+FR8.5: Theme & Branding Customization
+Administrators shall configure UI themes including Mars branding assets, color schemes per GBU or division, and custom logo placement. The system shall support light and dark display modes. Branding shall carry through to exported reports and presentations.
+Priority: High | Category: Functional
+FR8.6: Responsive & Accessible Design
+The UI shall comply with WCAG 2.1 Level AA accessibility standards. The application shall be responsive across desktop and tablet form factors. Full keyboard navigation shall be supported. Screen reader compatibility shall be validated for all core workflows.
+Priority: High | Category: Non-Functional / UI
+FR8.7: Context-Aware UI Rendering
+The system shall dynamically adjust the UI layout based on the detected user intent. When the query interface classifies a request as retrieval, the UI shall foreground the document viewer; for analysis requests, the charting and comparison panels shall expand; for summary generation, the report preview shall take focus; for job creation, the job submission form shall surface. Contextual action buttons (e.g., 'Generate Summary', 'Create Job', 'Compare Reports') shall appear dynamically based on the current content and workflow stage, enabling one-click transitions between workflows.
+Priority: High | Category: Functional
+FR8.8: Progressive Disclosure
+The system shall present high-level summaries and KPI cards by default, with the ability to expand into detailed views on demand. Complex data (multi-period tables, sub-unit breakdowns, methodology notes) shall be collapsed unless the user explicitly requests expansion. Drill-down depth shall be consistent across all report types: overview > KPI detail > sub-unit detail > source data.
+Priority: High | Category: Functional
+FR8.9: Dynamic Component Injection
+The system shall inject UI components dynamically into the chat workspace based on response type. When the query engine returns tabular data, an interactive data table shall render inline. When it returns KPI narratives, a formatted report preview panel shall appear. When a job is created from chat, a live job status tracker shall embed in the conversation. Injected components shall be interactive: users can sort tables, modify chart parameters, and trigger follow-up actions directly from within the chat context.
+Priority: High | Category: Functional
+FR8.10: Multi-Panel Workspace
+The system shall support a multi-panel workspace layout with independently resizable panels: chat panel, document viewer, analysis/charting panel, and job board panel. Users shall be able to open, close, resize, and rearrange panels via drag-and-drop. Panel layout preferences shall be persisted per user across sessions. The workspace shall support split-view for side-by-side comparison of two reports, two time periods, or internal vs. competitor data.
+Priority: High | Category: Functional
+FR8.11: UI State Management & Undo/Redo
+The system shall maintain full UI state across sessions, preserving: active documents, open panels, panel arrangement, chat history, selected filters, and dashboard widget configuration. When a user returns to the application, the workspace shall restore to its prior state. Dashboard and layout modifications shall support undo/redo (minimum 20 steps), allowing users to experiment with configurations without risk of losing a prior arrangement.
+Priority: High | Category: Functional
+3.3 Performance Requirements
+3.4 Design Constraints
+Azure-native deployment: all services must run on Microsoft Azure within Mars's tenant
+LLM provider: Azure OpenAI Foundry (GPT-4.1 or latest available model)
+Orchestration framework: LangGraph for multi-step workflows, LangChain for agent runtime
+Frontend framework: React with TypeScript
+Data transport: RESTful APIs with JSON payloads; SSE for streaming
+Authentication: OAuth 2.0 / OpenID Connect via Azure Entra ID
+Data source: Databricks/FinSight via SQL Connector or Unity Catalog REST API
+3.5 Software System Attributes
+3.5.1 Scalability
+Support 100+ concurrent users initially, scaling to 500+
+Horizontally scalable agent pool: auto-scale based on queue depth (min 5, max 50 agents)
+Data layer shall handle 10TB+ of financial data across all sources
+Vector search index shall support 1M+ document chunks with < 100ms retrieval
+3.5.2 Availability & Reliability
+99.9% uptime SLA during business hours (06:00-22:00 local time, all Mars regions)
+Graceful degradation: if LLM service is unavailable, serve cached reports and queue new requests
+Graceful degradation: if Databricks is unavailable, fall back to Excel-based ingestion within 30 seconds
+Automated failover for all stateful components (database, cache, search index)
+Maximum Recovery Point Objective (RPO): 1 hour. Maximum Recovery Time Objective (RTO): 4 hours
+3.5.3 Security
+All data encrypted at rest (AES-256) and in transit (TLS 1.3)
+SSO integration with Mars identity provider (Azure Entra ID)
+Row-level security: users see only data for their authorized organizational units
+API authentication via OAuth 2.0 with JWT tokens; API keys for service-to-service
+All LLM interactions logged and auditable; no Mars data used for model training
+Sensitive financial data never leaves Mars's Azure tenant (private endpoints)
+SOC 2 Type II compliance for the Amira platform
+3.5.4 Compliance & Data Governance
+GDPR compliance for any personal data processed (employee names in reports)
+Data retention policies configurable per data source (default: 7 years for financial data)
+Audit log for all data access, report generation, and administrative actions
+Data classification labels (Public, Internal, Confidential, Restricted) enforced across all outputs
+3.5.5 Authentication & Authorization
+Single Sign-On (SSO) via Azure Entra ID (formerly Azure AD), integrated with Mars's existing identity provider
+OAuth 2.0 authorization code flow for web application; client credentials flow for API consumers
+JWT tokens with 1-hour expiry; refresh tokens with 24-hour expiry
+Role hierarchy: Global Admin > GBU Admin > Analyst > Viewer > API Consumer
+Data access scoped to organizational unit: a user authorized for 'GBU Petcare ex Russia' sees only Petcare data
+3.5.6 Data Protection
+All Azure services deployed within Mars's private virtual network (VNet) with private endpoints
+No data egress to public internet; all LLM calls routed through Azure Private Link
+Customer-managed encryption keys (CMK) via Azure Key Vault for data at rest
+Azure OpenAI deployed in Mars's tenant with data processing agreement ensuring no training on Mars data
+PII detection and redaction in generated reports (configurable per data classification level)
+3.5.7 Audit & Compliance
+Complete audit trail: who queried what data, when, and what was returned
+LLM prompt/response logging with configurable retention (default 90 days)
+Automated compliance reports for data access patterns and anomaly detection
+Annual penetration testing and security assessment by third-party auditor
+SOC 2 Type II attestation for Amira platform; Mars responsible for data governance policies
+4. Data Model
+4.1 Core Application Entities
+The following entities represent FinIQ's application-level data model. These are supplemented by the Databricks/FinSight schema (Section 6) which provides the upstream financial data.
+4.2 Databricks/FinSight Entity Mapping
+The following maps application entities to their Databricks source tables. Entities not present in Databricks are managed within FinIQ's application database.
+4.3 Data Classification
+5. System Architecture
+5.1 High-Level Architecture
+Amira FinIQ follows a layered microservices architecture deployed on Microsoft Azure, aligning with Mars's existing cloud infrastructure. The architecture consists of five layers:
+Layer 1: Presentation Layer
+React-based single-page application (SPA) with responsive design
+Dynamic configurable dashboards with drag-and-drop widget layout
+Real-time updates via Server-Sent Events (SSE) for report generation progress
+Interactive dashboards built with a modern charting library
+Embeddable widgets for integration into existing Mars portals
+Layer 2: API Gateway & Orchestration
+Azure API Management as the unified entry point
+LangGraph-based orchestration engine for multi-step analytical workflows
+Request routing: simple queries go direct, complex queries route to agent queue
+Rate limiting, authentication, and request logging
+Layer 3: Intelligence Layer
+LLM Service: Azure OpenAI Foundry (GPT-4.1 or latest) for narrative generation
+Embedding Service: Azure OpenAI text-embedding-3-large for document chunking
+Agent Runtime: Specialized agents (PES, CI, Forecast, Marketing, Ad-Hoc, DQ)
+Prompt Registry: Versioned prompt templates stored in Azure Cosmos DB
+RAG Pipeline: Vector search (Azure AI Search) + reranking for document Q&A
+Layer 4: Data Layer
+Primary Data Source: Databricks/FinSight (finsight_core_model_mvp3 schema via Databricks SQL Connector or Unity Catalog REST API)
+Unified Data Store: Azure SQL Database for FinIQ application data (jobs, configs, audit logs) + synchronized dimension data from Databricks
+Document Store: Azure Blob Storage (raw documents) + Azure AI Search (indexed chunks)
+Cache Layer: Azure Redis Cache for generated reports, Databricks query results, and KPI summaries (JSON)
+Metadata Catalog: Azure Cosmos DB for data lineage, audit logs, and configuration
+Fallback Data Source: Azure Blob Storage for Excel workbook ingestion when Databricks is unavailable
+Layer 5: Integration Layer
+Amira Forecasting Connector: REST API client with response caching
+Amira Marketing Analytics Connector: REST API client with metric mapping
+Notification Service: Azure Logic Apps for email, Teams, and webhook notifications
+Export Service: Document generation (PDF, DOCX, PPTX, XLSX) via headless renderer
+5.2 Component Topology
+5.3 Data Flows
+Flow 1: Period End Summary Generation (Databricks-Primary)
+User selects organizational unit, period, year, and output format
+System checks Redis cache for existing summary
+If cache miss: queries Databricks views (finiq_vw_pl_entity, finiq_vw_pl_brand_product, finiq_vw_ncfo_entity) filtered by Date_ID and Entity_Alias
+If Databricks unavailable: falls back to Excel workbook from Blob Storage (original pipeline)
+View results (YTD_LY, YTD_CY, Periodic_LY, Periodic_CY per Account) converted to structured format
+Optionally: finiq_financial_replan queried for budget variance enrichment
+Six parallel LLM calls (one per KPI) via LangGraph, each with tailored prompt
+Trend analysis: multi-period data from Databricks (multiple Date_IDs) for trend taglines
+Six KPI narratives + trend taglines + optional variance data combined into unified Executive Summary
+HTML KPI tables appended for data verification
+Result cached in Redis (JSON) and streamed to frontend via SSE
+Flow 2: Ad-Hoc Query with Forecast Enrichment
+User submits natural language query via chat interface
+Query intent classifier determines type: factual, comparison, trend, recommendation
+For factual/comparison: relevant data retrieved from Databricks (internal) and/or AI Search (external)
+LLM generates structured answer with source references
+If forecast enrichment enabled: Amira Forecasting API called with relevant parameters
+If marketing data relevant: Amira Marketing Analytics API called
+Combined response with historical data + forecast + marketing insights returned
+Sources, confidence levels, and data freshness indicators displayed
+Flow 3: Agent Job Processing
+User submits job via UI, email, or API with priority and deadline
+Job enters Azure Service Bus queue with metadata (type, priority, SLA target)
+Scheduler assigns job to appropriate specialized agent based on query type
+Agent retrieves relevant data, executes analysis, generates draft output
+If review workflow enabled: draft routed to designated reviewer
+Completed job stored in database, notification sent to requestor
+Job metrics updated (processing time, SLA compliance, agent utilization)
+6. Databricks / FinSight Schema Reference
+6.1 Schema Identity
+6.2 Object Inventory
+6.3 Precomputed View Mapping to PES
+6.3.1 View-to-Excel Sheet Mapping
+6.3.2 PES KPI-to-Account Code Mapping
+6.4 View SQL Computation Patterns
+Date_Offset = 100 represents Last Year values; Date_Offset = 0 represents Current Year values
+View_ID = 1 represents Periodic (single period) values; View_ID = 2 represents YTD (year-to-date) values
+Account S900077 receives special treatment: its Date_Offset starts at 100 (not 0) and uses a +200 offset for Last Year comparison
+Growth KPIs (S900083, S900071, S900073, S900072) are derived from child accounts via a numerator/denominator pattern, not stored directly as values
+The vw_pl_brand_product view creates 3 parallel item breakdowns via UNION ALL: by Brand (COALESCE with 'EMPTY BRAND'), by Product_Category ('EMPTY PCAT'), and by Product_Consolidation ('EMPTY PCONS')
+All monetary values are ROUND'd to 4 decimal places in view outputs
+Views use GROUP BY ALL (Databricks SQL extension) for aggregation
+Views LEFT JOIN to Dimensions_Account (some accounts may lack aliases) but INNER JOIN to Dimensions_Entity (all entities must resolve)
+7. Competitive Intelligence Module — FMP API Integration & Standard Views
+This section defines the requirements for the enhanced Competitive Intelligence (CI) module within Amira FinIQ. The CI module provides Mars’s global finance, strategy, and marketing teams with a comprehensive, AI-driven view of the competitive landscape across all core business segments: confectionery, pet care, food products, and adjacent categories.
+The module integrates real-time and historical financial data from the Financial Modeling Prep (FMP) API with internal Mars data from Databricks/FinSight, augmented by GPT-4.1-powered natural language analysis of earnings transcripts, news, and SEC filings. All competitive intelligence views are accessible through the FinIQ front-end and delivered via scheduled reports to executive stakeholders.
+7.1 Scope & Objectives
+The Competitive Intelligence module shall provide Mars stakeholders with actionable intelligence on competitors’ financial performance, strategic direction, market positioning, and operational changes. The module targets publicly traded competitors where FMP API data is available, supplemented by curated intelligence for private competitors (e.g., Ferrero).
+7.1.1 In-Scope Competitor Universe
+The following table defines the primary competitor set for Amira FinIQ CI monitoring. Competitors were selected based on direct segment overlap with Mars across confectionery, pet care, and food products.
+Note: Mars, Incorporated is privately held (~$50B estimated 2024 revenue). Competitor data for private companies (Ferrero) will be sourced from curated industry reports and press monitoring rather than FMP financial endpoints. The FMP API provides comprehensive data for all publicly traded competitors listed above.
+7.2 SWOT Analysis — Mars Competitive Position
+The following SWOT analysis summarizes Mars’s competitive position as derived from competitive research, financial benchmarking, and industry analysis. This SWOT shall be auto-generated by FinIQ quarterly, using a combination of FMP financial data, earnings transcript NLP, and curated market intelligence.
+Strengths:
+Top-2 global pet care platform (~$20B+); integrated nutrition-to-veterinary ecosystem (Royal Canin, Pedigree, VCA, Banfield)
+Top-3 global confectionery player (Snickers, M&M’s, Twix) with strong seasonal franchise
+Private ownership enables long-term capital allocation without quarterly earnings pressure
+Diversified portfolio mitigates single-category risk; pet care drives ~60% of revenue
+AI-driven pet health diagnostics and precision nutrition capabilities
+Kellanova acquisition expands snacking portfolio and distribution reach
+Weaknesses:
+No public financial reporting creates transparency gap with investors, partners, and regulators
+Confectionery segment faces HFSS regulatory headwinds in UK/EU (advertising restrictions, front-of-pack labeling)
+Elevated cocoa input costs (50%+ price increases in 2024–2025) compress chocolate margins
+Legacy IT systems in some markets; FinIQ deployment still in progress globally
+Brand portfolio complexity across 50+ countries creates operational overhead
+Veterinary services model (VCA) carries real estate and labor cost exposure
+Opportunities:
+Pet care premiumization: growing consumer willingness to spend on science-led nutrition and health services
+Asia-Pacific and Latin America expansion (underpenetrated vs. Nestlé in key markets)
+AI and digital engagement: personalized pet health, direct-to-consumer, data-driven marketing
+Sustainability leadership: cocoa traceability, packaging innovation, ESG reporting
+Veterinary diagnostics and telehealth as recurring revenue growth engines
+Snacking adjacency via Kellanova: new categories, channels, and consumer occasions
+Threats:
+Nestlé Purina aggressively investing in premium pet food and vet-channel expansion
+Private-label competition intensifying in emerging markets across both pet and confectionery
+Cocoa supply chain volatility: climate risk, West African geopolitical instability
+Regulatory risk: EU HFSS restrictions, US FDA pet food scrutiny, sugar taxes globally
+Ferrero and Mondelēz gaining confectionery share through innovation and M&A
+E-commerce disruption: DTC brands gaining share in pet food with lower customer acquisition cost
+7.3 Financial Modeling Prep (FMP) API Integration
+The CI module shall integrate with the Financial Modeling Prep API (https://financialmodelingprep.com) to source real-time and historical financial data for all publicly traded competitors.
+7.3.1 API Endpoint Mapping
+7.3.2 Integration Architecture
+Data Ingestion Layer: Azure Functions (Python) shall execute scheduled API calls to FMP endpoints for each ticker in the competitor universe. Earnings transcript ingestion triggers within 48 hours of each quarterly earnings call. Financial statement data refreshes quarterly; quotes and news refresh daily.
+Storage Layer: Raw FMP responses are stored in Azure Cosmos DB (JSON documents) with a TTL-based archival policy. Processed/normalized financial data is written to Databricks Delta Lake tables in the FinSight schema for analytical queries.
+AI Processing Layer: GPT-4.1 (Azure OpenAI) processes earnings transcripts for sentiment scoring, strategic keyword extraction, management tone analysis, and automated SWOT generation. Prompts are version-controlled and stored in Azure AI Search for retrieval-augmented generation (RAG).
+Presentation Layer: Competitive intelligence views are rendered in the FinIQ front-end (React) with interactive charts (Recharts/D3), competitor profile cards, and exportable PDF/PPTX reports.
+API Key Management: FMP API keys shall be stored in Azure Key Vault with automatic rotation every 90 days. Rate limiting shall be implemented at the Azure Functions layer to stay within plan limits (300 req/min for Enterprise tier).
+7.4 Standard Competitive Intelligence Views
+The CI module shall deliver the following standard analytical views, each designed around established strategic analysis frameworks. Views are prioritized based on Mars stakeholder feedback and aligned to the FinIQ user personas (Finance Analyst, Strategy Director, Marketing VP, CFO).
+7.4.1 SWOT Analysis View — Detailed Specification
+The SWOT view shall generate a structured Strengths-Weaknesses-Opportunities-Threats matrix for each competitor in the monitored universe. The SWOT is auto-generated quarterly using the following data pipeline:
+Strengths/Weaknesses: Derived from FMP financial ratios (margins, growth, ROE), employee count trends, analyst consensus, and earnings transcript sentiment. GPT-4.1 synthesizes financial signals into natural language SWOT bullet points.
+Opportunities/Threats: Derived from FMP news feed, press releases, M&A activity, SEC filings, and earnings call forward-looking language. Supplemented by curated industry intelligence from Databricks/FinSight.
+Users can manually override or annotate any SWOT element. All changes are versioned and attributable. SWOT history is maintained for trend analysis (e.g., how a competitor’s profile has shifted over 8 quarters).
+7.4.2 Porter’s Five Forces View
+This view provides a quantified assessment of industry competitive dynamics using Porter’s Five Forces framework, segmented by Mars business unit (confectionery, pet care, food products):
+Competitive Rivalry: Quantified via HHI (Herfindahl–Hirschman Index) calculated from FMP market cap data; number of competitors; revenue concentration; margin pressure trends.
+Threat of New Entrants: Assessed via FMP fundraiser/IPO data, private equity investments in CPG, e-commerce DTC brand proliferation signals from news feeds.
+Threat of Substitutes: Tracked through cross-category demand signals, consumer behavior data from FinSight, and plant-based/functional food trend analysis.
+Supplier Power: Commodity price tracking (cocoa, wheat, meat proteins) via FMP commodity endpoints; supply chain concentration metrics from FinSight.
+Buyer Power: Retail concentration analysis, private-label penetration trends, pricing elasticity models from Mars internal trade promotion data.
+7.4.3 Earnings Call Intelligence View
+This view applies natural language processing to earnings call transcripts sourced from the FMP Earnings Transcript API. For each competitor earnings call, the system shall produce:
+Sentiment Analysis: Overall sentiment score (positive/neutral/negative) for management prepared remarks and Q&A section separately. Tracked over time to identify tone shifts.
+Strategic Keyword Extraction: Frequency analysis of strategic terms (e.g., “premiumization,” “innovation pipeline,” “pricing power,” “cost savings,” “market share”). Compared across quarters and peers.
+Guidance Language Analysis: Extraction of forward-looking statements, capex guidance, M&A hints, and segment-specific commentary. Flagged if language shifts significantly vs. prior quarter.
+Competitive Mention Tracking: Detection of explicit or implicit references to Mars, Mars brands, or Mars-adjacent categories in competitor calls.
+7.4.4 Financial Benchmarking Dashboard
+An interactive dashboard providing side-by-side financial comparison across the competitor universe. Metrics include revenue, revenue growth (YoY/QoQ), gross margin, operating margin, net margin, ROE, debt-to-equity, free cash flow yield, and enterprise value. All sourced from FMP Financial Statements, Ratios, and Key Metrics endpoints. Users can customize the peer set, time horizon, and metric selection.
+7.4.5 Competitive Positioning Map
+An interactive 2D scatter plot positioning competitors along user-selectable dimensions (e.g., X-axis = revenue growth rate; Y-axis = operating margin). Bubble size represents market capitalization. Users can drill into any competitor bubble to see the full profile card. The map auto-updates quarterly with FMP data.
+7.4.6 M&A and Strategic Moves Tracker
+A chronological timeline of competitor M&A transactions, joint ventures, divestitures, and major strategic announcements. Data sourced from FMP M&A Search, Press Releases, and SEC Filings endpoints. Real-time alerts are pushed to subscribed users when a competitor in the monitored universe announces a material transaction.
+7.5 Functional Requirements
+7.5.1 Data Ingestion & Processing
+7.5.2 AI & Analytics Requirements
+7.5.3 Presentation & Reporting Requirements
+7.6 Non-Functional Requirements
+7.7 Appendix: FMP API Plan Requirements
+The Competitive Intelligence module requires a Financial Modeling Prep Enterprise plan or higher to support the full endpoint set, batch requests, and rate limits defined in this specification. Key plan requirements include:
+Earnings Transcripts: Available on Starter plan and above. Full batch transcript access requires Professional tier.
+Financial Statements & Ratios: Available on all plans. Historical depth (10+ years) and batch endpoints require Professional or Enterprise.
+SEC Filings & Insider Trading: US-only endpoints. Available on Starter and above.
+ESG Data: Available on Professional plan and above.
+M&A Search: Available on Starter and above.
+Rate Limits: Enterprise plan provides 300 requests/minute. The CI module is estimated to require ~150 requests/minute during peak refresh cycles.
+Recommendation: Enterprise plan at $499/month (annual billing) provides sufficient endpoint coverage, rate limits, and historical depth for all P1 and P2 requirements. The FMP Excel Add-on is recommended as a supplementary tool for ad-hoc finance team analysis.
+8. Dual-Mode Operation: Simulated and Real Data
+Amira FinIQ shall support two operating modes — simulated data mode and real data mode — switchable via a single configuration toggle. This enables development and testing to proceed independently of Databricks access provisioning, and ensures the system can be validated end-to-end before connecting to production data.
+8.1 Mode Definitions
+8.2 Configuration Toggle
+A single environment variable or admin setting (e.g., DATA_MODE=simulated|real) shall switch the entire system between modes
+The toggle shall affect all data ingestion, query, and reporting paths simultaneously
+Switching modes shall not require code changes or redeployment
+The current mode shall be clearly indicated in the UI (e.g., a banner: 'Running on simulated data')
+8.3 Simulated Data Requirements
+Generate synthetic data for all 20 Databricks objects matching exact column names, data types, and array structures
+Organizational hierarchy: simulate 150+ units mirroring the Mars structure (Mars Inc > 4 GBUs > Divisions > Regions > Sub-units)
+Financial data: generate realistic P&L and NCFO values with period-over-period trends, seasonal patterns, and variance ranges typical of FMCG companies
+Replan data: generate budget targets that are 90-110% of actuals to create realistic variance scenarios
+Product taxonomy: generate 100+ composite items across multiple brands, segments, and categories
+Customer data: generate 50+ customers with hierarchical relationships and channel/format classifications
+Date dimension: populate for FY2024 and FY2025 with Mars fiscal calendar periods
+View outputs: simulate the precomputed view outputs (YTD_LY, YTD_CY, Periodic_LY, Periodic_CY) with mathematically consistent values
+8.4 Simulated Data Delivery
+Simulated data shall be loadable into a local SQLite or PostgreSQL database for development and testing
+A Databricks-compatible API mock shall be provided that returns simulated data in the same format as the real Databricks SQL connector
+Integration tests shall run against both simulated and real Databricks environments with the same configuration toggle
+Simulated data shall be deterministic (seeded random) so test results are reproducible
+8.5 Mode Parity
+All features shall behave identically in both modes. The only differences shall be:
+Data source connection (local DB vs. Databricks)
+UI mode indicator (banner showing simulated vs. real)
+Data freshness values (synthetic timestamps vs. real)
+No feature shall be available in one mode but not the other. This ensures that validation in simulated mode provides confidence for real data operation.
+9. Deployment & Infrastructure
+9.1 Infrastructure Requirements
+9.2 Deployment Model
+CI/CD via GitHub (Mars internal GitHub repository)
+Blue-green deployment for zero-downtime releases
+Infrastructure as Code (IaC) via Terraform or Bicep
+Staging environment mirroring production for pre-release validation
+Feature flags for gradual rollout of new capabilities
+9.3 Environments
+10. Phased Rollout
+Phase 1: Foundation
+Goal: Consolidate current PES and CI tools into a unified platform with Databricks connectivity and core query interface.
+Databricks/FinSight connectivity with fallback to Excel ingestion
+Period End Summary generation from precomputed views (all 6 KPIs, 3 output formats)
+Budget variance reporting (actual vs. replan)
+Competitive Intelligence module (themed summaries, P2P benchmarking)
+FMP API integration for competitor financial data, earnings transcripts, and analyst estimates (Section 7)
+Standard CI views: SWOT Analysis, Financial Benchmarking Dashboard, Competitor Profile Cards, Earnings Call Intelligence
+Natural language query interface (conversational, multi-turn)
+Suggested prompt library with 18 curated query templates and dynamic variable resolution (FR4.5, FR4.6, Appendix C)
+Basic job queue (submit, track, retrieve)
+RBAC and SSO integration
+Caching layer for sub-second cached retrieval
+Admin dashboard (templates, KPIs, peer groups, Databricks connection management)
+Dynamic dashboard with configurable widget layout
+Dual-mode operation (simulated + real data)
+Phase 1 Deliverables:
+Web application deployed to Mars Azure tenant
+Migration of existing PES and CI users
+API documentation and developer portal
+User training materials and onboarding guides
+Phase 2: Intelligence
+Goal: Add forecasting integration, marketing analytics, and enterprise job board.
+Amira Financial Forecasting API integration (three-way comparison: Actual vs. Replan vs. Forecast)
+Amira Marketing Analytics API integration
+Unified Recommendation Engine
+Enterprise job board with priority routing, SLAs, and agent specialization
+Scheduled and recurring jobs
+Collaborative review and approval workflows
+Email-based job submission (finiq@mars.com)
+Third-party data connector framework
+Advanced export (PowerPoint with Mars templates, branded PDFs)
+Advanced CI views: Porter’s Five Forces, M&A Tracker, Competitive Positioning Map, Market Share Waterfall, ESG Scorecard, Analyst Sentiment Tracker (Section 7)
+CI automated SWOT generation and earnings call NLP analysis via GPT-4.1
+Phase 2 Deliverables:
+Forecast-enriched reports available for all GBUs
+Marketing correlation available for marketing-authorized users
+Job board live with SLA monitoring dashboard
+First third-party data connector (commodity prices or acquired research)
+Phase 3: Scale
+Goal: Enterprise scale, advanced analytics, and continuous improvement.
+Scale to 500+ concurrent users
+Advanced analytics: what-if scenario modeling via query interface
+Custom dashboard builder (drag-and-drop KPI widgets)
+Multi-language report generation
+Automated competitor document scraping and monitoring
+Full CI natural language Q&A across FMP data and internal data (Section 7, CI-AI-005)
+Mobile-responsive optimization
+Advanced AI features: anomaly detection, proactive alerts, trend predictions
+API marketplace for internal Mars teams to build on FinIQ data
+Theme and branding customization per GBU
+Phase 3 Deliverables:
+Full enterprise deployment across all Mars GBUs and regions
+Self-service analytics for 500+ users
+API marketplace with 3+ internal consumer applications
+Measurable reduction in time-to-insight across finance and strategy teams
+11. Acceptance Criteria
+Appendix A: KPI Definitions (from PES)
+Appendix B: Current System Capabilities
+This section documents the capabilities of Mars's existing PES and CI systems that Amira FinIQ will preserve and enhance. All current capabilities are maintained; enhancements are additive.
+Period End Summary (Current)
+Input: Preprocessed Excel workbooks with 4 sheets (P&L, Product, Brand, NCFO)
+Processing: 6 parallel GPT-4.1 pipelines with prompt engineering
+Output: Markdown narratives with trend taglines and HTML KPI tables
+Caching: Individual KPI JSONs in Azure Blob Storage
+Performance: 10-15s first generation, < 1s cached, 5-8s single KPI regeneration
+Competitive Intelligence (Current — Enhanced in Section 7)
+Input: PDF uploads (earnings releases, presentations, prepared remarks)
+Pipeline: Parse > Chunk > Embed > Index > Summarize > P2P Benchmark > Notify
+Output: Themed summaries with source links, P2P quantitative tables, Q&A chat
+Infrastructure: Azure Blob + Document Intelligence + OpenAI + AI Search + Cosmos DB
+Appendix C: Suggested Prompt Catalog
+This appendix documents the initial curated prompt library for the FinIQ natural language query interface. Each prompt is a pre-configured analytical query template with dynamic variables that are resolved at execution time. Prompts are stored in Azure Cosmos DB and managed via the administration console (FR7.1). See FR4.5 and FR4.6 for functional requirements.
+Variable Reference:
+{unit} — Organizational unit from finiq_dim_entity (e.g., “MARS INC”, “GBU PETCARE”)
+{current_year} — Current fiscal year from finiq_date
+{current_period} — Most recent closed fiscal period
+{current_quarter} — Current fiscal quarter number
+C.1 Bridge / Waterfall Analysis Prompts
+C.2 Margin & Profitability Analysis Prompts
+C.3 Revenue & Growth Analysis Prompts
+C.4 Performance Narrative & KPI Summary Prompts
+C.5 Customer & Cost Analysis Prompts
+C.6 Prompt Schema (Cosmos DB)
+Each suggested prompt is stored as a JSON document in the FinIQ Cosmos DB with the following schema:
+{
+  "_id": "<ObjectId>",
+  "suggested_prompt": "<template string with {variables}>",
+  "description": "<human-readable description>",
+  "kpi": ["<associated KPI names>"],
+  "tag": "<classification tag>",
+  "unit": "<default organizational unit scope>",
+  "runs": <integer usage counter>,
+  "is_active": true,
+  "display_order": <integer>,
+  "category": "<bridge|margin|revenue|narrative|customer|cost>",
+  "created_by": "<admin user>",
+  "created_at": "<ISO datetime>",
+  "updated_at": "<ISO datetime>"
+}
+Partition key: unit. Index on tag, category, and runs (descending) for efficient retrieval and popularity-based ranking.
+C.7 Prompt Analytics
+The system shall track the following analytics per suggested prompt:
+Total executions (runs counter, incremented on each use)
+Unique users per prompt per period
+Average execution time and success rate
+Most common variable overrides (e.g., which units are most queried)
+Prompt abandonment rate (selected but not executed)
+These analytics shall be available in the administration dashboard and used by the recommendation engine (FR4.5) to surface relevant prompts to users.
+--- End of Document ---
+Amira FinIQ SRS v3.1 (Final Unified + CI Enhancement) | Confidential | Prepared for Mars, Incorporated

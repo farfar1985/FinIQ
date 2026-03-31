@@ -1,0 +1,419 @@
+=== TABLE 0 ===
+Document Version | 3.1 (Final Unified + CI Enhancement)
+Date | March 27, 2026
+Classification | Confidential
+Prepared For | Mars, Incorporated
+Prepared By | Quantum Data Technologies
+Standard | IEEE 830-1998 / ISO/IEC/IEEE 29148:2018
+
+=== TABLE 1 ===
+Term | Definition
+GBU | Global Business Unit (e.g., Mars Snacking, Petcare, Food Nutrition & Multisales)
+PES | Period End Summary — the current Mars tool for financial narrative generation
+CI | Competitive Intelligence — the current Mars tool for competitor analysis
+KPI | Key Performance Indicator (e.g., Organic Growth, MAC Shape %)
+OG | Organic Growth — top-line revenue growth excluding FX and M&A
+MAC Shape | Margin After Conversion as a percentage of Net Sales
+A&CP Shape | Advertising & Consumer Promotions spend as a percentage of sales
+CE Shape | Controllable Earnings as a percentage of Net Sales
+NCFO | Net Cash From Operations
+P2P | Peer-to-Peer benchmarking — comparing performance across competitor peer group
+WWW / WNWW | What's Working Well / What's Not Working Well — output formats for PES
+RAG | Retrieval Augmented Generation — LLM technique combining search with generation
+SSE | Server-Sent Events — protocol for real-time server-to-client streaming
+SLA | Service Level Agreement — target response time for job processing
+RBAC | Role-Based Access Control
+ROAS | Return on Ad Spend — marketing efficiency metric
+LLM | Large Language Model
+FinSight | Mars's internal Databricks-based financial data platform (finsight_core_model_mvp3 schema)
+Delta Lake | Open-source storage layer on top of data lake storage providing ACID transactions, schema enforcement, and time travel
+Databricks | Unified analytics platform used by Mars for data engineering, data science, and business intelligence
+ABFSS | Azure Blob File System Secure — the protocol used to access Azure Data Lake Storage Gen2
+Composite Item | A product classification entity in Mars's taxonomy combining brand, segment, technology, and category attributes
+Economic Cell | A classification unit representing a distinct economic grouping in Mars's financial structure
+Replan | Mars's budget/forecast revision process; the replan value represents the most recent approved budget figure
+Date_Offset | A view-level calculation pattern: offset of 100 represents Last Year, offset of 0 represents Current Year
+View_ID | A parameter in FinSight views: 1 = Periodic (single period) values, 2 = Year-to-Date cumulative values
+
+=== TABLE 2 ===
+Gap | Impact | FinIQ Resolution
+Separate systems | Users switch between PES and CI tools; no cross-referencing | Unified platform with single query interface
+No ad-hoc queries on internal data | PES only generates predefined 6-KPI summaries | Natural language queries across all data
+Template changes require engineering | Business users cannot modify report structure | Self-service template builder
+No forecast integration | Reports are backward-looking only | Amira Forecasting API integration
+No marketing analytics link | Cannot correlate financial performance with marketing spend | Amira Marketing Analytics integration
+Single-user architecture | No queue or prioritization for multiple users | Enterprise job board with agent queue
+Limited data sources | Only internal Excel + competitor PDFs | Extensible connector framework
+No data lineage | Cannot trace generated insights back to source | Full audit trail with source references
+Static user interface | No dashboard customization or real-time updates | Dynamic configurable UI with live updates
+Excel intermediary | PES reads preprocessed Excel exports of Databricks data, adding latency and a manual step | Direct Databricks/FinSight connectivity via precomputed views and normalized fact tables
+No budget variance | Current PES has no access to replan/forecast data for variance analysis | Direct query of finiq_financial_replan for actual-vs-budget comparisons
+Limited product breakdown | PES has basic Brand/Product from 4 Excel sheets | Full 27-attribute product taxonomy via finiq_composite_item + finiq_item
+No customer dimension | PES has no customer-level analytics | 11-attribute customer dimension with 3-level hierarchy via finiq_customer
+
+=== TABLE 3 ===
+Role | Description | Key Interests
+Executive Leadership | C-suite, GBU Presidents | Strategic insights, competitive positioning, board-ready reports
+Finance Directors | Regional/divisional finance leads | Period-end summaries, KPI tracking, variance analysis
+Strategy & Analytics | Competitive intelligence analysts | Competitor benchmarking, market trends, peer comparisons
+Brand & Marketing | Brand managers, marketing leads | Brand performance, marketing ROI, consumer insights
+IT / Digital | Platform engineering, data ops | Architecture, security, integration, scalability
+Data Science | Forecasting and modeling teams | Data quality, model integration, feature requests
+
+=== TABLE 4 ===
+Interface | Protocol | Description | Authentication
+Databricks SQL Connector | ODBC/JDBC | Read access to finiq_ tables and views | Service principal / managed identity
+Unity Catalog REST API | HTTPS | Schema discovery and metadata retrieval | Service principal / OAuth 2.0
+
+=== TABLE 5 ===
+Endpoint | Method | Description | Response
+/api/v1/forecast/{unit_id} | GET | Get forecast for organizational unit | KPI projections with confidence intervals
+/api/v1/forecast/{unit_id}/scenarios | GET | Get scenario analysis (bull/base/bear) | Three scenarios with drivers
+/api/v1/forecast/compare | POST | Compare actuals vs forecast | Variance analysis with explanations
+/api/v1/forecast/drivers/{kpi_id} | GET | Get forecast drivers for a KPI | Input factors, sensitivities, risk factors
+
+=== TABLE 6 ===
+Endpoint | Method | Description | Response
+/api/v1/marketing/{unit_id}/spend | GET | Marketing spend by channel/brand | Spend breakdown with period comparison
+/api/v1/marketing/{unit_id}/roi | GET | Marketing ROI metrics | ROAS, CAC, CLV by channel
+/api/v1/marketing/{unit_id}/attribution | GET | Revenue attribution to marketing | Multi-touch attribution percentages
+/api/v1/marketing/recommendations | POST | Get budget optimization suggestions | Recommended allocation shifts
+
+=== TABLE 7 ===
+Endpoint | Method | Description
+/api/v1/reports/generate | POST | Generate a report (PES, competitive, custom)
+/api/v1/reports/{report_id} | GET | Retrieve a generated report
+/api/v1/query | POST | Submit a natural language query
+/api/v1/jobs | POST | Submit a job to the agent queue
+/api/v1/jobs/{job_id} | GET | Check job status and retrieve result
+/api/v1/jobs/{job_id}/cancel | POST | Cancel a queued or in-progress job
+/api/v1/catalog/units | GET | List organizational units (filtered by RBAC)
+/api/v1/catalog/kpis | GET | List available KPI definitions
+/api/v1/catalog/competitors | GET | List tracked competitors and peer groups
+/api/v1/webhooks | POST | Register a webhook for event notifications
+
+=== TABLE 8 ===
+Scenario | Requirement
+Period End Summary — Databricks path (first generation) | < 12 seconds for 6 parallel KPI narratives + trend analysis
+Period End Summary — Excel fallback (first generation) | < 15 seconds for 6 parallel KPI narratives + trend analysis
+Period End Summary (cached) | < 1 second retrieval from cache
+Single KPI regeneration | < 8 seconds
+Ad-hoc natural language query | < 10 seconds for simple queries, < 30 seconds for complex multi-source queries
+Databricks view query | < 5 seconds for any single precomputed view query
+Competitive intelligence document ingestion | < 5 minutes per document (parse, chunk, embed, index)
+Job queue throughput | 50+ concurrent jobs processing simultaneously
+Dashboard page load | < 2 seconds initial load, < 500ms subsequent navigation
+API response time (p95) | < 3 seconds for report generation endpoints
+Dashboard widget update (SSE) | < 500ms from event to UI update
+
+=== TABLE 9 ===
+Entity | Description | Key Attributes
+OrganizationalUnit | Mars hierarchy node (maps to finiq_dim_entity) | unit_id, name, parent_id, level, is_active
+FinancialPeriod | Reporting period (maps to finiq_date) | period_id, year, period_number, start_date, end_date, type
+KPIDefinition | Configurable KPI spec (maps to finiq_account_formula + finiq_dim_account) | kpi_id, name, formula, data_sources, prompt_template_id, thresholds
+FinancialFact | Financial data point (maps to finiq_financial_cons + finiq_financial + finiq_financial_base) | fact_id, unit_id, period_id, kpi_id, value, currency, source
+CompetitorCompany | Tracked competitor | company_id, name, ticker, peer_groups, is_active
+CompetitorDocument | Ingested competitor filing | doc_id, company_id, period_id, doc_type, file_path, ingestion_status
+DocumentChunk | Embedded document fragment | chunk_id, doc_id, text, embedding_vector, section_title, page_number
+GeneratedReport | Cached AI-generated output | report_id, unit_id, period_id, format, kpi_summaries (JSON), created_at
+Job | Agent queue work item | job_id, user_id, query, priority, status, agent_type, sla_target, result
+Agent | AI agent instance | agent_id, type, status, current_job_id, jobs_completed, avg_processing_time
+PeerGroup | Competitor benchmarking group | group_id, segment_name, companies[], metrics[], is_active
+PromptTemplate | Versioned LLM prompt | template_id, name, version, system_msg, user_msg_template, variables
+AuditLog | System activity record | log_id, user_id, action, entity_type, entity_id, timestamp, details
+DashboardConfig | User dashboard layout | config_id, user_id, widgets[], layout, is_default, shared_with[]
+SuggestedPrompt | Curated query template with dynamic variables (see Appendix C) | prompt_id, template, description, kpi_tags, unit_scope, tag, runs, is_active, created_by, order
+
+=== TABLE 10 ===
+Application Entity | Databricks Table(s) | Mapping Notes
+OrganizationalUnit | finiq_dim_entity | Parent/Child hierarchy with Entity_Level; 150+ units
+FinancialPeriod | finiq_date | Date_ID (int), Year, Period, Quarter
+KPIDefinition | finiq_account_formula + finiq_dim_account | Account hierarchy + formula definitions
+FinancialFact | finiq_financial_cons (primary) + finiq_financial + finiq_financial_base | Three representations available
+(new) Product Taxonomy | finiq_composite_item (12 cols) + finiq_item (15 cols) + finiq_item_composite_item (bridge) | Full 27-attribute product master
+(new) Customer Dimension | finiq_customer (11 cols) + finiq_customer_map (hierarchy) | 3-level customer hierarchy
+(new) Economic Cell | finiq_economic_cell | Economic grouping classification
+(new) Budget/Replan | finiq_financial_replan (18 cols) + finiq_financial_replan_cons (6 cols) | Actual vs. budget variance data
+(new) RLS Tracking | finiq_rls_last_change | Row-level security audit
+CompetitorCompany | — (FinIQ app) | Not in Databricks (CI data separate)
+CompetitorDocument | — (FinIQ app) | Not in Databricks (CI data separate)
+GeneratedReport | — (Redis/Cosmos) | FinIQ application entity
+Job | — (Service Bus/SQL) | FinIQ application entity
+DashboardConfig | — (FinIQ app) | FinIQ application entity
+
+=== TABLE 11 ===
+Data Category | Classification | Access Control | Retention
+Internal P&L data | Restricted | RBAC by organizational unit | 7 years
+Brand/Product performance | Confidential | RBAC by GBU | 7 years
+Competitor public filings | Internal | All authenticated users | Indefinite
+Acquired research | Confidential | Licensed users only | Per license
+Generated reports | Inherits from source data | Same as source data RBAC | 3 years
+Forecast projections | Confidential | Forecast-authorized users | 2 years
+Marketing analytics | Confidential | Marketing-authorized users | 3 years
+Audit logs | Internal | Admins only | 5 years
+Databricks credentials | Restricted | Global Admin only | Rotated per policy
+
+=== TABLE 12 ===
+Component | Technology | Purpose
+Web Application | React + TypeScript | User interface, dashboards, query chat
+API Gateway | Azure API Management | Routing, auth, rate limiting, logging
+Orchestration Engine | Python + LangGraph | Multi-step workflow coordination
+Agent Runtime | Python + LangChain | Specialized AI agents for each query type
+LLM Service | Azure OpenAI Foundry | Narrative generation, summarization, Q&A
+Embedding Service | Azure OpenAI Embeddings | Document chunking and vector encoding
+Vector Search | Azure AI Search | Semantic document retrieval (RAG)
+Databricks Connector | Databricks SQL Connector for Python | Read access to FinSight schema (views, facts, dimensions)
+Dimension Sync Service | Python + Azure Functions | Periodic sync of Databricks dimension tables to local Azure SQL
+Data Freshness Monitor | Python + Azure Functions | Monitors Databricks data currency and triggers stale-data alerts
+Structured Data | Azure SQL Database | Application data, synchronized dimensions, KPIs
+Document Store | Azure Blob Storage | Raw PDFs, Excel files, generated reports
+Cache | Azure Redis Cache | Generated report caching (< 1s retrieval)
+Config & Metadata | Azure Cosmos DB | Prompts, templates, audit logs, lineage
+Job Queue | Azure Service Bus | Enterprise job board message broker
+Notifications | Azure Logic Apps | Email, Teams, webhook delivery
+Identity | Azure Entra ID (AD) | SSO, RBAC, token management
+Monitoring | Azure Monitor + App Insights | Performance, errors, usage analytics
+Forecasting API | Amira Platform (external) | Forward-looking projections
+Marketing API | Amira Platform (external) | Marketing spend and ROI data
+
+=== TABLE 13 ===
+Property | Value
+Databricks Catalog | corporate_finance_analytics_dev
+Schema (Database) | finsight_core_model_mvp3
+Table/View Prefix | finiq
+Storage Format | Delta Lake
+Storage Location | abfss://output@finsightmvp31218devsa.dfs.core.windows.net/
+Owner Group | Finsight-Group-Mvp3
+Documentation Source | FinIQ UC Documentation, generated 2026-03-25 by dipendra.das@effem.com
+Total Objects | 20 (17 tables + 3 views)
+
+=== TABLE 14 ===
+# | Object Name | Type | Cols | Category
+1 | finiq_account_formula | TABLE | 4 | Dimension — Account Metadata
+2 | finiq_account_input | TABLE | 3 | Dimension — Account Metadata
+3 | finiq_composite_item | TABLE | 12 | Dimension — Product Taxonomy
+4 | finiq_customer | TABLE | 11 | Dimension — Customer
+5 | finiq_customer_map | TABLE | 5 | Dimension — Customer Hierarchy
+6 | finiq_date | TABLE | 4 | Dimension — Time
+7 | finiq_dim_account | TABLE | 6 | Dimension — Account Hierarchy
+8 | finiq_dim_entity | TABLE | 5 | Dimension — Org Hierarchy
+9 | finiq_economic_cell | TABLE | 3 | Dimension — Economic Cell
+10 | finiq_financial | TABLE | 39 | Fact — Denormalized (Wide)
+11 | finiq_financial_base | TABLE | 7 | Fact — Normalized (Base)
+12 | finiq_financial_cons | TABLE | 9 | Fact — Consolidated
+13 | finiq_financial_replan | TABLE | 18 | Fact — Actual vs. Replan
+14 | finiq_financial_replan_cons | TABLE | 6 | Fact — Consolidated Replan
+15 | finiq_item | TABLE | 15 | Dimension — Product (Granular)
+16 | finiq_item_composite_item | TABLE | 3 | Dimension — Item Mapping
+17 | finiq_rls_last_change | TABLE | 2 | System — Row-Level Security
+18 | finiq_vw_ncfo_entity | VIEW | 7 | View — NCFO by Entity
+19 | finiq_vw_pl_brand_product | VIEW | 8 | View — P&L by Brand/Product
+20 | finiq_vw_pl_entity | VIEW | 7 | View — P&L by Entity
+
+=== TABLE 15 ===
+PES Excel Sheet | Databricks View | Output Columns | Value Columns
+P&L (Entity level) | finiq_vw_pl_entity | Date_ID, Entity_Alias, Account_Alias | YTD_LY_Value, YTD_CY_Value, Periodic_LY_Value, Periodic_CY_Value
+Product / Brand | finiq_vw_pl_brand_product | Date_ID, Entity_Alias, Account_Alias, Item | YTD_LY_Value, YTD_CY_Value, Periodic_LY_Value, Periodic_CY_Value
+NCFO | finiq_vw_ncfo_entity | Date_ID, Entity_Alias, Account_Alias | YTD_LY_Value, YTD_CY_Value, Periodic_LY_Value, Periodic_CY_Value
+
+=== TABLE 16 ===
+PES KPI | View | Key Account Codes | Derivation
+Organic Growth | vw_pl_entity | S900083, S900227, S900067, S900070, S900069, S900077 | Derived: growth parent-child numerator/denominator pattern
+MAC Shape % | vw_pl_entity | FR4100, FR4200, FR4300, FR4000, MR5200, MR5100 | Direct: revenue and margin accounts
+A&CP Shape % | vw_pl_entity | SR5101, SR5103, MR8005 | Direct: advertising & consumer promotion accounts
+CE Shape % | vw_pl_entity | SR6102, SR6153, MR8004 | Direct: controllable expense accounts
+Overhead Shape % | vw_pl_entity | MR6300, MR6359, MR8003 | Direct: overhead margin accounts
+NCFO | vw_ncfo_entity | CF8129, CF8133, MC8136, MC8149, CF8147, MC8913, S900147, MC8100, MC8902 | Direct: cash flow and management control accounts
+
+=== TABLE 17 ===
+Competitor | Revenue | Key Brands | Segments | Key Strengths | Key Weaknesses
+Nestlé (NESN.SW) | CHF 91.4B | Purina, KitKat, Nescafé | Pet care, coffee, nutrition | Massive scale, global distribution | Slow innovation cycles
+Mondelēz (MDLZ) | $36.4B | Oreo, Cadbury, Toblerone | Snacking, confectionery | Strong emerging markets | Limited pet care exposure
+Hershey (HSY) | $11.2B | Hershey’s, Reese’s | N. American confectionery | Brand loyalty, margins | Geographic concentration
+General Mills (GIS) | $19.9B | Blue Buffalo, Cheerios | Pet food, cereals, snacks | Pet food growth via Blue Buffalo | Slower growth in legacy brands
+Colgate-Palmolive (CL) | $19.5B | Hill’s Science Diet | Pet nutrition, oral care | Vet-channel strength | Limited confectionery exposure
+Ferrero (Private) | ~$17B | Nutella, Ferrero Rocher | Confectionery, spreads | Premium positioning | Private — limited data
+Unilever (UL) | $62.3B | Ben & Jerry’s, Dove | Food, home/personal care | ESG leadership, distribution | Divesting ice cream; focus shift
+J.M. Smucker (SJM) | $8.7B | Meow Mix, Milk-Bone | Pet food, coffee, spreads | Growing pet portfolio | Scale disadvantage vs. Mars
+
+=== TABLE 18 ===
+FMP Endpoint | API Path | Data Provided | Maps to Req
+Company Profile | /stable/profile?symbol={ticker} | Company overview, market cap, sector, description, employee count | CI-FR-001
+Stock Peers | /stable/stock-peers?symbol={ticker} | Peer companies by sector and market cap for benchmarking | CI-FR-002
+Income Statement | /stable/income-statement?symbol={ticker}&period=annual | Revenue, gross profit, operating income, net income (annual/quarterly) | CI-FR-003
+Balance Sheet | /stable/balance-sheet-statement?symbol={ticker} | Total assets, liabilities, equity, cash positions | CI-FR-003
+Cash Flow | /stable/cash-flow-statement?symbol={ticker} | Operating/investing/financing cash flows | CI-FR-003
+Financial Ratios | /stable/ratios?symbol={ticker} | P/E, ROE, debt/equity, current ratio, gross margin | CI-FR-004
+Key Metrics | /stable/key-metrics?symbol={ticker} | Revenue per share, FCF yield, enterprise value, working capital | CI-FR-004
+Earnings Transcript | /stable/earning-call-transcript?symbol={ticker}&year={year}&quarter={quarter} | Full earnings call text for NLP sentiment, strategic keyword extraction | CI-FR-005
+Earnings Report | /stable/earnings?symbol={ticker} | EPS estimates vs actuals, revenue estimates, earnings surprise | CI-FR-005
+Analyst Estimates | /stable/analyst-estimates?symbol={ticker} | Consensus EPS/revenue estimates, analyst price targets | CI-FR-006
+Price Target | /stable/price-target?symbol={ticker} | Analyst price targets with consensus, published dates | CI-FR-006
+Stock News | /stable/stock-news?symbols={ticker}&limit=50 | Recent news articles with headlines, snippets, sentiment | CI-FR-007
+Press Releases | /stable/press-releases?symbol={ticker} | Official corporate press releases, M&A announcements | CI-FR-007
+SEC Filings (10-K/10-Q) | /stable/sec-filings?symbol={ticker}&type=10-K | Annual/quarterly SEC filings for deep regulatory analysis | CI-FR-008
+Insider Trading | /stable/insider-trading?symbol={ticker} | Insider buy/sell activity, executive transactions | CI-FR-009
+ESG Score | /stable/esg-environmental-social-governance-data?symbol={ticker} | Environmental, social, governance ratings for ESG benchmarking | CI-FR-010
+Market Cap (Historical) | /stable/historical-market-capitalization?symbol={ticker} | Market cap over time for competitive valuation trending | CI-FR-011
+M&A Activity | /stable/mergers-acquisitions-search?name={company} | Acquisitions, divestitures, M&A history for strategic tracking | CI-FR-012
+DCF Valuation | /stable/discounted-cash-flow?symbol={ticker} | Intrinsic value estimate via discounted cash flow model | CI-FR-013
+Employee Count | /stable/historical-employee-count?symbol={ticker} | Workforce size trends for operational scale analysis | CI-FR-014
+
+=== TABLE 19 ===
+View Name | Description | Refresh Cadence | Primary Users
+SWOT Analysis | Strengths, Weaknesses, Opportunities, Threats matrix per competitor. AI-generated from earnings transcripts, financial ratios, and news sentiment. | Quarterly auto-refresh; manual override | Strategy, Marketing
+Porter’s Five Forces | Competitive rivalry, supplier/buyer power, threat of substitutes/new entrants. Quantified using FMP financial data + industry reports. | Semi-annual; event-triggered | Strategy, Finance
+Financial Benchmarking Dashboard | Side-by-side comparison of revenue, margins, growth rates, ROE, D/E ratio across Mars peer set. Time-series charts for trend analysis. | Real-time (daily market data); quarterly financials | Finance, FP&A
+Earnings Call Intelligence | NLP-processed transcripts: sentiment score, strategic keyword frequency, management tone shift, capex/guidance language extraction. | Post-earnings (within 48h of call) | Strategy, Investor Relations
+Competitive Positioning Map | 2D scatter plot of competitors on dimensions (e.g., revenue growth vs. margin, innovation index vs. market share). Interactive drill-down. | Quarterly | Strategy, Marketing
+M&A & Strategic Moves Tracker | Timeline of competitor acquisitions, divestitures, JVs, major partnerships. Linked to FMP M&A and press release data. | Real-time alerts; weekly digest | Strategy, Corp Dev
+Competitor Profile Cards | One-page dossier per competitor: company overview, key financials, SWOT summary, recent news, analyst consensus, ESG scores. | Monthly auto-update | All Functions
+Market Share Waterfall | Visual decomposition of market share changes by segment (confectionery, pet care, food) across geographies. | Quarterly (aligned with industry reports) | Marketing, Strategy
+ESG & Sustainability Scorecard | Comparative ESG ratings, carbon intensity, governance scores from FMP ESG endpoint + supplemental data. | Annual; event-triggered | Sustainability, IR
+Analyst Sentiment Tracker | Aggregate analyst ratings, price target consensus, estimate revisions, earnings surprise history for peer set. | Weekly | Finance, Strategy
+
+=== TABLE 20 ===
+Req ID | Description | Priority | Data Source
+CI-FR-001 | The system shall ingest company profile data from FMP Company Profile API for all monitored competitors on a weekly cadence, storing results in Cosmos DB and syncing to Databricks Delta Lake. | P1 — Must | FMP API
+CI-FR-002 | The system shall retrieve and cache stock peer data from FMP Stock Peers API to dynamically suggest additional competitors for monitoring. | P2 — Should | FMP API
+CI-FR-003 | The system shall ingest quarterly and annual financial statements (income statement, balance sheet, cash flow) from FMP within 48 hours of filing, normalized to a common schema in Databricks. | P1 — Must | FMP API
+CI-FR-004 | The system shall calculate and store derived financial metrics (ratios, key metrics) from FMP data, with historical time-series for at least 5 years per competitor. | P1 — Must | FMP API
+CI-FR-005 | The system shall ingest full earnings call transcripts from FMP Earnings Transcript API within 48 hours of each quarterly call, and process them through GPT-4.1 for sentiment, keyword, and guidance extraction. | P1 — Must | FMP API + Azure OpenAI
+CI-FR-006 | The system shall ingest analyst estimates and price target data from FMP to power the Analyst Sentiment Tracker view. | P2 — Should | FMP API
+CI-FR-007 | The system shall ingest competitor news and press releases from FMP, scoring each item for relevance and sentiment using GPT-4.1. | P1 — Must | FMP API + Azure OpenAI
+CI-FR-008 | The system shall ingest SEC filings (10-K, 10-Q, 8-K) metadata and full text from FMP for US-listed competitors. | P2 — Should | FMP API
+CI-FR-009 | The system shall track insider trading activity from FMP for all monitored tickers and flag material transactions (>$1M) to Strategy users. | P3 — Could | FMP API
+CI-FR-010 | The system shall ingest ESG scores from FMP for all available competitors and integrate into the ESG Sustainability Scorecard view. | P2 — Should | FMP API
+CI-FR-011 | The system shall maintain historical market capitalization time-series from FMP for competitive valuation trending. | P2 — Should | FMP API
+CI-FR-012 | The system shall monitor FMP M&A endpoints for transactions involving monitored competitors and generate real-time alerts. | P1 — Must | FMP API
+CI-FR-013 | The system shall retrieve DCF valuations from FMP as a supplementary data point for competitor intrinsic value analysis. | P3 — Could | FMP API
+CI-FR-014 | The system shall track employee count trends from FMP to detect workforce expansion/contraction signals. | P3 — Could | FMP API
+
+=== TABLE 21 ===
+Req ID | Description | Priority | Data Source
+CI-AI-001 | GPT-4.1 shall generate automated SWOT analyses per competitor quarterly, using FMP financial data, transcript sentiment, and news intelligence as input context. | P1 — Must | Azure OpenAI + FMP
+CI-AI-002 | GPT-4.1 shall produce a quarterly Porter’s Five Forces assessment per Mars business segment, incorporating FMP market data and FinSight internal data. | P2 — Should | Azure OpenAI + FMP + FinSight
+CI-AI-003 | The system shall perform NLP-based earnings call transcript analysis including sentiment scoring, strategic keyword extraction, and forward-looking statement identification. | P1 — Must | Azure OpenAI + FMP
+CI-AI-004 | The system shall detect anomalies in competitor financial metrics (e.g., sudden margin compression, unusual capex spikes) and generate proactive alerts to subscribed users. | P1 — Must | Databricks + FMP
+CI-AI-005 | The system shall provide a natural language Q&A interface allowing users to ask questions like “How did Nestlé’s pet care revenue compare to last quarter?” and receive AI-generated answers grounded in FMP data. | P2 — Should | Azure OpenAI + Azure AI Search
+CI-AI-006 | The system shall generate automated competitor briefing documents (1-page PDF per competitor) on a monthly cadence, suitable for executive distribution. | P2 — Should | Azure OpenAI + FMP
+CI-AI-007 | The system shall track and compare management language across earnings calls over time to detect strategic pivots (e.g., increased emphasis on “cost reduction” vs. “investment in growth”). | P2 — Should | Azure OpenAI + FMP
+
+=== TABLE 22 ===
+Req ID | Description | Priority | Data Source
+CI-PR-001 | All 10 standard CI views defined in Section 7.4 shall be accessible from the FinIQ front-end with role-based access control. | P1 — Must | FinIQ Frontend
+CI-PR-002 | Users shall be able to export any CI view or dashboard to PDF and PPTX formats with Mars branding. | P1 — Must | FinIQ Frontend
+CI-PR-003 | The Financial Benchmarking Dashboard shall support user-configurable peer sets, date ranges, and metric selections with persistent user preferences. | P1 — Must | FinIQ Frontend
+CI-PR-004 | The system shall deliver scheduled CI digest emails (weekly/monthly) to subscribed users with key highlights, anomalies, and links to full views. | P2 — Should | Azure Logic Apps
+CI-PR-005 | The Competitor Profile Cards shall be embeddable in other FinIQ modules (e.g., budget planning, scenario analysis) via internal API. | P2 — Should | FinIQ Internal API
+CI-PR-006 | All CI views shall support drill-down from summary to detailed data, and from derived metrics to source FMP data with full audit trail. | P1 — Must | FinIQ Frontend
+
+=== TABLE 23 ===
+Req ID | Description | Priority | Component
+CI-NF-001 | FMP API data ingestion shall complete within 15 minutes for a full competitor universe refresh (all endpoints, all tickers). | P1 — Must | Azure Functions
+CI-NF-002 | Earnings transcript NLP processing shall complete within 5 minutes per transcript. | P1 — Must | Azure OpenAI
+CI-NF-003 | CI dashboards shall render within 3 seconds for any standard view with up to 2 years of historical data. | P1 — Must | FinIQ Frontend
+CI-NF-004 | The system shall support at least 50 concurrent CI module users without performance degradation. | P1 — Must | Azure Infrastructure
+CI-NF-005 | FMP API keys shall be stored in Azure Key Vault with 90-day rotation and access audit logging. | P1 — Must | Azure Key Vault
+CI-NF-006 | All competitive intelligence data shall be classified as Mars Confidential and subject to existing FinIQ data governance policies. | P1 — Must | Data Governance
+CI-NF-007 | The system shall gracefully handle FMP API rate limits and outages with retry logic (exponential backoff) and cached fallback data. | P1 — Must | Azure Functions
+CI-NF-008 | Historical CI data shall be retained for a minimum of 5 years in cold storage (Azure Blob) for trend analysis. | P2 — Should | Azure Blob Storage
+
+=== TABLE 24 ===
+Mode | Data Source | Purpose | When Used
+Simulated | Synthetic data matching Databricks schema exactly (column names, types, array structures, value ranges) | Development, testing, demos, debugging, CI/CD pipelines | Until real Databricks access is provisioned; for all automated testing thereafter
+Real | Live Databricks/FinSight data layer (corporate_finance_analytics_dev.finsight_core_model_mvp3) | Production operation with actual Mars financial data | After Databricks credentials are provisioned and validated
+
+=== TABLE 25 ===
+Component | Azure Service | SKU / Configuration
+Web Application | Azure App Service | Premium v3 P2v3 (2 instances)
+API Gateway | Azure API Management | Standard tier
+Orchestration Workers | Azure Container Apps | 4 vCPU, 8GB RAM (auto-scale 2-10)
+Agent Pool | Azure Container Apps | 4 vCPU, 16GB RAM (auto-scale 5-50)
+LLM Service | Azure OpenAI Foundry | GPT-4.1 provisioned throughput (100K tokens/min)
+Embedding Service | Azure OpenAI Foundry | text-embedding-3-large
+Vector Search | Azure AI Search | Standard S1 (3 replicas)
+Databricks Connector | Databricks SQL Warehouse | Read-only access to finsight_core_model_mvp3
+SQL Database | Azure SQL Database | Business Critical, 8 vCores
+Cache | Azure Redis Cache | Premium P1 (6GB)
+Document Store | Azure Blob Storage | Hot tier, 1TB
+Metadata Store | Azure Cosmos DB | Serverless, 1000 RU/s
+Message Queue | Azure Service Bus | Premium (1 messaging unit)
+Monitoring | Azure Monitor + App Insights | Standard
+Key Vault | Azure Key Vault | Standard
+
+=== TABLE 26 ===
+Environment | Purpose | Data Mode | Access
+Development | Active development and unit testing | Simulated | Engineering team
+Staging | Integration testing and UAT | Simulated or Real (configurable) | Engineering + QA + key stakeholders
+Production | Live system | Real | All authorized users
+
+=== TABLE 27 ===
+Requirement | Acceptance Criterion | Verification Method
+FR1.1 Databricks Ingestion | System generates Period End Summary from Databricks views in < 12 seconds | Automated comparison test: Databricks path vs. Excel path timing
+FR1.6 Databricks Connection | System connects to Databricks, queries all 20 objects, and returns results within 10 seconds | Integration test against Databricks dev environment
+FR2.1 Period End Summary | System generates 6-KPI executive summary for any unit/period in < 15 seconds (Excel) or < 12 seconds (Databricks) | Automated load test with 10 concurrent requests
+FR2.7 Budget Variance | Variance report shows Actual vs. Replan with < 0.01% calculation error | Cross-validation against manual Excel variance calculation
+FR3.2 P2P Benchmarking | Quantitative comparison table matches manual analyst output within 2% tolerance | Side-by-side validation with current CI tool output
+FR4.1 Query Engine | 90%+ of test queries return factually correct answers with source citations | QA test suite of 200 representative queries
+FR5.3 SLA Compliance | 95%+ of jobs complete within SLA target times over a 30-day period | SLA monitoring dashboard metrics
+FR6.1 Forecast Integration | Three-way comparison (Actual vs. Replan vs. Forecast) renders correctly within 5 seconds | Integration test with mock and live APIs
+FR6.2 Marketing Integration | Marketing metrics correlate correctly with financial periods and units | Cross-validation with Marketing Analytics dashboard
+FR6.5 Data Freshness | Stale data alert fires within 1 hour of expected data not appearing | Automated test with delayed data injection
+FR7.6 Admin Connection | Administrator can configure, test, and switch Databricks connection without code deployment | UI walkthrough test of admin interface
+FR8.1 Dynamic Dashboard | Users can configure, save, and reload custom dashboard layouts | UI test suite with 10 representative configurations
+FR8.3 Real-Time Updates | Job status and report progress update within 500ms via SSE | Automated SSE latency test
+FR8.7 Context-Aware Rendering | UI layout adjusts within 300ms based on detected query intent | Automated intent-to-layout mapping test
+FR8.10 Multi-Panel Workspace | Users can open, resize, and persist 4-panel layouts across sessions | UI regression test with panel state verification
+FR8.11 Undo/Redo | Dashboard modifications support 20-step undo/redo without data loss | Automated state consistency test
+Databricks Fallback | System automatically falls back to Excel ingestion within 30 seconds of Databricks failure | Chaos test: terminate Databricks connectivity mid-operation
+Dual-Mode Toggle | System switches between simulated and real data modes without code changes or redeployment | Configuration toggle test in staging environment
+NFR Performance | Cached report retrieval < 1 second (p99) | Load test with 100 concurrent cached requests
+NFR Security | Zero unauthorized data access in penetration test | Third-party security audit
+NFR Availability | 99.9% uptime over 90-day measurement period | Azure Monitor uptime tracking
+
+=== TABLE 28 ===
+KPI | Formula | What It Measures
+Organic Growth % | Net Sales growth excluding FX and M&A | Top-line revenue momentum
+MAC Shape % | Margin After Conversion / Net Sales | Gross-to-net conversion efficiency
+A&CP Shape % | Advertising & Consumer Promotions / GSV 3rd Party | Promotional spend as % of gross sales
+CE Shape % | Controllable Earnings / Net Sales Total | Bottom-line efficiency including overheads
+Controllable Overhead Shape % | Controllable Overhead Costs / Net Sales Total | Overhead cost management
+Trade Shape % | Trade Expenditures / GSV 3rd Party | Trade spend as % of gross sales
+Total Growth Impact | Net Sales Total x Growth % (3rd pty organic) | Dollar impact of organic growth
+Periodic vs LY % | (CY - LY) / LY | Period-over-period growth rate
+YTD vs LY % | (CY - LY) / LY | Year-to-date growth rate
+
+=== TABLE 29 ===
+ID | Description | Prompt Template | Category
+SP-001 | MCC Bridge / Waterfall by Supply Segment vs LY | for {unit}, give me a bridge for MFG CONVERSION COSTS broken by Supply Segment in {current_year} {current_period} ytd vs ly | Bridge
+SP-002 | A&CP Bridge / Waterfall by Category vs LY | for {unit}, give me a bridge for Advertising & Cons Promotion broken by Product_Consolidation in {current_year} {current_period} ytd vs ly | Bridge
+SP-003 | GSV 3rd Party Bridge / Waterfall by Category vs LY | for {unit}, give me a bridge for GSV 3rd Pty broken by Product_Consolidation in {current_year} {current_period} ytd vs ly | Bridge
+
+=== TABLE 30 ===
+ID | Description | Prompt Template | Category
+SP-004 | Prime / Ton Analysis | what is the prime/tonne trend across p1-{current_period} in {current_year} for {unit} and how does it compare to the previous year. give me the analysis in a form of a summary along with a trend chart | Margin
+SP-008 | NS and MAC analysis YTD | for {unit}, what is the NET SALES TOTAL, margin after conversion, and mac% in this year ytd vs ly same periods | Margin
+SP-009 | MAC Quarterly Analysis vs Plan | for {unit}, what is my MARGIN AFTER CONVERSION and mac% for the first {current_quarter} quarters in {current_year} and how does it compare vs plan? | Margin
+SP-010 | MAC Quarterly Analysis vs LY | for {unit}, what is my MARGIN AFTER CONVERSION and mac% for the first {current_quarter} quarters in {current_year} and how does it compare vs LY? | Margin
+SP-011 | MAC and COGS / Tonne YTD Y/Y Analysis | For {unit}, how have the MAC% and PRIME COSTS/Tonne and CONVERSION COSTS/Tonne changed Y/Y for YTD periods? | Margin
+SP-013 | MAC% trend across periods | For {unit}, give me the MAC% trend across {current_year} in p1-{current_period} and highlight which periods show the highest/lowest movement vs LY. Show the result in a bar graph. | Margin
+
+=== TABLE 31 ===
+ID | Description | Prompt Template | Category
+SP-006 | YTD Organic Growth | For {unit}, what was the Organic sales growth for {current_period} ytd {current_year} | Revenue
+SP-012 | Category Performance by brand within a unit | Generate a summary analysis of NET SALES TOTAL growth % and absolute by brand in the {unit} comparing {current_year} YTD {current_period} vs Last Year. Highlight growth and declines. | Revenue
+SP-017 | 3rd Party Volume Growth This Period | What was 3RD PARTY VOLUME - TONNES Growth this period for {unit}? | Revenue
+
+=== TABLE 32 ===
+ID | Description | Prompt Template | Category
+SP-005 | Key P&L KPI Analysis vs LY by Region/unit | Generate a narrative summary analysis for the {unit}, focusing on unit-level performance breakdown for {current_year}, YTD {current_period}. Include insights across DESPATCH VOLUME - TONNES, NET SALES 3RD PARTY, MAC%, CONTROLLABLE EARNINGS%, NET CASH FROM OPERATIONS vs LY | Narrative
+SP-014 | GBU/Region performance broken by unit for volume, Net sales, earnings | Generate a narrative summary analysis for the {unit}, focusing on unit-level performance breakdown for {current_year}, YTD {current_period}, across DESPATCH VOLUME - TONNES, NET SALES 3RD PARTY, MAC%, CONTROLLABLE EARNINGS%. | Narrative
+
+=== TABLE 33 ===
+ID | Description | Prompt Template | Category
+SP-007 | Top 5 Customers YTD Performance Analysis by Volume, TE, and MAC | for {unit}, give me an analysis for DESPATCH VOLUME - TONNES, TRADE EXPENDITURES, TE% and MAC% broken by the top 5 customer in terms of GSV TOTAL in {current_year} ytd {current_period} | Customer
+SP-015 | Overheads Shape Year over Year by unit within GBU/Region | How have the %NS Overheads shape changed Y/Y for each division during YTD periods in {unit} unit | Cost
+SP-016 | COGS Trend over the years for YTD Periods | For {unit}, what components of COGS have grown the fastest over the past 3 years for YTD periods? The slowest? | Cost
+SP-018 | Prime Costs Trend Period by Period this Year | Show me the Prime Costs of {unit} for each period of the current year | Cost
+
