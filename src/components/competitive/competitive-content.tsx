@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   AreaChart, Area, BarChart, Bar, ScatterChart, Scatter,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ZAxis, Cell,
@@ -9,13 +9,16 @@ import {
   Swords, TrendingUp, TrendingDown, Loader2, ExternalLink,
   ChevronRight, FileText, Building2, BarChart3, DollarSign,
   Users, Leaf, RefreshCw, Newspaper, Target, Shield, Crosshair,
+  Bell, Plus, Trash2,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { COMPETITOR_TICKERS } from "@/data/fmp";
 
 // ---- Types ----------------------------------------------------------------
 
@@ -216,6 +219,7 @@ export function CompetitiveContent() {
             <TabsTrigger value="earnings">Earnings</TabsTrigger>
             <TabsTrigger value="positioning">Positioning</TabsTrigger>
             <TabsTrigger value="news-manda">News &amp; M&amp;A</TabsTrigger>
+            <TabsTrigger value="alerts"><Bell className="h-3 w-3 mr-1" />Alerts</TabsTrigger>
           </TabsList>
 
           {/* ---------- OVERVIEW TAB ---------- */}
@@ -388,6 +392,11 @@ export function CompetitiveContent() {
           {/* ---------- NEWS & M&A TAB ---------- */}
           <TabsContent value="news-manda">
             <NewsMandATab />
+          </TabsContent>
+
+          {/* ---------- ALERTS TAB ---------- */}
+          <TabsContent value="alerts">
+            <AlertsPanel competitors={competitors} />
           </TabsContent>
         </Tabs>
       )}
@@ -1224,6 +1233,270 @@ function CompanyDetailView({
           </Button>
         </>
       )}
+    </div>
+  );
+}
+
+// ---- Alerts Panel (from Rajiv's build) ------------------------------------
+
+interface AlertRule {
+  id: string;
+  company: string;
+  metric: "price" | "mktCap";
+  operator: ">" | "<" | "=";
+  threshold: number;
+}
+
+interface TriggeredAlert {
+  rule: AlertRule;
+  currentValue: number;
+  triggeredAt: Date;
+}
+
+function AlertsPanel({ competitors }: { competitors: Competitor[] }) {
+  const [alerts, setAlerts] = useState<AlertRule[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem("finiq-alert-rules");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [triggeredAlerts, setTriggeredAlerts] = useState<TriggeredAlert[]>([]);
+
+  // Form state
+  const [newCompany, setNewCompany] = useState(COMPETITOR_TICKERS[0]?.ticker ?? "NSRGY");
+  const [newMetric, setNewMetric] = useState<"price" | "mktCap">("price");
+  const [newOperator, setNewOperator] = useState<">" | "<" | "=">(">");
+  const [newThreshold, setNewThreshold] = useState("");
+
+  // Persist alerts to localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("finiq-alert-rules", JSON.stringify(alerts));
+    }
+  }, [alerts]);
+
+  // Evaluate alerts against current competitor data
+  useEffect(() => {
+    if (competitors.length === 0 || alerts.length === 0) {
+      setTriggeredAlerts([]);
+      return;
+    }
+
+    const triggered: TriggeredAlert[] = [];
+    for (const rule of alerts) {
+      const comp = competitors.find((c) => c.ticker === rule.company);
+      if (!comp) continue;
+
+      const currentValue = rule.metric === "price" ? comp.price : comp.marketCap;
+      let isTriggered = false;
+
+      if (rule.operator === ">" && currentValue > rule.threshold) isTriggered = true;
+      if (rule.operator === "<" && currentValue < rule.threshold) isTriggered = true;
+      if (rule.operator === "=" && Math.abs(currentValue - rule.threshold) < 0.01) isTriggered = true;
+
+      if (isTriggered) {
+        triggered.push({ rule, currentValue, triggeredAt: new Date() });
+      }
+    }
+    setTriggeredAlerts(triggered);
+  }, [competitors, alerts]);
+
+  const addRule = () => {
+    const threshold = parseFloat(newThreshold);
+    if (isNaN(threshold)) return;
+    const rule: AlertRule = {
+      id: `alert-${Date.now()}`,
+      company: newCompany,
+      metric: newMetric,
+      operator: newOperator,
+      threshold,
+    };
+    setAlerts((prev) => [...prev, rule]);
+    setNewThreshold("");
+  };
+
+  const removeRule = (id: string) => {
+    setAlerts((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  const companyName = (ticker: string) =>
+    COMPETITOR_TICKERS.find((c) => c.ticker === ticker)?.name ?? ticker;
+
+  return (
+    <div className="space-y-4">
+      {/* Triggered alerts */}
+      {triggeredAlerts.length > 0 && (
+        <Card className="border-red-500/40 bg-red-500/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm text-red-400">
+              <Bell className="h-4 w-4" />
+              Triggered Alerts ({triggeredAlerts.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {triggeredAlerts.map((ta, idx) => (
+                <div key={idx} className="flex items-center gap-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs">
+                  <Bell className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                  <span className="font-semibold text-red-300">{ta.rule.company}</span>
+                  <span className="text-muted-foreground">
+                    {ta.rule.metric === "price" ? "Price" : "Market Cap"}{" "}
+                    {ta.rule.operator} {ta.rule.metric === "mktCap" ? fmtB(ta.rule.threshold) : `$${ta.rule.threshold.toFixed(2)}`}
+                  </span>
+                  <span className="text-red-300 font-mono">
+                    Current: {ta.rule.metric === "mktCap" ? fmtB(ta.currentValue) : `$${ta.currentValue.toFixed(2)}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Add new rule */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Plus className="h-4 w-4" />
+            Add Alert Rule
+          </CardTitle>
+          <CardDescription>
+            Set threshold rules on competitor metrics. Alerts are evaluated in real-time against live FMP data.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-end gap-2 flex-wrap">
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase text-muted-foreground">Company</label>
+              <select
+                value={newCompany}
+                onChange={(e) => setNewCompany(e.target.value)}
+                className="h-9 rounded-md border border-border bg-background px-2 text-xs"
+              >
+                {COMPETITOR_TICKERS.map((c) => (
+                  <option key={c.ticker} value={c.ticker}>{c.ticker} - {c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase text-muted-foreground">Metric</label>
+              <select
+                value={newMetric}
+                onChange={(e) => setNewMetric(e.target.value as "price" | "mktCap")}
+                className="h-9 rounded-md border border-border bg-background px-2 text-xs"
+              >
+                <option value="price">Price</option>
+                <option value="mktCap">Market Cap</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase text-muted-foreground">Operator</label>
+              <select
+                value={newOperator}
+                onChange={(e) => setNewOperator(e.target.value as ">" | "<" | "=")}
+                className="h-9 rounded-md border border-border bg-background px-2 text-xs"
+              >
+                <option value=">">&gt; Greater than</option>
+                <option value="<">&lt; Less than</option>
+                <option value="=">=  Equal to</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase text-muted-foreground">Threshold</label>
+              <Input
+                type="number"
+                value={newThreshold}
+                onChange={(e) => setNewThreshold(e.target.value)}
+                placeholder={newMetric === "price" ? "e.g. 150.00" : "e.g. 100000000000"}
+                className="h-9 w-40 text-xs"
+                onKeyDown={(e) => { if (e.key === "Enter") addRule(); }}
+              />
+            </div>
+            <Button size="sm" onClick={addRule} disabled={!newThreshold}>
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              Add
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Active rules */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Active Rules ({alerts.length})</CardTitle>
+          <CardDescription>Rules persist in your browser localStorage</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {alerts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <Bell className="h-8 w-8 text-muted-foreground/30 mb-2" />
+              <p className="text-xs text-muted-foreground">No alert rules configured</p>
+              <p className="text-[10px] text-muted-foreground/60 mt-1">Add a rule above to start monitoring competitor metrics</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Company</TableHead>
+                  <TableHead>Metric</TableHead>
+                  <TableHead>Condition</TableHead>
+                  <TableHead>Threshold</TableHead>
+                  <TableHead className="text-right">Current</TableHead>
+                  <TableHead className="text-right">Status</TableHead>
+                  <TableHead className="w-10" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {alerts.map((rule) => {
+                  const comp = competitors.find((c) => c.ticker === rule.company);
+                  const currentValue = comp
+                    ? rule.metric === "price" ? comp.price : comp.marketCap
+                    : null;
+                  const isTriggered = triggeredAlerts.some((ta) => ta.rule.id === rule.id);
+                  return (
+                    <TableRow key={rule.id} className={isTriggered ? "bg-red-500/5" : ""}>
+                      <TableCell>
+                        <span className="font-semibold text-xs">{rule.company}</span>{" "}
+                        <span className="text-xs text-muted-foreground">{companyName(rule.company)}</span>
+                      </TableCell>
+                      <TableCell className="text-xs">{rule.metric === "price" ? "Price" : "Market Cap"}</TableCell>
+                      <TableCell className="text-xs font-mono">{rule.operator}</TableCell>
+                      <TableCell className="text-xs font-mono">
+                        {rule.metric === "mktCap" ? fmtB(rule.threshold) : `$${rule.threshold.toFixed(2)}`}
+                      </TableCell>
+                      <TableCell className="text-right text-xs font-mono">
+                        {currentValue != null
+                          ? rule.metric === "mktCap" ? fmtB(currentValue) : `$${currentValue.toFixed(2)}`
+                          : "\u2014"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {isTriggered ? (
+                          <Badge variant="destructive" className="text-[10px]">TRIGGERED</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px]">Watching</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          onClick={() => removeRule(rule.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-red-400" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

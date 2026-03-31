@@ -92,6 +92,70 @@ const INTENT_KEYWORDS: Record<Exclude<Intent, "adhoc">, string[]> = {
   ],
 };
 
+// ---------------------------------------------------------------------------
+// CI query detection — adapted from Rajiv's query-engine.ts
+// Determines if a query is about competitors vs internal Mars data.
+// Internal entity prefixes → NEVER CI. Competitor aliases → CI.
+// CI keywords → CI. Short tickers need word boundary checks.
+// ---------------------------------------------------------------------------
+
+const INTERNAL_PREFIXES = [
+  "rc", "mpc", "royal canin", "mars petcare", "mars wrigley",
+  "petcare", "snacking", "food & nutrition", "food and nutrition",
+  "wrigley", "mars inc", "corporate", "gbu", "division",
+  "ben's original", "gum & mints", "chocolate na",
+];
+
+const COMPETITOR_ALIASES: Record<string, string> = {
+  nestle: "NSRGY", mondelez: "MDLZ", mdlz: "MDLZ",
+  hershey: "HSY", hsy: "HSY", ferrero: "FERRERO",
+  "colgate-palmolive": "CL", colgate: "CL",
+  "general mills": "GIS", kellanova: "K",
+  "j.m. smucker": "SJM", smucker: "SJM", "jm smucker": "SJM",
+  freshpet: "FRPT", idexx: "IDXX",
+  "procter & gamble": "PG", "procter and gamble": "PG",
+  unilever: "UL", "kraft heinz": "KHC", khc: "KHC",
+  nsrgy: "NSRGY", oreo: "MDLZ", kitkat: "NSRGY",
+  "kit kat": "NSRGY", nescafe: "NSRGY", purina: "NSRGY",
+};
+
+// Short tickers that need word boundary checks to avoid false positives
+const SHORT_TICKERS = ["ul", "cl", "gis", "k", "pg"];
+
+const CI_KEYWORDS = [
+  "competitive", "competitor", "benchmark", "benchmarking",
+  "peer group", "peer comparison", "industry comparison",
+  "swot", "porter", "five forces", "earnings call",
+  "market share comparison", "margin compare",
+];
+
+export function isCIQuery(query: string): boolean {
+  const lower = query.toLowerCase();
+
+  // Check internal entity prefixes first — these are NEVER CI
+  for (const prefix of INTERNAL_PREFIXES) {
+    if (lower.includes(prefix)) return false;
+  }
+
+  // Check competitor aliases (long names)
+  for (const alias of Object.keys(COMPETITOR_ALIASES)) {
+    if (alias.length > 3 && lower.includes(alias)) return true;
+  }
+
+  // Check short tickers with word boundary
+  for (const ticker of SHORT_TICKERS) {
+    const re = new RegExp(`\\b${ticker}\\b`, "i");
+    if (re.test(query)) return true;
+  }
+
+  // Check CI keywords
+  for (const kw of CI_KEYWORDS) {
+    if (lower.includes(kw)) return true;
+  }
+
+  return false;
+}
+
 export function classifyIntent(message: string): Intent {
   const lower = message.toLowerCase();
   for (const [intent, keywords] of Object.entries(INTENT_KEYWORDS)) {

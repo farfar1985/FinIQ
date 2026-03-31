@@ -14,6 +14,7 @@ import {
 import {
   processLLMQuery,
   classifyIntent as llmClassifyIntent,
+  isCIQuery,
 } from "@/lib/llm-query";
 
 // ---------------------------------------------------------------------------
@@ -539,6 +540,16 @@ export async function POST(request: NextRequest) {
         { error: "Missing or empty 'query' field" },
         { status: 400 }
       );
+    }
+
+    // -----------------------------------------------------------------------
+    // CI query routing — redirect competitor queries to CI module
+    // -----------------------------------------------------------------------
+    if (isCIQuery(query)) {
+      return NextResponse.json({
+        text: "This looks like a competitive intelligence query. Head over to the **Competitive Intelligence** page for live competitor data, SWOT analysis, earnings transcripts, and benchmarking. You can find it in the sidebar under CI.",
+        intent: "ci_redirect",
+      });
     }
 
     // -----------------------------------------------------------------------

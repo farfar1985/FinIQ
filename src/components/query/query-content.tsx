@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Send, Loader2, ChevronDown, ChevronRight, Play, Hash } from "lucide-react";
+import { ProvenanceBadge } from "@/components/provenance-badge";
+import { useUIStore } from "@/stores/ui-store";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -499,6 +501,7 @@ export function QueryContent() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const dataMode = useUIStore((state) => state.dataMode);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -662,6 +665,15 @@ export function QueryContent() {
                             chartType={msg.data.chartType ?? "bar"}
                           />
                         )}
+
+                      {/* Provenance badge on assistant messages */}
+                      {msg.role === "assistant" && (
+                        <div className="mt-2">
+                          <ProvenanceBadge
+                            source={dataMode === "real" ? "Databricks" : "Simulated Data"}
+                          />
+                        </div>
+                      )}
 
                       <p
                         className={`mt-1 text-[10px] ${
