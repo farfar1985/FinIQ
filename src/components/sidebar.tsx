@@ -14,6 +14,7 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeft,
+  Mic,
 } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,7 @@ const navItems = [
   { label: "Competitive Intel", icon: Target, href: "/competitive" },
   { label: "Query Interface", icon: MessageSquare, href: "/query" },
   { label: "Job Board", icon: ListTodo, href: "/jobs" },
+  { label: "Voice Agent", icon: Mic, href: "/voice" },
   { label: "Data Explorer", icon: Database, href: "/explorer" },
   { label: "Admin", icon: Settings, href: "/admin" },
 ];
