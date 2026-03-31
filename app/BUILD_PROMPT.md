@@ -5,15 +5,23 @@
 
 ## 1. INSTRUCTIONS
 
-Read the two specification documents in this directory:
+**This is a 3-WAY MERGE build**, not a from-scratch build.
+
+**Base codebase:** Alessandro's repo (github.com/quantumdatatechnologies/fin_iq) — pure Next.js monolith
+**Add from Farzaneh:** Voice agent, Anthropic LLM, job board backend, XLSX export, safety layer, schema docs
+**Cherry-pick from Rajiv:** CI module (10 tabs + Alerts), header design, ProvenanceBadge, SimpleChart auto-detect
+
+Read the specification documents:
 1. **`FinIQ SRS v3.1 Final.docx`** — 52 functional requirements (FR1-FR8), CI/FMP module (Section 7), suggested prompts (Appendix C)
-2. **`FinIQ Frontend Design Guideline v1.0.docx`** — Bloomberg-inspired dark-first design system, component library, chart specifications
+2. **`FinIQ Frontend Design Guideline v1.0.docx`** — Bloomberg-inspired dark-first design system
+3. **`REAL_DATABRICKS_SCHEMA.md`** — Production Databricks schema (21 objects, relationships, view SQL, formulas)
 
 Then:
-1. **Construct a compliance matrix** mapping all 52 FRs + design guideline checklist items to testable criteria. Score 1-100.
-2. **Build the complete application** following the tech stack, data layer, and feature batches below.
-3. **Test against the compliance matrix** after each batch.
-4. **Iterate until all bugs are resolved and compliance score is maximized.**
+1. **Rename simulated data** to match real Databricks column names (Entity→Unit, Account→RL)
+2. **Merge components** from all three builds per the merge plan
+3. **Build the 3-layer schema index** (lean index for LLM, full detail on demand)
+4. **Test against the compliance matrix** — target 80/80
+5. **Iterate until compliance score is maximized.**
 
 ---
 
@@ -57,16 +65,15 @@ Workflow per batch: **Plan → Implement (parallel tracks) → Review → Fix �
 | clsx + tailwind-merge | Latest | Class composition |
 | date-fns | 4.x | Date formatting |
 
-### Backend
+### Backend (Next.js API Routes — no separate Express server)
 | Technology | Version | Purpose |
 |------------|---------|---------|
 | Node.js | 20+ | Runtime |
-| Express | 4.x | HTTP server |
-| @anthropic-ai/sdk | Latest | Claude LLM (NL queries, summarization) |
+| Next.js API Routes | 15.x | All backend endpoints (no separate Express) |
+| @anthropic-ai/sdk | Latest | Claude LLM (NL queries, summarization, narratives) |
 | @databricks/sql | 1.x | Databricks SQL connector |
-| better-sqlite3 | 11.x | SQLite fallback |
-| ws | 8.x | WebSocket real-time updates |
-| pdf-parse | 1.x | PDF text extraction for CI |
+| openai | Latest | OpenAI Realtime API (voice agent) |
+| ws | 8.x | WebSocket real-time updates (jobs, voice) |
 
 ### Fonts
 - Primary: `IBM Plex Sans` (weights: 400, 500, 600, 700)
@@ -100,18 +107,20 @@ Workflow per batch: **Plan → Implement (parallel tracks) → Review → Fix �
 ### Layout
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ [Sidebar]  │ [Top Header with Search + Notifications]    │
-│  48px/192px │ h-12 (48px)                                │
+│ [Sidebar]  │ [Top Header: Page Title + LIVE badge + Search]│
+│  48px/192px │ h-14 (56px)                                │
 ├────────────┼─────────────────────────────────────────────┤
-│            │ [Market Ticker Strip] h-8 (32px)            │
-│  Collapsible├─────────────────────────────────────────────┤
-│  Nav       │          [Main Content Area]                │
-│  Items     │          12-column grid, p-4                │
+│            │ [Competitor Ticker: MDLZ HSY GIS CL UL SJM] │
+│  Collapsible│  h-7 (28px) — Mars competitors only        │
+│  Nav       ├─────────────────────────────────────────────┤
+│  Items     │          [Main Content Area]                │
+│  + Voice   │          12-column grid, p-4                │
 │            │                                             │
 │ [Theme]    │                                             │
 │ [Collapse] │                                             │
 └────────────┴─────────────────────────────────────────────┘
 ```
+Note: Ticker shows only Mars competitor tickers with live prices, not generic stocks. Header shows "LIVE Databricks" badge when connected.
 
 ### Key Components
 - **KPI Stat Card**: Label (10px uppercase), value (lg semibold tabular-nums), change badge (+/- colored)
@@ -131,40 +140,46 @@ Workflow per batch: **Plan → Implement (parallel tracks) → Review → Fix �
 
 ## 5. DATA LAYER
 
-### Databricks / FinSight Schema
-- **Catalog**: `workspace` | **Schema**: `default` | **Prefix**: `finiq_`
-- **20 objects**: 17 tables + 3 views
+### Databricks / FinSight Schema (REAL PRODUCTION NAMES)
+- **Production**: `corporate_finance_analytics_prod` | `finsight_core_model`
+- **Simulated**: Same names, smaller dataset
+- **Full reference**: `REAL_DATABRICKS_SCHEMA.md`
+- **21 objects**: 17 tables + 4 views
 
-#### Dimension Tables (11)
+#### CRITICAL: Use these column names everywhere (not the old Entity/Account names)
+
+#### Dimension Tables
 | Table | Key Columns | Purpose |
 |-------|-------------|---------|
-| `finiq_date` | Date_ID, Fiscal_Year, Fiscal_Period | Calendar/fiscal mapping |
-| `finiq_dim_entity` | Entity_ID, Entity_Alias, Parent_Entity_ID | 173 org units (Mars > GBU > Division > Region > Sub-unit) |
-| `finiq_dim_account` | Account_ID, Account_Alias, Sign_Conversion, Parent_Account_ID | 36 accounts with hierarchy |
-| `finiq_account_formula` | Formula_ID, Account_ID, Numerator_Account_ID, Denominator_Account_ID | KPI calculation logic |
-| `finiq_account_input` | Input_ID, Account_ID | Account input definitions |
-| `finiq_composite_item` | Composite_Item_ID, Item_Description | 12-col product master (93 products) |
-| `finiq_item` | Item_ID, Item_Description | 15-col granular product |
-| `finiq_item_composite_item` | Item_ID, Composite_Item_ID | Bridge table |
-| `finiq_customer` | Customer_ID, Customer_Name | 56 customers |
-| `finiq_customer_map` | Customer_ID, Hierarchy_Level | Customer hierarchy |
-| `finiq_economic_cell` | Cell_ID | Economic cell definitions |
+| `finiq_date` | Date_ID, Year, Period, Quarter | 13-period fiscal calendar, FY2020-FY2028 |
+| `finiq_dim_unit` | Child_Unit_ID, Child_Unit, Parent_Unit_ID, Parent_Unit, Unit_Level | 766 org units, 11 levels |
+| `finiq_dim_rl` | Child_RL_ID, Child_RL, Parent_RL_ID, Parent_RL, Sign_Conversion, Statement | 725 reporting lines |
+| `finiq_rl_formula` | RL, Formula, Components | KPI calculation logic (725 formulas) |
+| `finiq_rl_input` | Statement, RL_ID, Generation | 110 input reporting lines |
+| `finiq_composite_item` | Composite_Item_ID, EC_Group, Brand, Segment, Business_Segment, Product_Category | 9,478 products |
+| `finiq_item` | Item_ID, Brand, Segment, Product_Category | 381,113 granular products |
+| `finiq_item_composite_item` | Item_ID, Composite_Item_ID | Bridge (388,782 mappings) |
+| `finiq_customer` | Unit_Customer_ID, Customer_ID, Customer_Name, Customer_Channel | 21,204 customers |
+| `finiq_customer_map` | Child_Unit_ID, Child_Customer_ID, Parent_Unit_ID | Customer hierarchy (210,913) |
+| `finiq_economic_cell` | Economic_Cell_ID, Economic_Cell, Archetype | 175 business cells |
 
-#### Fact Tables (5)
-| Table | Key Columns | Purpose |
-|-------|-------------|---------|
-| `finiq_financial` | 39 columns (denormalized wide) | Main financial facts |
-| `finiq_financial_base` | 7 columns (normalized) | Base financial data |
-| `finiq_financial_cons` | 9 columns with currency | Consolidated financials (used by views) |
-| `finiq_financial_replan` | 18 columns: Actual_USD_Value, Replan_USD_Value | **Actual vs budget variance** |
-| `finiq_financial_replan_cons` | 6 columns | Consolidated replan |
+#### Fact Tables
+| Table | Rows | Purpose | Safety |
+|-------|------|---------|--------|
+| `finiq_financial` | **5.7 BILLION** | Denormalized (42 cols) | **NEVER QUERY DIRECTLY** |
+| `finiq_financial_cons` | **5.8 BILLION** | Consolidated with currency | **NEVER QUERY DIRECTLY** |
+| `finiq_financial_base` | **740 MILLION** | Normalized (7 cols) | **NEVER QUERY DIRECTLY** |
+| `finiq_financial_replan` | 2.7 million | Actual vs budget (22 cols) | Safe with Date_ID filter |
+| `finiq_financial_replan_cons` | 185,574 | Consolidated replan | Safe |
 
-#### Precomputed Views (3) — Map directly to PES Excel sheets
+#### Precomputed Views — ALWAYS USE THESE (not fact tables)
 | View | Maps To | Output Columns |
 |------|---------|----------------|
-| `finiq_vw_pl_entity` | P&L sheet | Date_ID, Entity_Alias, Account_Alias, YTD_LY_Value, YTD_CY_Value, Periodic_LY_Value, Periodic_CY_Value |
-| `finiq_vw_pl_brand_product` | Product/Brand sheets | Same columns + brand/product dimension |
-| `finiq_vw_ncfo_entity` | NCFO sheet | Same columns for NCFO accounts |
+| `finiq_vw_pl_unit` | P&L sheet | Date_ID, **Unit_Alias**, **RL_Alias**, YTD_LY_**Value**, YTD_CY_**Value**, Periodic_LY_**Value**, Periodic_CY_**Value** |
+| `finiq_vw_pl_brand_product` | Product/Brand | Same + **Item** column (Brand/Category/Consolidation) |
+| `finiq_vw_ncfo_unit` | NCFO sheet | Same as vw_pl_unit (16 NCFO KPI lines) |
+
+**IMPORTANT**: Views use Title Case for Unit_Alias (e.g., "MW Estonia Market"). Always filter by Unit_Alias.
 
 #### 6 KPIs (from PES)
 1. Organic Growth
@@ -182,20 +197,32 @@ For each KPI, query the relevant view with Entity_Alias filter, compute YTD Grow
 
 ### Dual-Mode Configuration
 ```env
-# Simulated mode (default — uses SQLite)
+# Simulated mode (default — in-memory seeded PRNG, no external deps)
 DATA_MODE=simulated
-SQLITE_PATH=../finiq_synthetic.db
 
-# Databricks mode (real data)
+# Real Databricks mode (production Mars data)
 DATA_MODE=databricks
-DATABRICKS_SERVER_HOSTNAME=dbc-af05a0e0-4ebe.cloud.databricks.com
-DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/<warehouse_id>
+DATABRICKS_HOST=adb-2085958195047517.17.azuredatabricks.net
+DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/de640b2f8ef3d9b2
 DATABRICKS_TOKEN=<token>
-DATABRICKS_CATALOG=workspace
-DATABRICKS_SCHEMA=default
+DATABRICKS_CATALOG=corporate_finance_analytics_prod
+DATABRICKS_SCHEMA=finsight_core_model
 ```
 
-The app MUST work in simulated mode with zero external dependencies. Auto-fallback to SQLite if Databricks connection fails.
+The app MUST work in simulated mode with zero external dependencies. Simulated data uses SAME column names as real Databricks (no mapping layer). Auto-fallback to simulated if Databricks connection fails.
+
+### Query Safety Rules (MANDATORY for real Databricks)
+- **NEVER** query finiq_financial, finiq_financial_cons, or finiq_financial_base directly (5.7B+ rows)
+- **ALWAYS** use views (finiq_vw_pl_unit, finiq_vw_pl_brand_product, finiq_vw_ncfo_unit) with Unit_Alias filter
+- **Query timeout**: 30 seconds
+- **maxRows**: 10,000 per query
+- **LLM table whitelist**: Only views + dimension tables in schema context
+- **Rate limiting**: 100 RPM general, 10 RPM for LLM/chat endpoints
+
+### 3-Layer Schema Index (for LLM context optimization)
+1. **Lean index** (~2KB) — table names, column names, join keys, row counts → injected into every LLM call
+2. **Full detail** — view SQL, formula trees, sample values → loaded on demand when query needs it
+3. **Clean context** — never pollute LLM context with failed queries or irrelevant schema detail
 
 ---
 

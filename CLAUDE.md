@@ -100,6 +100,9 @@ A unified platform that:
 | `app/deep-scan-raw-output.txt` | Raw output from Pass 1 Databricks discovery (table sizes, columns, samples) |
 | `app/deep-scan-pass2-output.txt` | Raw output from Pass 2 (full 725 RLs, 725 formulas, 766 units, 175 cells, 110 inputs) |
 | `generate_schema_docx.mjs` | Generates Word doc from REAL_DATABRICKS_SCHEMA.md → Desktop |
+| `generate_merge_plan.mjs` | Generates FinIQ Merge Plan Word doc → Desktop |
+| `ale-build/` | Clone of Alessandro's repo (github.com/quantumdatatechnologies/fin_iq) — merge base |
+| `rajiv-build/` | Clone of Rajiv's repo (github.com/rajivchandrasekaran-paintrobot/finiq) — cherry-pick CI |
 | `finiq_synthetic.db` | SQLite database: 17 tables + 3 views, 165K rows, 21.4 MB — ready to share with team |
 | `databricks_synthetic_data.py` | PySpark notebook: generates all 20 FinSight objects in Databricks (needs write permissions from Cesar) |
 | `Matt's databricks schema/` | 46 screenshot pages of Matt's FinIQ UC Documentation (Databricks schema) |
@@ -316,23 +319,67 @@ A unified platform that:
 - Created comprehensive **Frontend Design Spec** (`FIN_IQ_FRONTEND_SPEC.md`) — Bloomberg-inspired dark theme, OKLCH colors, full component library
 - **Gap**: Missed core functionality — no report generation, no voice commands. Focus on front-end style caused bot to skip core FRs
 
-### Rajiv Chandrasekaran — STRATEGY
-- Not yet started building (Asimov agent)
-- Focused on **process innovation**: compliance matrix + iterative testing loop
-- Proposed standard enterprise workflow: Spec agent → human approval → coding agent → compliance matrix agent → iterate until score maximized → human approval → deploy
-- Will create SRS v3.1 (adds competitive analysis requirements)
-- Will create stylistic guidelines v1.0
+### Rajiv Chandrasekaran — STRONG CI (Asimov)
+- **Built full app deployed at**: https://finiq-app.onrender.com/
+- **Repo**: https://github.com/rajivchandrasekaran-paintrobot/finiq
+- **Standout**: CI module with 10 tabs (Overview, Financials, Earnings, Benchmarking, Strategy, ESG, Analysts, News, SWOT, Alerts)
+- **Alerts system**: Custom price/market-cap threshold rules (localStorage-backed) — unique feature
+- **CI query engine**: Intent-driven routing, fuzzy company matching ("oreo"→MDLZ), metric detection
+- **ProvenanceBadge**: Shows data source on every response — nice UX touch
+- **Chat-first design**: Landing page is NL query with suggested prompts
+- **Clean header**: Relevant competitor tickers only (not AAPL/TSLA), "LIVE Databricks" badge
+- **Self-assessed**: 94% compliance
+- **Gap**: Job board is mock (setTimeout), no Data Explorer, no dark mode, no voice, regex NL parsing
 
 ### Bill Dennis — PLATFORM
 - Amira platform already handles human governance workflow
 - Fixed audio stuttering from previous demo
 - Cesar to integrate both pieces
 
-### Farzaneh (us) — SPEC-DRIVEN
-- Strongest spec coverage (SRS v3.0, Testing Agent SRS v1.1, Databricks schema reference)
-- Artemis built solid MVP (~55-65% SRS coverage)
-- Claude Code review loop in progress
-- **Strategy**: Win on compliance score — most FRs covered, best eval harness results
+### Farzaneh (us) — SPEC-DRIVEN + v2 COMPLETE
+- v2-fresh build: 80/80 compliance, voice agent, Anthropic LLM, WebSocket, XLSX export
+- Full Databricks schema discovery (21 objects, 5.7B row tables documented)
+- **Repo**: https://github.com/farfar1985/FinIQ (v2-fresh branch)
+
+## 3-WAY MERGE PLAN (2026-03-31) — APPROVED BY ALE
+
+**Decision**: Combine best of all three builds into one unified app.
+**Target repo**: https://github.com/quantumdatatechnologies/fin_iq (Ale's)
+**Branch**: `merged` (created from main)
+**Plan doc**: `C:\Users\farza\Desktop\FinIQ Merge Plan.docx`
+
+### Component sources:
+| Component | Source | Notes |
+|-----------|--------|-------|
+| App structure / Next.js | Ale | Pure monolith, cleaner than our split architecture |
+| Dashboard (6 KPIs, charts) | Ale | |
+| Data Explorer (SQL builder) | Ale | His strongest feature |
+| Reports / PES (narratives) | Ale | WWW/WNWW variants, rankings |
+| Styling / OKLCH dark theme | Ale | Bloomberg-quality |
+| Admin (connection, templates) | Ale | |
+| UI components library | Ale | |
+| **CI page (10 tabs + Alerts)** | **Rajiv** | Intent-driven, ESG, Analysts, Alert rules |
+| **Header (clean ticker)** | **Rajiv** | Competitor tickers only, LIVE badge |
+| **ProvenanceBadge** | **Rajiv** | Data source on every response |
+| **SimpleChart auto-detect** | **Rajiv** | Area vs bar auto-selection |
+| Voice Agent | Ours | OpenAI Realtime API |
+| NL Query (Anthropic LLM) | Ours | Replace regex in both builds |
+| Job Board backend | Ours | Real agent processing, SLA, WebSocket |
+| XLSX export | Ours | Mars-branded |
+| Rate limiting / safety | Ours | 5.7B row table protection |
+| 3-layer schema index | New | Lean index for LLM, on-demand detail |
+| Real Databricks schema | New | Rename simulated to match production |
+
+### Execution phases:
+1. **Foundation** — Clone Ale's repo, rename simulated data to real schema, update queries
+2. **Intelligence** — Add Anthropic LLM, voice agent, schema index
+3. **Enhancement** — Job backend, XLSX export, Rajiv's CI + header, safety layer
+4. **Polish** — Test all pages, compliance check, target 80/80
+
+### Ale's feedback on merge:
+- Remove scrolling stock ticker, use Rajiv's cleaner header with relevant competitor tickers
+- Cherry-pick Rajiv's CI Alerts tab
+- Rename simulated data to match real Databricks (no mapping layer)
 
 ## 2026-03-27 call decisions
 
