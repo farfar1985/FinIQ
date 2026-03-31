@@ -15,7 +15,7 @@ import {
 
 // ---- Configuration --------------------------------------------------------
 
-export type DataMode = "simulated" | "real" | "customer";
+export type DataMode = "simulated" | "real";
 
 export interface DatabricksConfig {
   host: string;
@@ -42,41 +42,24 @@ export function getDataMode(): DataMode {
   return (process.env.DATA_MODE as DataMode) || "simulated";
 }
 
-/** Get config for the INTERNAL Databricks (DATA_MODE=real) */
+/** Get Databricks config from environment */
 export function getConfig(): DatabricksConfig {
   return {
     host: process.env.DATABRICKS_HOST || "",
     token: process.env.DATABRICKS_TOKEN || "",
     httpPath: process.env.DATABRICKS_HTTP_PATH || "",
-    catalog: process.env.DATABRICKS_CATALOG || "corporate_finance_analytics_dev",
-    schema: process.env.DATABRICKS_SCHEMA || "finsight_core_model_mvp3",
+    catalog: process.env.DATABRICKS_CATALOG || "corporate_finance_analytics_prod",
+    schema: process.env.DATABRICKS_SCHEMA || "finsight_core_model",
   };
 }
 
-/** Get config for the CUSTOMER Databricks (DATA_MODE=customer) */
-export function getCustomerConfig(): DatabricksConfig {
-  return {
-    host: process.env.CUSTOMER_DATABRICKS_HOST || "",
-    token: process.env.CUSTOMER_DATABRICKS_TOKEN || "",
-    httpPath: process.env.CUSTOMER_DATABRICKS_HTTP_PATH || "",
-    catalog: process.env.CUSTOMER_DATABRICKS_CATALOG || "corporate_finance_analytics_prod",
-    schema: process.env.CUSTOMER_DATABRICKS_SCHEMA || "finsight_core_model",
-  };
-}
-
-/** Get the active config based on current mode */
+/** Get the active config (alias for getConfig) */
 export function getActiveConfig(): DatabricksConfig {
-  const mode = getDataMode();
-  if (mode === "customer") return getCustomerConfig();
   return getConfig();
 }
 
 export function isRealMode(): boolean {
-  return getDataMode() === "real" || getDataMode() === "customer";
-}
-
-export function isCustomerMode(): boolean {
-  return getDataMode() === "customer";
+  return getDataMode() === "real";
 }
 
 export function isConfigured(): boolean {
@@ -84,31 +67,11 @@ export function isConfigured(): boolean {
   return !!(cfg.host && cfg.token && cfg.httpPath);
 }
 
-// ---- Table name mapping (customer schema uses different names) ------------
-// Internal SRS names -> Customer prod names
-const CUSTOMER_TABLE_MAP: Record<string, string> = {
-  finiq_dim_entity: "finiq_dim_unit",
-  finiq_dim_account: "finiq_dim_rl",
-  finiq_account_formula: "finiq_rl_formula",
-  finiq_account_input: "finiq_rl_input",
-  finiq_vw_pl_entity: "finiq_vw_pl_unit",
-  finiq_vw_ncfo_entity: "finiq_vw_ncfo_unit",
-};
-
-/** Resolve table name for the active mode */
-function resolveTable(srsName: string): string {
-  if (isCustomerMode() && CUSTOMER_TABLE_MAP[srsName]) {
-    return CUSTOMER_TABLE_MAP[srsName];
-  }
-  return srsName;
-}
-
 // ---- Fully qualified name helper ------------------------------------------
 
 function fqn(table: string): string {
   const cfg = getActiveConfig();
-  const resolved = resolveTable(table);
-  return `\`${cfg.catalog}\`.\`${cfg.schema}\`.\`${resolved}\``;
+  return `\`${cfg.catalog}\`.\`${cfg.schema}\`.\`${table}\``;
 }
 
 // ---- Shared Databricks execution helper -----------------------------------
@@ -143,7 +106,7 @@ async function executeQuery<T = Record<string, any>>(
   }
 }
 
-/** Execute a raw SQL query (exported for API routes). Only works in real/customer mode. */
+/** Execute a raw SQL query (exported for API routes). Only works in real mode. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function executeRawSql(sql: string, limit = 1000): Promise<Record<string, any>[]> {
   // Append LIMIT if not already present (safety net)
@@ -312,8 +275,8 @@ export async function queryPLByEntity(
   entityAlias?: string
 ): Promise<FinancialRow[]> {
   if (isRealMode() && isConfigured()) {
-    let sql = `SELECT * FROM ${fqn("finiq_vw_pl_entity")} WHERE Date_ID = '${dateId}'`;
-    if (entityAlias) sql += ` AND Entity_Alias = '${entityAlias.replace(/'/g, "''")}'`;
+    let sql = `SELECT * FROM ${fqn("finiq_vw_pl_unit")} WHERE Date_ID = '${dateId}'`;
+    if (entityAlias) sql += ` AND Unit_Alias = '${entityAlias.replace(/'/g, "''")}'`;
     return executeQuery<FinancialRow>(sql);
   }
 
@@ -332,7 +295,7 @@ export async function queryPLByBrandProduct(
 ): Promise<FinancialRow[]> {
   if (isRealMode() && isConfigured()) {
     let sql = `SELECT * FROM ${fqn("finiq_vw_pl_brand_product")} WHERE Date_ID = '${dateId}'`;
-    if (entityAlias) sql += ` AND Entity_Alias = '${entityAlias.replace(/'/g, "''")}'`;
+    if (entityAlias) sql += ` AND Unit_Alias = '${entityAlias.replace(/'/g, "''")}'`;
     return executeQuery<FinancialRow>(sql);
   }
 
@@ -345,13 +308,13 @@ export async function queryPLByBrandProduct(
   return rows;
 }
 
-export async function queryNCFOByEntity(
+export async function queryNCFOByUnit(
   dateId: string,
   entityAlias?: string
 ): Promise<FinancialRow[]> {
   if (isRealMode() && isConfigured()) {
-    let sql = `SELECT * FROM ${fqn("finiq_vw_ncfo_entity")} WHERE Date_ID = '${dateId}'`;
-    if (entityAlias) sql += ` AND Entity_Alias = '${entityAlias.replace(/'/g, "''")}'`;
+    let sql = `SELECT * FROM ${fqn("finiq_vw_ncfo_unit")} WHERE Date_ID = '${dateId}'`;
+    if (entityAlias) sql += ` AND Unit_Alias = '${entityAlias.replace(/'/g, "''")}'`;
     return executeQuery<FinancialRow>(sql);
   }
 
@@ -373,7 +336,7 @@ export async function queryReplan(
 ): Promise<ReplanRow[]> {
   if (isRealMode() && isConfigured()) {
     let sql = `SELECT * FROM ${fqn("finiq_financial_replan")} WHERE Date_ID = '${dateId}'`;
-    if (entityAlias) sql += ` AND Entity_Alias = '${entityAlias.replace(/'/g, "''")}'`;
+    if (entityAlias) sql += ` AND Unit_Alias = '${entityAlias.replace(/'/g, "''")}'`;
     return executeQuery<ReplanRow>(sql);
   }
 
@@ -388,7 +351,7 @@ export async function queryReplan(
 
 export async function queryEntities(): Promise<Entity[]> {
   if (isRealMode() && isConfigured()) {
-    return executeQuery<Entity>(`SELECT * FROM ${fqn("finiq_dim_entity")} ORDER BY Entity_Level, Entity_Name`);
+    return executeQuery<Entity>(`SELECT * FROM ${fqn("finiq_dim_unit")} ORDER BY Unit_Level, Unit_Name`);
   }
   return generateEntities();
 }
@@ -406,15 +369,15 @@ function categorizeTable(name: string): string {
   if (name.includes("financial"))        return "Facts — Financial";
 
   // Dimensions
-  if (name.includes("dim_unit") || name.includes("dim_entity")) return "Dimensions — Org Hierarchy";
-  if (name.includes("dim_rl") || name.includes("dim_account"))  return "Dimensions — Reporting Lines";
+  if (name.includes("dim_unit"))   return "Dimensions — Org Hierarchy";
+  if (name.includes("dim_rl"))     return "Dimensions — Reporting Lines";
   if (name.includes("composite_item"))  return "Dimensions — Products";
   if (name.includes("_item"))           return "Dimensions — Products";
   if (name.includes("customer"))        return "Dimensions — Customers";
   if (name.includes("economic_cell"))   return "Dimensions — Economic Cell";
   if (name.includes("_date") || name === "finiq_date") return "Dimensions — Time";
-  if (name.includes("rl_formula") || name.includes("account_formula")) return "Dimensions — Reporting Lines";
-  if (name.includes("rl_input") || name.includes("account_input"))     return "Dimensions — Reporting Lines";
+  if (name.includes("rl_formula")) return "Dimensions — Reporting Lines";
+  if (name.includes("rl_input"))  return "Dimensions — Reporting Lines";
 
   // System
   if (name.includes("rls"))  return "System";
@@ -424,14 +387,14 @@ function categorizeTable(name: string): string {
 }
 
 const FINSIGHT_OBJECTS: TableInfo[] = [
-  { name: "finiq_account_formula",       type: "TABLE", columns: 4,  category: "Dimension — Account" },
-  { name: "finiq_account_input",         type: "TABLE", columns: 3,  category: "Dimension — Account" },
+  { name: "finiq_rl_formula",            type: "TABLE", columns: 4,  category: "Dimension — Reporting Line" },
+  { name: "finiq_rl_input",             type: "TABLE", columns: 3,  category: "Dimension — Reporting Line" },
   { name: "finiq_composite_item",        type: "TABLE", columns: 12, category: "Dimension — Product" },
   { name: "finiq_customer",              type: "TABLE", columns: 11, category: "Dimension — Customer" },
   { name: "finiq_customer_map",          type: "TABLE", columns: 5,  category: "Dimension — Customer" },
   { name: "finiq_date",                  type: "TABLE", columns: 4,  category: "Dimension — Time" },
-  { name: "finiq_dim_account",           type: "TABLE", columns: 6,  category: "Dimension — Account" },
-  { name: "finiq_dim_entity",            type: "TABLE", columns: 5,  category: "Dimension — Org Hierarchy" },
+  { name: "finiq_dim_rl",               type: "TABLE", columns: 6,  category: "Dimension — Reporting Line" },
+  { name: "finiq_dim_unit",             type: "TABLE", columns: 5,  category: "Dimension — Org Hierarchy" },
   { name: "finiq_economic_cell",         type: "TABLE", columns: 3,  category: "Dimension — Economic Cell" },
   { name: "finiq_financial",             type: "TABLE", columns: 39, category: "Fact — Financial" },
   { name: "finiq_financial_base",        type: "TABLE", columns: 7,  category: "Fact — Financial" },
@@ -441,18 +404,18 @@ const FINSIGHT_OBJECTS: TableInfo[] = [
   { name: "finiq_item",                  type: "TABLE", columns: 15, category: "Dimension — Product" },
   { name: "finiq_item_composite_item",   type: "TABLE", columns: 3,  category: "Dimension — Product" },
   { name: "finiq_rls_last_change",       type: "TABLE", columns: 2,  category: "System" },
-  { name: "finiq_vw_ncfo_entity",        type: "VIEW",  columns: 7,  category: "View — NCFO" },
+  { name: "finiq_vw_ncfo_unit",          type: "VIEW",  columns: 7,  category: "View — NCFO" },
   { name: "finiq_vw_pl_brand_product",   type: "VIEW",  columns: 8,  category: "View — P&L by Brand/Product" },
-  { name: "finiq_vw_pl_entity",          type: "VIEW",  columns: 7,  category: "View — P&L by Entity" },
+  { name: "finiq_vw_pl_unit",           type: "VIEW",  columns: 7,  category: "View — P&L by Unit" },
 ];
 
 // ---- Simulated column definitions -----------------------------------------
 
 const SIMULATED_COLUMNS: Record<string, ColumnInfo[]> = {
-  finiq_vw_pl_entity: [
+  finiq_vw_pl_unit: [
     { name: "Date_ID",           dataType: "INT",            nullable: false, comment: "Fiscal period identifier" },
-    { name: "Entity_Alias",      dataType: "STRING",         nullable: false, comment: "Entity short name" },
-    { name: "Account_Alias",     dataType: "STRING",         nullable: false, comment: "Account short name" },
+    { name: "Unit_Alias",        dataType: "STRING",         nullable: false, comment: "Unit short name" },
+    { name: "RL_Alias",          dataType: "STRING",         nullable: false, comment: "Reporting line short name" },
     { name: "YTD_LY_Value",      dataType: "DECIMAL(18,4)",  nullable: true,  comment: "Year-to-date last year" },
     { name: "YTD_CY_Value",      dataType: "DECIMAL(18,4)",  nullable: true,  comment: "Year-to-date current year" },
     { name: "Periodic_LY_Value", dataType: "DECIMAL(18,4)",  nullable: true,  comment: "Periodic last year" },
@@ -460,36 +423,36 @@ const SIMULATED_COLUMNS: Record<string, ColumnInfo[]> = {
   ],
   finiq_vw_pl_brand_product: [
     { name: "Date_ID",           dataType: "INT",            nullable: false, comment: "Fiscal period identifier" },
-    { name: "Entity_Alias",      dataType: "STRING",         nullable: false, comment: "Entity short name" },
-    { name: "Account_Alias",     dataType: "STRING",         nullable: false, comment: "Account short name" },
+    { name: "Unit_Alias",        dataType: "STRING",         nullable: false, comment: "Unit short name" },
+    { name: "RL_Alias",          dataType: "STRING",         nullable: false, comment: "Reporting line short name" },
     { name: "Item",              dataType: "STRING",          nullable: true,  comment: "Brand / product / consolidation" },
     { name: "YTD_LY_Value",      dataType: "DECIMAL(18,4)",  nullable: true,  comment: "Year-to-date last year" },
     { name: "YTD_CY_Value",      dataType: "DECIMAL(18,4)",  nullable: true,  comment: "Year-to-date current year" },
     { name: "Periodic_LY_Value", dataType: "DECIMAL(18,4)",  nullable: true,  comment: "Periodic last year" },
     { name: "Periodic_CY_Value", dataType: "DECIMAL(18,4)",  nullable: true,  comment: "Periodic current year" },
   ],
-  finiq_vw_ncfo_entity: [
+  finiq_vw_ncfo_unit: [
     { name: "Date_ID",           dataType: "INT",            nullable: false, comment: "Fiscal period identifier" },
-    { name: "Entity_Alias",      dataType: "STRING",         nullable: false, comment: "Entity short name" },
-    { name: "Account_Alias",     dataType: "STRING",         nullable: false, comment: "Account short name" },
+    { name: "Unit_Alias",        dataType: "STRING",         nullable: false, comment: "Unit short name" },
+    { name: "RL_Alias",          dataType: "STRING",         nullable: false, comment: "Reporting line short name" },
     { name: "YTD_LY_Value",      dataType: "DECIMAL(18,4)",  nullable: true,  comment: "Year-to-date last year" },
     { name: "YTD_CY_Value",      dataType: "DECIMAL(18,4)",  nullable: true,  comment: "Year-to-date current year" },
     { name: "Periodic_LY_Value", dataType: "DECIMAL(18,4)",  nullable: true,  comment: "Periodic last year" },
     { name: "Periodic_CY_Value", dataType: "DECIMAL(18,4)",  nullable: true,  comment: "Periodic current year" },
   ],
-  finiq_dim_entity: [
-    { name: "Entity_ID",    dataType: "INT",    nullable: false, comment: "Unique entity identifier" },
-    { name: "Entity_Name",  dataType: "STRING", nullable: false, comment: "Full entity name" },
-    { name: "Entity_Alias", dataType: "STRING", nullable: false, comment: "Short alias" },
-    { name: "Parent_ID",    dataType: "INT",    nullable: true,  comment: "Parent entity FK" },
-    { name: "Entity_Level", dataType: "STRING", nullable: false, comment: "Hierarchy level" },
+  finiq_dim_unit: [
+    { name: "Unit_ID",      dataType: "INT",    nullable: false, comment: "Unique unit identifier" },
+    { name: "Unit_Name",    dataType: "STRING", nullable: false, comment: "Full unit name" },
+    { name: "Unit_Alias",   dataType: "STRING", nullable: false, comment: "Short alias" },
+    { name: "Parent_ID",    dataType: "INT",    nullable: true,  comment: "Parent unit FK" },
+    { name: "Unit_Level",   dataType: "STRING", nullable: false, comment: "Hierarchy level" },
   ],
-  finiq_dim_account: [
-    { name: "Account_ID",     dataType: "INT",    nullable: false, comment: "Unique account identifier" },
-    { name: "Account_Code",   dataType: "STRING", nullable: false, comment: "Account code (e.g., S900083)" },
-    { name: "Account_Name",   dataType: "STRING", nullable: false, comment: "Full account name" },
-    { name: "Account_Alias",  dataType: "STRING", nullable: true,  comment: "Short alias" },
-    { name: "Account_Type",   dataType: "STRING", nullable: false, comment: "Revenue / Expense / Cash Flow" },
+  finiq_dim_rl: [
+    { name: "RL_ID",          dataType: "INT",    nullable: false, comment: "Unique reporting line identifier" },
+    { name: "RL_Code",        dataType: "STRING", nullable: false, comment: "Reporting line code (e.g., S900083)" },
+    { name: "RL_Name",        dataType: "STRING", nullable: false, comment: "Full reporting line name" },
+    { name: "RL_Alias",       dataType: "STRING", nullable: true,  comment: "Short alias" },
+    { name: "RL_Type",        dataType: "STRING", nullable: false, comment: "Revenue / Expense / Cash Flow" },
     { name: "Display_Order",  dataType: "INT",    nullable: true,  comment: "Sort order for display" },
   ],
   finiq_date: [
@@ -498,21 +461,21 @@ const SIMULATED_COLUMNS: Record<string, ColumnInfo[]> = {
     { name: "Period",   dataType: "INT",    nullable: false, comment: "Fiscal period (1-12)" },
     { name: "Quarter",  dataType: "INT",    nullable: false, comment: "Fiscal quarter (1-4)" },
   ],
-  finiq_account_formula: [
-    { name: "Account_Code",  dataType: "STRING", nullable: false, comment: "Parent account code" },
-    { name: "Child_Code",    dataType: "STRING", nullable: false, comment: "Child account code" },
+  finiq_rl_formula: [
+    { name: "RL_Code",       dataType: "STRING", nullable: false, comment: "Parent reporting line code" },
+    { name: "Child_Code",    dataType: "STRING", nullable: false, comment: "Child reporting line code" },
     { name: "Formula_Type",  dataType: "STRING", nullable: false, comment: "Numerator / Denominator" },
     { name: "Sign",          dataType: "INT",    nullable: false, comment: "+1 or -1" },
   ],
-  finiq_account_input: [
-    { name: "Account_Code",  dataType: "STRING", nullable: false, comment: "Account code" },
+  finiq_rl_input: [
+    { name: "RL_Code",       dataType: "STRING", nullable: false, comment: "Reporting line code" },
     { name: "Input_Type",    dataType: "STRING", nullable: false, comment: "Manual / Calculated" },
     { name: "Is_Active",     dataType: "BOOLEAN", nullable: false, comment: "Active flag" },
   ],
   finiq_financial_cons: [
     { name: "Date_ID",        dataType: "INT",           nullable: false, comment: "Period identifier" },
-    { name: "Entity_ID",      dataType: "INT",           nullable: false, comment: "Entity FK" },
-    { name: "Account_Code",   dataType: "STRING",        nullable: false, comment: "Account code" },
+    { name: "Unit_ID",        dataType: "INT",           nullable: false, comment: "Unit FK" },
+    { name: "RL_Code",        dataType: "STRING",        nullable: false, comment: "Reporting line code" },
     { name: "Value",          dataType: "DECIMAL(18,4)", nullable: true,  comment: "Consolidated value (USD)" },
     { name: "Currency",       dataType: "STRING",        nullable: false, comment: "Currency code" },
     { name: "Date_Offset",    dataType: "INT",           nullable: false, comment: "0=CY, 100=LY" },
@@ -522,8 +485,8 @@ const SIMULATED_COLUMNS: Record<string, ColumnInfo[]> = {
   ],
   finiq_financial_base: [
     { name: "Date_ID",        dataType: "INT",           nullable: false, comment: "Period identifier" },
-    { name: "Entity_ID",      dataType: "INT",           nullable: false, comment: "Entity FK" },
-    { name: "Account_Code",   dataType: "STRING",        nullable: false, comment: "Account code" },
+    { name: "Unit_ID",        dataType: "INT",           nullable: false, comment: "Unit FK" },
+    { name: "RL_Code",        dataType: "STRING",        nullable: false, comment: "Reporting line code" },
     { name: "Value",          dataType: "DECIMAL(18,4)", nullable: true,  comment: "Base value" },
     { name: "Currency",       dataType: "STRING",        nullable: false, comment: "Local currency" },
     { name: "Date_Offset",    dataType: "INT",           nullable: false, comment: "0=CY, 100=LY" },
@@ -531,10 +494,10 @@ const SIMULATED_COLUMNS: Record<string, ColumnInfo[]> = {
   ],
   finiq_financial_replan: [
     { name: "Date_ID",         dataType: "INT",           nullable: false, comment: "Period identifier" },
-    { name: "Entity_ID",       dataType: "INT",           nullable: false, comment: "Entity FK" },
-    { name: "Entity_Alias",    dataType: "STRING",        nullable: false, comment: "Entity short name" },
-    { name: "Account_Code",    dataType: "STRING",        nullable: false, comment: "Account code" },
-    { name: "Account_Alias",   dataType: "STRING",        nullable: true,  comment: "Account short name" },
+    { name: "Unit_ID",         dataType: "INT",           nullable: false, comment: "Unit FK" },
+    { name: "Unit_Alias",      dataType: "STRING",        nullable: false, comment: "Unit short name" },
+    { name: "RL_Code",         dataType: "STRING",        nullable: false, comment: "Reporting line code" },
+    { name: "RL_Alias",        dataType: "STRING",        nullable: true,  comment: "Reporting line short name" },
     { name: "Actual_USD",      dataType: "DECIMAL(18,4)", nullable: true,  comment: "Actual value" },
     { name: "Replan_USD",      dataType: "DECIMAL(18,4)", nullable: true,  comment: "Replan/budget value" },
     { name: "Variance_USD",    dataType: "DECIMAL(18,4)", nullable: true,  comment: "Actual - Replan" },
@@ -551,8 +514,8 @@ const SIMULATED_COLUMNS: Record<string, ColumnInfo[]> = {
   ],
   finiq_financial_replan_cons: [
     { name: "Date_ID",       dataType: "INT",           nullable: false, comment: "Period identifier" },
-    { name: "Entity_ID",     dataType: "INT",           nullable: false, comment: "Entity FK" },
-    { name: "Account_Code",  dataType: "STRING",        nullable: false, comment: "Account code" },
+    { name: "Unit_ID",       dataType: "INT",           nullable: false, comment: "Unit FK" },
+    { name: "RL_Code",       dataType: "STRING",        nullable: false, comment: "Reporting line code" },
     { name: "Actual_USD",    dataType: "DECIMAL(18,4)", nullable: true,  comment: "Actual consolidated" },
     { name: "Replan_USD",    dataType: "DECIMAL(18,4)", nullable: true,  comment: "Replan consolidated" },
     { name: "Variance_USD",  dataType: "DECIMAL(18,4)", nullable: true,  comment: "Variance consolidated" },
@@ -616,12 +579,12 @@ const SIMULATED_COLUMNS: Record<string, ColumnInfo[]> = {
   finiq_economic_cell: [
     { name: "Economic_Cell_ID",   dataType: "INT",    nullable: false, comment: "Unique ID" },
     { name: "Economic_Cell_Name", dataType: "STRING", nullable: false, comment: "Cell name" },
-    { name: "Entity_ID",          dataType: "INT",    nullable: false, comment: "Entity FK" },
+    { name: "Unit_ID",            dataType: "INT",    nullable: false, comment: "Unit FK" },
   ],
   finiq_financial: [
     { name: "Date_ID",       dataType: "INT",           nullable: false, comment: "Period identifier" },
-    { name: "Entity_ID",     dataType: "INT",           nullable: false, comment: "Entity FK" },
-    { name: "Account_Code",  dataType: "STRING",        nullable: false, comment: "Account code" },
+    { name: "Unit_ID",       dataType: "INT",           nullable: false, comment: "Unit FK" },
+    { name: "RL_Code",       dataType: "STRING",        nullable: false, comment: "Reporting line code" },
     ...[...Array(36)].map((_, i) => ({
       name: `Value_${String(i + 1).padStart(2, "0")}`,
       dataType: "DECIMAL(18,4)" as const,
@@ -630,7 +593,7 @@ const SIMULATED_COLUMNS: Record<string, ColumnInfo[]> = {
     })),
   ],
   finiq_rls_last_change: [
-    { name: "Entity_ID",       dataType: "INT",       nullable: false, comment: "Entity FK" },
+    { name: "Unit_ID",         dataType: "INT",       nullable: false, comment: "Unit FK" },
     { name: "Last_Change",     dataType: "TIMESTAMP",  nullable: false, comment: "Last RLS update timestamp" },
   ],
 };
@@ -646,24 +609,24 @@ function getSimulatedPreview(
   const replans = generateReplanData();
 
   switch (tableName) {
-    case "finiq_dim_entity":
+    case "finiq_dim_unit":
       return entities.slice(0, limit).map((e) => ({
-        Entity_ID: parseInt(e.id.replace("ent_", ""), 10) || 1,
-        Entity_Name: e.name,
-        Entity_Alias: e.alias,
+        Unit_ID: parseInt(e.id.replace("ent_", ""), 10) || 1,
+        Unit_Name: e.name,
+        Unit_Alias: e.alias,
         Parent_ID: e.parent_id ? parseInt(e.parent_id.replace("ent_", ""), 10) : null,
-        Entity_Level: e.level,
+        Unit_Level: e.level,
       }));
 
-    case "finiq_vw_pl_entity":
-    case "finiq_vw_ncfo_entity": {
+    case "finiq_vw_pl_unit":
+    case "finiq_vw_ncfo_unit": {
       const entityMap = new Map(entities.map((e) => [e.id, e]));
       return financials.slice(0, limit).map((r) => {
         const ent = entityMap.get(r.entity_id);
         return {
           Date_ID: parseInt(r.date_id.replace("P", "").replace("_", ""), 10),
-          Entity_Alias: ent?.alias ?? r.entity_id,
-          Account_Alias: r.account_code,
+          Unit_Alias: ent?.alias ?? r.entity_id,
+          RL_Alias: r.account_code,
           YTD_LY_Value: r.ytd_ly_value,
           YTD_CY_Value: r.ytd_cy_value,
           Periodic_LY_Value: r.periodic_ly_value,
@@ -679,8 +642,8 @@ function getSimulatedPreview(
         const ent = entityMap.get(r.entity_id);
         return {
           Date_ID: parseInt(r.date_id.replace("P", "").replace("_", ""), 10),
-          Entity_Alias: ent?.alias ?? r.entity_id,
-          Account_Alias: r.account_code,
+          Unit_Alias: ent?.alias ?? r.entity_id,
+          RL_Alias: r.account_code,
           Item: brands[i % brands.length],
           YTD_LY_Value: r.ytd_ly_value,
           YTD_CY_Value: r.ytd_cy_value,
@@ -700,7 +663,7 @@ function getSimulatedPreview(
       return rows.slice(0, limit);
     }
 
-    case "finiq_dim_account": {
+    case "finiq_dim_rl": {
       const accts = [
         { id: 1, code: "S900083", name: "Organic Growth", alias: "OG", type: "Revenue", order: 1 },
         { id: 2, code: "S900227", name: "Net Revenue", alias: "NR", type: "Revenue", order: 2 },
@@ -714,8 +677,8 @@ function getSimulatedPreview(
         { id: 10, code: "S900070", name: "Volume Impact", alias: "VOL", type: "Revenue", order: 10 },
       ];
       return accts.slice(0, limit).map((a) => ({
-        Account_ID: a.id, Account_Code: a.code, Account_Name: a.name,
-        Account_Alias: a.alias, Account_Type: a.type, Display_Order: a.order,
+        RL_ID: a.id, RL_Code: a.code, RL_Name: a.name,
+        RL_Alias: a.alias, RL_Type: a.type, Display_Order: a.order,
       }));
     }
 
@@ -725,10 +688,10 @@ function getSimulatedPreview(
         const ent = entityMap.get(r.entity_id);
         return {
           Date_ID: parseInt(r.date_id.replace("P", "").replace("_", ""), 10),
-          Entity_ID: parseInt(r.entity_id.replace("ent_", ""), 10) || 1,
-          Entity_Alias: ent?.alias ?? r.entity_id,
-          Account_Code: r.account_code,
-          Account_Alias: r.account_code,
+          Unit_ID: parseInt(r.entity_id.replace("ent_", ""), 10) || 1,
+          Unit_Alias: ent?.alias ?? r.entity_id,
+          RL_Code: r.account_code,
+          RL_Alias: r.account_code,
           Actual_USD: r.actual_usd,
           Replan_USD: r.replan_usd,
           Variance_USD: r.variance,

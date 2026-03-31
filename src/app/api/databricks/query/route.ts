@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     if (sql && table === "__raw_sql__") {
       if (!isRealMode() || !isConfigured()) {
         return NextResponse.json(
-          { error: "Custom SQL queries are only available in LIVE or CUSTOMER mode with valid Databricks credentials." },
+          { error: "Custom SQL queries are only available in LIVE mode with valid Databricks credentials." },
           { status: 400 },
         );
       }

@@ -33,12 +33,10 @@ export function Header() {
             "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
             dataMode === "real"
               ? "bg-positive/15 text-positive"
-              : dataMode === "customer"
-                ? "bg-amber-500/15 text-amber-400"
-                : "bg-primary/15 text-primary"
+              : "bg-primary/15 text-primary"
           )}
         >
-          {dataMode === "real" ? "LIVE" : dataMode === "customer" ? "CUSTOMER" : "SIM"}
+          {dataMode === "real" ? "LIVE" : "SIM"}
         </span>
 
         {/* Notifications */}

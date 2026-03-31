@@ -323,40 +323,27 @@ export function AdminContent() {
             <CardContent>
               <div className="flex flex-col gap-3">
                 <div className="flex rounded-lg border border-foreground/10">
-                  {(["simulated", "real", "customer"] as const).map((mode, i) => (
+                  {(["simulated", "real"] as const).map((mode, i) => (
                     <button
                       key={mode}
                       onClick={() => setDataMode(mode)}
                       className={`px-4 py-1.5 text-sm font-medium transition-colors ${
-                        i === 0 ? "rounded-l-lg" : i === 2 ? "rounded-r-lg" : ""
+                        i === 0 ? "rounded-l-lg" : "rounded-r-lg"
                       } ${
                         dataMode === mode
-                          ? mode === "customer"
-                            ? "bg-amber-500 text-white"
-                            : "bg-primary text-primary-foreground"
+                          ? "bg-primary text-primary-foreground"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
-                      {mode === "simulated" ? "Simulated" : mode === "real" ? "Live" : "Customer"}
+                      {mode === "simulated" ? "Simulated" : "Live"}
                     </button>
                   ))}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {dataMode === "simulated"
                     ? "Using deterministic simulated data for development and demos."
-                    : dataMode === "customer"
-                      ? "Connected to customer Databricks (corporate_finance_analytics_prod.finsight_core_model)."
-                      : "Connected to internal Databricks warehouse for production data."}
+                    : "Connected to Databricks (corporate_finance_analytics_prod.finsight_core_model)."}
                 </p>
-                {dataMode === "customer" && (
-                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs space-y-1">
-                    <div><span className="text-muted-foreground">Host:</span> <span className="font-mono">adb-2085958195047517.17.azuredatabricks.net</span></div>
-                    <div><span className="text-muted-foreground">Catalog:</span> <span className="font-mono">corporate_finance_analytics_prod</span></div>
-                    <div><span className="text-muted-foreground">Schema:</span> <span className="font-mono">finsight_core_model</span></div>
-                    <div><span className="text-muted-foreground">Warehouse:</span> <span className="font-mono">Serverless Starter (de640b2f8ef3d9b2)</span></div>
-                    <div className="text-muted-foreground/70 pt-1">Note: Table names differ from SRS (dim_unit vs dim_entity, vw_pl_unit vs vw_pl_entity) — mapped automatically.</div>
-                  </div>
-                )}
               </div>
             </CardContent>
           </Card>

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type DataMode = "simulated" | "real" | "customer";
+export type DataMode = "simulated" | "real";
 
 interface UIState {
   sidebarExpanded: boolean;

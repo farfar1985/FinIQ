@@ -132,13 +132,11 @@ function useApi<T>(url: string | null) {
 const MODE_LABELS: Record<DataMode, string> = {
   simulated: "SIM",
   real: "LIVE",
-  customer: "CUSTOMER",
 };
 
 const MODE_COLORS: Record<DataMode, string> = {
   simulated: "bg-amber-500/15 text-amber-400 border border-amber-500/25",
   real: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25",
-  customer: "bg-blue-500/15 text-blue-400 border border-blue-500/25",
 };
 
 function isNumericType(dataType: string): boolean {
@@ -152,7 +150,7 @@ function isView(table: TableInfo): boolean {
   return false;
 }
 
-/** Improved category classifier for customer & internal tables */
+/** Category classifier for FinSight tables */
 function clientCategorizeTable(name: string): string {
   const n = name.toLowerCase();
   if (n.includes("vw_pl_")) return "Views - P&L";
@@ -166,7 +164,7 @@ function clientCategorizeTable(name: string): string {
   if (n.includes("replan")) return "Replan";
   if (n.includes("financial")) return "Financial";
   if (n.includes("rls") || n.includes("_rls")) return "System";
-  if (n.includes("rl_formula") || n.includes("rl_input") || n.includes("account") || n.includes("formula")) return "Accounts";
+  if (n.includes("rl_formula") || n.includes("rl_input")) return "Reporting Lines";
   return "Other";
 }
 
