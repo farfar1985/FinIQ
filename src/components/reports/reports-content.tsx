@@ -484,6 +484,7 @@ function BudgetVarianceTab() {
 
   const [selectedEntity, setSelectedEntity] = useState("MARS");
   const [selectedPeriod, setSelectedPeriod] = useState("P06_2025");
+  const [selectedYear, setSelectedYear] = useState("2025");
   const [realVariance, setRealVariance] = useState<Record<string, unknown>[] | null>(null);
   const [loadingVariance, setLoadingVariance] = useState(false);
 
@@ -570,14 +571,28 @@ function BudgetVarianceTab() {
             value={selectedPeriod}
             onChange={(e) => setSelectedPeriod(e.target.value)}
           >
-            {Array.from({ length: 12 }, (_, i) => {
-              const p = `P${String(i + 1).padStart(2, "0")}_2025`;
+            {Array.from({ length: 13 }, (_, i) => {
+              const p = `P${String(i + 1).padStart(2, "0")}_${selectedYear}`;
               return (
                 <SelectOption key={p} value={p}>
-                  {p.replace("_", " ")}
+                  P{String(i + 1).padStart(2, "0")}
                 </SelectOption>
               );
             })}
+          </Select>
+        </div>
+        <div className="w-28">
+          <Select
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(e.target.value)}
+          >
+            <SelectOption value="2026">FY2026</SelectOption>
+            <SelectOption value="2025">FY2025</SelectOption>
+            <SelectOption value="2024">FY2024</SelectOption>
+            <SelectOption value="2023">FY2023</SelectOption>
+            <SelectOption value="2022">FY2022</SelectOption>
+            <SelectOption value="2021">FY2021</SelectOption>
+            <SelectOption value="2020">FY2020</SelectOption>
           </Select>
         </div>
       </div>
@@ -793,7 +808,7 @@ export function ReportsContent() {
                           setGenerated(false);
                         }}
                       >
-                        {Array.from({ length: 12 }, (_, i) => {
+                        {Array.from({ length: 13 }, (_, i) => {
                           const p = `P${String(i + 1).padStart(2, "0")}_${selectedYear}`;
                           return (
                             <SelectOption key={p} value={p}>
@@ -817,8 +832,13 @@ export function ReportsContent() {
                           setGenerated(false);
                         }}
                       >
-                        <SelectOption value="2025">2025</SelectOption>
-                        <SelectOption value="2024">2024</SelectOption>
+                        <SelectOption value="2026">FY2026</SelectOption>
+                        <SelectOption value="2025">FY2025</SelectOption>
+                        <SelectOption value="2024">FY2024</SelectOption>
+                        <SelectOption value="2023">FY2023</SelectOption>
+                        <SelectOption value="2022">FY2022</SelectOption>
+                        <SelectOption value="2021">FY2021</SelectOption>
+                        <SelectOption value="2020">FY2020</SelectOption>
                       </Select>
                     </div>
                   </div>
