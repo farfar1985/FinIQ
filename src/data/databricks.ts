@@ -210,14 +210,22 @@ export async function queryTable(
   const cols = columns.length > 0 ? columns.join(", ") : "*";
 
   if (isRealMode() && isConfigured()) {
-    let sql = `SELECT ${cols} FROM ${fqn(tableName)}`;
+    // Sanitize column names: allow only alphanumeric + underscore
+    const safeCols = columns.length > 0
+      ? columns.map((c) => `\`${c.replace(/[^a-zA-Z0-9_]/g, "")}\``).join(", ")
+      : "*";
+    let sql = `SELECT ${safeCols} FROM ${fqn(tableName)}`;
     if (filters && filters.length > 0) {
-      const clauses = filters.map(
-        (f) => `\`${f.column}\` = '${f.value.replace(/'/g, "''")}'`
-      );
+      const clauses = filters.map((f) => {
+        const safeCol = f.column.replace(/[^a-zA-Z0-9_]/g, "");
+        // Escape single quotes properly for SQL string literals
+        const safeVal = f.value.replace(/'/g, "''").replace(/\\/g, "\\\\");
+        return `\`${safeCol}\` = '${safeVal}'`;
+      });
       sql += ` WHERE ${clauses.join(" AND ")}`;
     }
-    sql += ` LIMIT ${limit}`;
+    const safeLimit = Math.min(Math.max(1, Math.floor(Number(limit) || 500)), 10000);
+    sql += ` LIMIT ${safeLimit}`;
     return executeQuery(sql);
   }
 

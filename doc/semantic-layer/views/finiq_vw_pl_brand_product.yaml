@@ -1,0 +1,115 @@
+# =============================================================================
+# finiq_vw_pl_brand_product — P&L by Brand and Product
+# Use for any P&L question that involves brands, product categories, or products
+# =============================================================================
+
+table_name: finiq_vw_pl_brand_product
+object_type: view
+schema: finsight_core_model
+risk_level: USE_WITH_FILTER
+row_estimate: "Scans finiq_financial_cons (5.7B rows) — MUST filter by Unit_Alias and Date_ID"
+
+discovery:
+  summary: >
+    P&L analysis broken down by brand, product category, or product consolidation.
+    Use this when anyone asks about financial performance for a specific brand
+    (e.g., Snickers, Pedigree, Royal Canin), product category, or product line.
+    Same P&L KPIs as finiq_vw_pl_unit but with a product/brand dimension added.
+  answers_questions:
+    - "What is the revenue for the Snickers brand?"
+    - "Show P&L by brand for Mars Wrigley USA"
+    - "Compare margins across product categories in Pet Nutrition"
+    - "Which brands have the highest organic growth?"
+    - "Product category performance for a specific market"
+    - "Brand-level profitability analysis"
+  do_not_use_for:
+    - "Unit-level P&L without brand breakdown (use finiq_vw_pl_unit — faster)"
+    - "Cash flow / NCFO (use finiq_vw_ncfo_unit)"
+    - "Customer-level brand analysis (use finiq_financial_base)"
+
+sql_context:
+  source_logic: >
+    Same as finiq_vw_pl_unit but adds JOIN to finiq_composite_item for product dimensions.
+    The Item column contains the brand/category/consolidation name. Filter on Item
+    to find specific brands or product categories.
+
+  columns:
+    - name: Date_ID
+      type: INT
+      description: "Fiscal period YYYYPP"
+      filter_required: true
+
+    - name: Unit_Alias
+      type: STRING
+      description: "Organization unit name from Dimensions_Unit (e.g., 'MW USA Market', 'Mars Incorporated (r)')"
+      filter_required: true
+      notes: "Case-sensitive! Always verify exact casing."
+
+    - name: RL_Alias
+      type: STRING
+      description: "Reporting line name"
+
+    - name: Item
+      type: STRING
+      description: "Brand name, product category, or product consolidation name"
+
+    - name: YTD_LY_Value
+      type: DOUBLE
+      description: "Year-to-date value for Last Year"
+
+    - name: YTD_CY_Value
+      type: DOUBLE
+      description: "Year-to-date value for Current Year"
+
+    - name: Periodic_LY_Value
+      type: DOUBLE
+      description: "Single-period value for Last Year"
+
+    - name: Periodic_CY_Value
+      type: DOUBLE
+      description: "Single-period value for Current Year"
+
+  value_columns_guide: >
+    Same 4 pre-computed value columns as finiq_vw_pl_unit:
+      - Periodic_CY_Value / Periodic_LY_Value for single-period CY/LY
+      - YTD_CY_Value / YTD_LY_Value for year-to-date CY/LY
+
+  safe_query_patterns:
+    - description: "Revenue by brand for a unit and period"
+      sql: |
+        SELECT Unit_Alias, Item, RL_Alias, Periodic_CY_Value
+        FROM finiq_vw_pl_brand_product
+        WHERE Unit_Alias = 'MW USA Market'
+          AND Date_ID = 202506
+          AND RL_Alias = 'Net Sales Total'
+        ORDER BY Periodic_CY_Value DESC
+
+    - description: "YoY brand comparison"
+      sql: |
+        SELECT Unit_Alias, Item, RL_Alias,
+               Periodic_CY_Value, Periodic_LY_Value
+        FROM finiq_vw_pl_brand_product
+        WHERE Unit_Alias = 'MW USA Market'
+          AND Date_ID = 202506
+          AND RL_Alias = 'Net Sales Total'
+        ORDER BY Periodic_CY_Value DESC
+
+    - description: "Quarterly total by brand"
+      sql: |
+        SELECT Unit_Alias, Item, RL_Alias,
+               SUM(Periodic_CY_Value) AS Q_CY_Value,
+               SUM(Periodic_LY_Value) AS Q_LY_Value
+        FROM finiq_vw_pl_brand_product
+        WHERE Unit_Alias = 'MW USA Market'
+          AND Date_ID IN (202504, 202505, 202506)
+          AND RL_Alias = 'Net Sales Total'
+        GROUP BY Unit_Alias, Item, RL_Alias
+        ORDER BY Q_CY_Value DESC
+
+  dangerous_patterns:
+    - pattern: "No Unit_Alias or Date_ID filter"
+      why: "Full 5.7B row scan. Always filter both."
+    - pattern: "Referencing Item_Type, View_ID, Date_Offset, or USD_Value columns"
+      why: "These columns do not exist in this view."
+    - pattern: "WHERE RL_Alias = 'NET SALES TOTAL' (uppercase)"
+      why: "RL_Alias uses Title Case: 'Net Sales Total', not 'NET SALES TOTAL'."

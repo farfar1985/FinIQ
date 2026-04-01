@@ -1,0 +1,181 @@
+# =============================================================================
+# Global Semantic Layer Configuration
+# Catalog: corporate_finance_analytics_prod
+# Schema: finsight_core_model
+# Client: Mars, Incorporated
+# Last Updated: 2026-03-31
+# =============================================================================
+
+catalog: corporate_finance_analytics_prod
+schema: finsight_core_model
+warehouse: Serverless Starter Warehouse (de640b2f8ef3d9b2)
+http_path: /sql/1.0/warehouses/de640b2f8ef3d9b2
+
+# -----------------------------------------------------------------------------
+# CRITICAL GUARDRAILS (always retrieved alongside any table context)
+# -----------------------------------------------------------------------------
+guardrails:
+  universal_rules:
+    - rule: "NEVER query fact tables without WHERE filters"
+      severity: CRITICAL
+      reason: "finiq_financial has 5.7B rows, finiq_financial_cons has 5.8B rows. Unfiltered queries will timeout and incur extreme compute cost."
+    - rule: "NEVER use SELECT * on fact tables or P&L/NCFO views"
+      severity: CRITICAL
+      reason: "Even with filters, SELECT * returns 42 columns on denormalized facts. Always specify needed columns."
+    - rule: "ALWAYS prefer views (finiq_vw_*) over direct fact table queries for P&L and NCFO analysis"
+      severity: HIGH
+      reason: "Views pre-join dimensions and compute growth KPIs. Direct fact table queries require manual joins across 5+ tables."
+    - rule: "ALWAYS filter views by Unit_Alias (not Unit_ID)"
+      severity: HIGH
+      reason: "Views use Title Case Unit_Alias from external Dimensions_Unit table (e.g., 'MW Estonia Market', not 'MW ESTONIA MARKET')."
+    - rule: "ALWAYS include Date_ID filter on fact tables and views"
+      severity: HIGH
+      reason: "Without date filters, queries scan the full date range (FY2020-FY2028)."
+    - rule: "ALWAYS apply row limits (LIMIT 1000) on any query against fact tables"
+      severity: HIGH
+      reason: "Even filtered queries can return millions of rows. Cap results and aggregate in SQL."
+    - rule: "Use read-only queries only. No INSERT, UPDATE, DELETE, DROP, CREATE, ALTER."
+      severity: CRITICAL
+      reason: "Platform has read-only access to client data warehouse."
+
+  dangerous_patterns:
+    - pattern: "SELECT * FROM finiq_financial"
+      why: "5.7 billion rows, will timeout"
+    - pattern: "SELECT COUNT(*) FROM finiq_financial_cons"
+      why: "Scans 5.8 billion rows"
+    - pattern: "SELECT * FROM finiq_vw_pl_unit (without WHERE)"
+      why: "View scans the full 5.7B row fact table"
+    - pattern: "JOIN finiq_financial to finiq_financial_cons"
+      why: "Cross-joining two multi-billion row tables"
+
+# -----------------------------------------------------------------------------
+# FISCAL CALENDAR (Mars-specific)
+# -----------------------------------------------------------------------------
+fiscal_calendar:
+  description: "Mars uses a 13-period fiscal calendar, not standard 12-month"
+  date_id_format: "YYYYPP (e.g., 202506 = fiscal year 2025, period 06)"
+  periods_per_year: 13
+  period_13: "Q4 adjustment period, not a regular month"
+  quarters:
+    Q1: "Periods 01-03"
+    Q2: "Periods 04-06"
+    Q3: "Periods 07-09"
+    Q4: "Periods 10-13 (4 periods, includes P13 adjustment)"
+  date_range: "202001 to 202813 (FY2020 through FY2028)"
+  replan_range: "202501 to 202613 (FY2025-FY2026 only)"
+  current_data:
+    actuals_through: "FY2026 Q1 (202603)"
+    replan_only: "FY2026 Q2-Q4 (202604-202613)"
+
+# -----------------------------------------------------------------------------
+# JOIN PATHS (verified via cardinality analysis)
+# -----------------------------------------------------------------------------
+join_paths:
+  - source: "finiq_financial* (all fact tables)"
+    target: finiq_dim_unit
+    source_key: Unit_ID
+    target_key: Child_Unit_ID
+    cardinality: "many-to-one (766 units)"
+
+  - source: "finiq_financial* (all fact tables)"
+    target: finiq_dim_rl
+    source_key: RL_ID
+    target_key: Child_RL_ID
+    cardinality: "many-to-one (725 reporting lines)"
+
+  - source: "finiq_financial* (all fact tables)"
+    target: finiq_date
+    source_key: Date_ID
+    target_key: Date_ID
+    cardinality: "many-to-one (117 dates)"
+
+  - source: "finiq_financial* (all fact tables)"
+    target: finiq_composite_item
+    source_key: Composite_Item_ID
+    target_key: Composite_Item_ID
+    cardinality: "many-to-one (9,478 products)"
+
+  - source: finiq_financial_base
+    target: finiq_economic_cell
+    source_key: Economic_Cell_ID
+    target_key: Economic_Cell_ID
+    cardinality: "many-to-one (123 of 175 used)"
+
+  - source: finiq_financial_base
+    target: finiq_customer
+    source_key: Unit_Customer_ID
+    target_key: Unit_Customer_ID
+    cardinality: "many-to-one (21,204 customers)"
+
+  - source: finiq_item_composite_item
+    target: finiq_composite_item
+    source_key: Composite_Item_ID
+    target_key: Composite_Item_ID
+    cardinality: "one-to-one (9,478)"
+
+  - source: finiq_item_composite_item
+    target: finiq_item
+    source_key: Item_ID
+    target_key: Item_ID
+    cardinality: "many-to-one (381K items)"
+
+  - source: finiq_financial_replan
+    target: finiq_dim_unit
+    source_key: Unit_ID
+    target_key: Child_Unit_ID
+    cardinality: "many-to-one (716 of 766 units)"
+
+  - source: finiq_financial_replan
+    target: finiq_dim_rl
+    source_key: Reporting_Line_ID
+    target_key: Child_RL_ID
+    cardinality: "many-to-one (642 of 725 RLs)"
+
+  - source: finiq_customer_map
+    target: finiq_dim_unit
+    source_key: Child_Unit_ID
+    target_key: Child_Unit_ID
+    cardinality: "many-to-one (553 of 766 units)"
+
+# -----------------------------------------------------------------------------
+# ORGANIZATION CONTEXT
+# -----------------------------------------------------------------------------
+organization:
+  company: "Mars, Incorporated"
+  top_level_gbus:
+    - "GBU PETCARE EX RUSSIA"
+    - "GBU MARS SNACKING EX RUSSIA"
+    - "GBU FOOD NUTRITION & MULTISALES X RUSSIA"
+    - "GLOBAL CORPORATE"
+    - "MARS GLOBAL SERVICES"
+    - "GBU UNASSIGNED"
+    - "GBU PETCARE RUSSIA"
+    - "GBU MARS SNACKING RUSSIA"
+    - "GBU FOOD, NUTRITION & MS RUSSIA"
+  unit_prefixes:
+    MW: "Mars Wrigley (Snacking)"
+    PN: "Pet Nutrition"
+    RC: "Royal Canin"
+    AC: "Accelerator Division"
+    SDX: "Science & Diagnostics"
+    MVH: "Mars Vet Health"
+    KN: "Kellanova"
+    HC: "Hotel Chocolat"
+    FOOD: "Food & Nutrition"
+    WWY: "Wrigley (legacy)"
+  hierarchy_levels: 11
+  total_units: 766
+
+# -----------------------------------------------------------------------------
+# EXTERNAL DEPENDENCIES
+# -----------------------------------------------------------------------------
+external_schemas:
+  finsight_core_model_mvp3:
+    description: "Older schema containing Dimensions_* tables referenced by views"
+    tables:
+      - Dimensions_View_Date_Map
+      - Dimensions_Date
+      - Dimensions_Unit
+      - Dimensions_Reporting_Line
+      - Dimensions_Unit_Consolidation
+    note: "Do not query these directly. Views resolve them via Unity Catalog cross-schema references."

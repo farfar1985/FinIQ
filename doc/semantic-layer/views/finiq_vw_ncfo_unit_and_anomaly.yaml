@@ -1,0 +1,150 @@
+# =============================================================================
+# finiq_vw_ncfo_unit — Net Cash From Operations by Unit
+# Use for cash flow analysis
+# =============================================================================
+
+table_name: finiq_vw_ncfo_unit
+object_type: view
+schema: finsight_core_model
+risk_level: SAFE
+row_estimate: "852,836 rows — safe to query with basic filters"
+
+discovery:
+  summary: >
+    Cash flow analysis view showing Net Cash From Operations (NCFO) by organizational unit.
+    Use for any question about cash flow, working capital, CapEx, tax payments, or
+    operational cash generation. Covers 16 NCFO-specific reporting lines.
+  answers_questions:
+    - "What is the net cash from operations for Mars Inc?"
+    - "Show working capital changes by division"
+    - "CapEx (fixed asset additions) by region"
+    - "Cash flow breakdown for Pet Nutrition"
+    - "Accounts receivable / payable changes"
+    - "Tax payments by business unit"
+  do_not_use_for:
+    - "P&L analysis (use finiq_vw_pl_unit)"
+    - "Brand/product level cash flow (not available in this view)"
+
+sql_context:
+  source_logic: >
+    Same source pattern as finiq_vw_pl_unit but filters to 16 NCFO-specific RL_IDs.
+    Pre-computes periodic and YTD values for current year (CY) and last year (LY).
+
+  columns:
+    - name: Date_ID
+      type: INT
+      description: "Fiscal period YYYYPP"
+      filter_required: true
+
+    - name: Unit_Alias
+      type: STRING
+      description: "Organization unit name from Dimensions_Unit (e.g., 'Mars Incorporated (r)')"
+      filter_required: true
+      notes: "Case-sensitive! Always verify exact casing."
+
+    - name: RL_Alias
+      type: STRING
+      description: "NCFO reporting line name"
+
+    - name: YTD_LY_Value
+      type: DOUBLE
+      description: "Year-to-date value for Last Year"
+
+    - name: YTD_CY_Value
+      type: DOUBLE
+      description: "Year-to-date value for Current Year"
+
+    - name: Periodic_LY_Value
+      type: DOUBLE
+      description: "Single-period value for Last Year"
+
+    - name: Periodic_CY_Value
+      type: DOUBLE
+      description: "Single-period value for Current Year"
+
+  value_columns_guide: >
+    Same 4 pre-computed value columns as finiq_vw_pl_unit:
+      - Periodic_CY_Value / Periodic_LY_Value for single-period CY/LY
+      - YTD_CY_Value / YTD_LY_Value for year-to-date CY/LY
+
+  ncfo_reporting_lines:
+    - "Controllable Cash From P&L"
+    - "Controllable Working Capital Addition"
+    - "Change in A/R 3rd Party"
+    - "Change in Accrued Liab"
+    - "Change in Accts Payable"
+    - "Change in Fin Goods"
+    - "Change in Inv Raws"
+    - "Change in Oth CurrAssets"
+    - "Change in Rec/Pay Affil"
+    - "Change in Rec/Pay Brokers"
+    - "Change in Resv for Restruct"
+    - "Change In ROU Assets/Liabilities"
+    - "Change In Non-Current"
+    - "Fixed Asset Additions"
+    - "Tax Payments - Total"
+    - "Net Cash From Operations"
+
+  safe_query_patterns:
+    - description: "NCFO for a specific unit and period (YTD)"
+      sql: |
+        SELECT Unit_Alias, RL_Alias, Date_ID,
+               YTD_CY_Value, YTD_LY_Value
+        FROM finiq_vw_ncfo_unit
+        WHERE Unit_Alias = 'Mars Incorporated (r)'
+          AND Date_ID = 202506
+
+    - description: "NCFO periodic comparison"
+      sql: |
+        SELECT Unit_Alias, RL_Alias, Date_ID,
+               Periodic_CY_Value, Periodic_LY_Value
+        FROM finiq_vw_ncfo_unit
+        WHERE Unit_Alias = 'Mars Incorporated (r)'
+          AND Date_ID = 202506
+
+    - description: "Quarterly NCFO total"
+      sql: |
+        SELECT Unit_Alias, RL_Alias,
+               SUM(Periodic_CY_Value) AS Q_CY_Value,
+               SUM(Periodic_LY_Value) AS Q_LY_Value
+        FROM finiq_vw_ncfo_unit
+        WHERE Unit_Alias = 'Mars Incorporated (r)'
+          AND Date_ID IN (202510, 202511, 202512, 202513)
+        GROUP BY Unit_Alias, RL_Alias
+
+---
+# =============================================================================
+# anomalydetection_vw_pbi_anomaly_detector_mw_na — Anomaly Detection (MW NA)
+# Mars Wrigley North America anomaly detection, Power BI optimized
+# =============================================================================
+
+table_name: anomalydetection_vw_pbi_anomaly_detector_mw_na
+object_type: view
+schema: finsight_core_model
+risk_level: SAFE
+row_estimate: "9,811 rows"
+
+discovery:
+  summary: >
+    Pre-computed anomaly detection data for Mars Wrigley North America only.
+    Wide table (87 columns) optimized for Power BI. Contains 6 units: MW Canada Market,
+    MW Ethel M Market, MW North America Region, MW North America Supply, MW USA, MW USA Market.
+    Use when someone asks about anomalies, outliers, or unusual patterns in MW North America financials.
+  answers_questions:
+    - "Are there any anomalies in Mars Wrigley North America financials?"
+    - "Show unusual patterns in MW USA or MW Canada"
+    - "Outlier detection for MW North America"
+  do_not_use_for:
+    - "Anomaly detection for any division other than MW North America"
+    - "General P&L analysis (use finiq_vw_pl_unit instead)"
+
+sql_context:
+  structure: "87 columns: 11 dimension columns + 76 pivoted financial metric columns"
+  units_covered:
+    - "MW Canada Market"
+    - "MW Ethel M Market"
+    - "MW North America Region"
+    - "MW North America Supply"
+    - "MW USA"
+    - "MW USA Market"
+  notes: "Power BI-optimized wide table. Safe to query without additional filters due to small row count."

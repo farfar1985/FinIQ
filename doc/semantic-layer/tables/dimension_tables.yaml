@@ -1,0 +1,356 @@
+# =============================================================================
+# DIMENSION TABLES — All safe to query without filters
+# =============================================================================
+
+# =============================================================================
+# finiq_dim_unit — Organization Hierarchy
+# =============================================================================
+
+table_name: finiq_dim_unit
+object_type: table
+schema: finsight_core_model
+risk_level: SAFE
+row_count: 766
+
+discovery:
+  summary: >
+    The organizational hierarchy for Mars, Incorporated. 766 units across 11 levels.
+    Maps from Mars Inc (level 0) down through GBUs, divisions, regions, markets,
+    to individual operational units. Use when you need to look up unit names, IDs,
+    hierarchy levels, or navigate the org structure.
+  answers_questions:
+    - "What units are in the Pet Nutrition division?"
+    - "Show the org hierarchy under Mars Wrigley"
+    - "What level is MW USA in the hierarchy?"
+    - "List all markets in a region"
+    - "What is the Unit_ID for a specific unit?"
+    - "Map between unit names and IDs"
+
+sql_context:
+  columns:
+    - { name: Child_Unit_ID, type: INT, description: "Unit ID (join key for fact tables)" }
+    - { name: Child_Unit, type: STRING, description: "Unit name (UPPERCASE)" }
+    - { name: Unit_Level, type: INT, description: "Hierarchy level (0=Mars Inc, 1=GBU, etc.)" }
+    - { name: Parent_Unit_ID, type: INT, description: "Parent unit ID" }
+    - { name: Parent_Unit, type: STRING, description: "Parent unit name" }
+
+  hierarchy_levels:
+    0: "Mars Incorporated (3 nodes)"
+    1: "GBU level (9 nodes)"
+    2: "Division level (21 nodes)"
+    3: "Sub-division (51 nodes)"
+    4: "Region (118 nodes)"
+    5: "Sub-region (144 nodes)"
+    6: "Country/Market (203 nodes)"
+    7: "Sub-market (124 nodes)"
+    8: "Local unit (72 nodes)"
+    9: "Operational (17 nodes)"
+    10: "Lowest level (4 nodes)"
+
+  safe_query_patterns:
+    - description: "List all units at a specific level"
+      sql: |
+        SELECT Child_Unit_ID, Child_Unit, Unit_Level
+        FROM finiq_dim_unit
+        WHERE Unit_Level <= 3
+        ORDER BY Unit_Level, Child_Unit
+
+    - description: "Find children of a specific unit"
+      sql: |
+        SELECT Child_Unit_ID, Child_Unit, Unit_Level
+        FROM finiq_dim_unit
+        WHERE Parent_Unit = 'GBU PETCARE EX RUSSIA'
+        ORDER BY Unit_Level
+
+    - description: "Look up a unit ID by name"
+      sql: |
+        SELECT Child_Unit_ID, Child_Unit, Unit_Level
+        FROM finiq_dim_unit
+        WHERE Child_Unit LIKE '%USA%'
+
+---
+# =============================================================================
+# finiq_dim_rl — Reporting Lines Hierarchy
+# =============================================================================
+
+table_name: finiq_dim_rl
+object_type: table
+schema: finsight_core_model
+risk_level: SAFE
+row_count: 725
+
+discovery:
+  summary: >
+    Reporting lines hierarchy. 725 lines across 7 financial statements
+    (P&L, BS, BSR, EP, S&U, Overheads, Others). Maps RL IDs to names,
+    parent relationships, and financial statement classification.
+    Use when you need to look up what a reporting line means, find its ID,
+    or navigate the RL hierarchy.
+  answers_questions:
+    - "What reporting lines are in the P&L?"
+    - "What is the RL_ID for Net Sales?"
+    - "Show the hierarchy under Controllable Profit"
+    - "What statement does this reporting line belong to?"
+    - "List all KPI reporting lines"
+
+sql_context:
+  columns:
+    - { name: Child_RL_ID, type: INT, description: "Reporting line ID (join key for fact tables)" }
+    - { name: Child_RL, type: STRING, description: "Reporting line name" }
+    - { name: Parent_RL_IDs, type: ARRAY, description: "Array of parent RL IDs (hierarchy)" }
+    - { name: Statement, type: STRING, description: "Financial statement: P&L, BS, BSR, EP, S&U, Overheads, Others" }
+    - { name: Sign_Conversion, type: INT, description: "+1 or -1, indicates natural sign direction" }
+
+  financial_statements:
+    - "P&L — Profit & Loss"
+    - "BS — Balance Sheet"
+    - "BSR — Balance Sheet Reclassification"
+    - "EP — Earnings/Performance"
+    - "S&U — Sources & Uses"
+    - "Overheads — Overhead cost allocation"
+    - "Others — Miscellaneous"
+
+  hierarchy_depth:
+    -1: "62 lines — no parents (orphans/top-level)"
+    1: "527 lines — single parent (leaf)"
+    2: "117 lines — two-level (intermediate)"
+    3: "19 lines — three-level (high aggregation)"
+
+---
+# =============================================================================
+# finiq_date — Fiscal Calendar
+# =============================================================================
+
+table_name: finiq_date
+object_type: table
+schema: finsight_core_model
+risk_level: SAFE
+row_count: 117
+
+discovery:
+  summary: >
+    Mars fiscal calendar dimension. 117 periods from FY2020 to FY2028.
+    Mars uses a 13-period fiscal year (not 12 months). Period 13 is a Q4
+    adjustment period. Use for date lookups, quarter mapping, and fiscal
+    year navigation.
+  answers_questions:
+    - "What fiscal period are we in?"
+    - "Map a date to a fiscal quarter"
+    - "What periods make up Q3?"
+    - "List all available fiscal periods"
+
+sql_context:
+  columns:
+    - { name: Date_ID, type: INT, description: "YYYYPP format (e.g., 202506)" }
+    - { name: Year, type: INT, description: "Fiscal year" }
+    - { name: Period, type: INT, description: "Fiscal period (1-13)" }
+    - { name: Quarter, type: STRING, description: "Fiscal quarter (Q1-Q4)" }
+  notes: "Mars fiscal calendar: 13 periods per year. Q4 has 4 periods (P10-P13), others have 3."
+
+---
+# =============================================================================
+# finiq_composite_item — Product Master
+# =============================================================================
+
+table_name: finiq_composite_item
+object_type: table
+schema: finsight_core_model
+risk_level: SAFE
+row_count: 9478
+
+discovery:
+  summary: >
+    Product master dimension. 9,478 composite items with attributes including
+    EC Group, Brand, Segment, Technology, Product Category, Business Segment,
+    and Product Consolidation. Use for product lookups and product hierarchy navigation.
+  answers_questions:
+    - "What products are in the BAR EC group?"
+    - "List all brands in the Chocolate segment"
+    - "What product categories exist?"
+    - "Find a product's composite item ID"
+    - "Product dimension attributes lookup"
+
+sql_context:
+  columns:
+    - { name: Composite_Item_ID, type: INT, description: "Product composite ID (join key for fact tables)" }
+    - { name: EC_Group, type: STRING, description: "EC Group (205 distinct)" }
+    - { name: Brand, type: STRING, description: "Brand name (458 distinct)" }
+    - { name: Segment, type: STRING, description: "Product segment (12 distinct)" }
+    - { name: Business_Segment, type: STRING, description: "Business segment (9 distinct)" }
+    - { name: Technology, type: STRING, description: "Manufacturing technology (54 distinct)" }
+    - { name: Product_Category, type: STRING, description: "Product category (75 distinct)" }
+    - { name: Product_Consolidation, type: STRING, description: "Product consolidation grouping (23 distinct)" }
+  id_encoding: >
+    Composite_Item_ID encodes: EC_Group_ID#Tech_ID#Segment_ID#BizSeg_ID#Market_ID#Brand_ID#Format_ID#???#???
+    Example: 106#200#501#1#23#442#17#35864#25099 = EC_Group=BAR, Brand=MARATHON, Segment=CHOCOLATE
+
+---
+# =============================================================================
+# finiq_item — Granular Product Dimension
+# =============================================================================
+
+table_name: finiq_item
+object_type: table
+schema: finsight_core_model
+risk_level: SAFE
+row_count: 381113
+
+discovery:
+  summary: >
+    Granular product dimension. 381K individual items that map to 9,478 composite
+    items via the finiq_item_composite_item bridge table. Use only when you need
+    item-level granularity below the composite product level.
+  do_not_use_for:
+    - "Most product analysis — use finiq_composite_item instead"
+
+---
+# =============================================================================
+# finiq_item_composite_item — Item to Product Bridge
+# =============================================================================
+
+table_name: finiq_item_composite_item
+object_type: table
+schema: finsight_core_model
+risk_level: SAFE
+row_count: 388782
+
+discovery:
+  summary: >
+    Bridge table mapping 381K granular items to 9,478 composite items.
+    Use only when you need to traverse from item-level to composite-item-level.
+
+sql_context:
+  columns:
+    - { name: Item_ID, type: INT, description: "Granular item ID" }
+    - { name: Composite_Item_ID, type: INT, description: "Composite item ID (join to finiq_composite_item)" }
+  cardinality: "Many items to one composite item"
+
+---
+# =============================================================================
+# finiq_economic_cell — Business Cell Classification
+# =============================================================================
+
+table_name: finiq_economic_cell
+object_type: table
+schema: finsight_core_model
+risk_level: SAFE
+row_count: 175
+
+discovery:
+  summary: >
+    Business cell dimension classifying units into strategic archetypes:
+    Growth Engine, Seed, Fuel for Growth, Harvest, or Other. 175 cells,
+    123 actively used. Use when analyzing performance by strategic archetype.
+  answers_questions:
+    - "Which business cells are classified as Growth Engine?"
+    - "Show performance by archetype (Growth Engine vs Harvest)"
+    - "What archetype is a specific unit's economic cell?"
+
+sql_context:
+  columns:
+    - { name: Economic_Cell_ID, type: INT }
+    - { name: Economic_Cell, type: STRING }
+    - { name: Archetype, type: STRING, values: ["GROWTH ENGINE", "SEED", "FUEL FOR GROWTH", "HARVEST", "OTHER"] }
+  archetype_counts:
+    GROWTH_ENGINE: 49
+    SEED: 33
+    FUEL_FOR_GROWTH: 32
+    HARVEST: 31
+    OTHER: 30
+
+---
+# =============================================================================
+# finiq_customer — Customer Master
+# =============================================================================
+
+table_name: finiq_customer
+object_type: table
+schema: finsight_core_model
+risk_level: SAFE
+row_count: 21204
+
+discovery:
+  summary: >
+    Customer master dimension. 21,204 customers across 139 countries, 8 channels,
+    and 24 formats. Customer hierarchy has 3 levels. Use for customer-level
+    financial analysis (requires joining to fact tables via Unit_Customer_ID).
+  answers_questions:
+    - "List customers by channel (e.g., Digital Commerce, Modern Grocery)"
+    - "Customer breakdown by country"
+    - "What formats exist in the customer dimension?"
+    - "Customer hierarchy lookup"
+
+sql_context:
+  columns:
+    - { name: Unit_Customer_ID, type: STRING, description: "Composite key: {Unit_ID}#{Customer_ID}" }
+    - { name: Customer_ID, type: STRING }
+    - { name: Customer_Name, type: STRING }
+    - { name: Country, type: STRING, description: "139 distinct countries" }
+    - { name: Customer_Channel, type: STRING, values: ["PET SPECIALIST", "MODERN GROCERY", "OTHER SPECIALIST", "CONVENIENCE", "TRADT'L INDEPENDENCE", "DIGITAL COMMERCE", "OUT OF HOME", "UNMAPPED"] }
+    - { name: Customer_Format, type: STRING, description: "24 distinct formats" }
+    - { name: Customer_Level_1, type: STRING, description: "398 groups" }
+    - { name: Customer_Level_2, type: STRING, description: "1,230 groups" }
+    - { name: Customer_Level_3, type: STRING }
+
+---
+# =============================================================================
+# finiq_customer_map — Customer Hierarchy Bridge
+# =============================================================================
+
+table_name: finiq_customer_map
+object_type: table
+schema: finsight_core_model
+risk_level: SAFE
+row_count: 210913
+
+discovery:
+  summary: >
+    Customer hierarchy bridge table. Maps 54,438 child customers to 14,230
+    parent customers across 553 units. Use when navigating customer rollup hierarchies.
+
+---
+# =============================================================================
+# finiq_rl_formula — KPI Formulas
+# =============================================================================
+
+table_name: finiq_rl_formula
+object_type: table
+schema: finsight_core_model
+risk_level: SAFE
+row_count: 725
+
+discovery:
+  summary: >
+    Reference table defining KPI calculation formulas for reporting lines.
+    Maps Parent_RL_ID to numerator/denominator RL_IDs for computed KPIs
+    like growth rates and shape percentages.
+
+---
+# =============================================================================
+# finiq_rl_input — Input Lines Reference
+# =============================================================================
+
+table_name: finiq_rl_input
+object_type: table
+schema: finsight_core_model
+risk_level: SAFE
+row_count: 110
+
+discovery:
+  summary: >
+    Reference table for input reporting lines. 110 entries defining
+    which reporting lines accept direct data input vs computed values.
+
+---
+# =============================================================================
+# finiq_rls_last_change — Metadata (single row)
+# =============================================================================
+
+table_name: finiq_rls_last_change
+object_type: table
+schema: finsight_core_model
+risk_level: SAFE
+row_count: 1
+
+discovery:
+  summary: "Metadata table tracking the last change timestamp for row-level security. Single row."

@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { processLLMQuery } from "@/lib/llm-query";
+import { broadcastEvent } from "@/app/api/events/route";
 
 // ============================================================
 // Types & Constants
@@ -80,11 +81,150 @@ const INTENT_TO_TYPE: Record<string, JobRecord["type"]> = {
 // ============================================================
 
 // Using globalThis to persist across hot-reloads in dev
-const globalJobs = globalThis as unknown as { __finiq_jobs?: Map<string, JobRecord> };
+const globalJobs = globalThis as unknown as {
+  __finiq_jobs?: Map<string, JobRecord>;
+  __finiq_scheduled_jobs?: ScheduledJob[];
+  __finiq_scheduler_started?: boolean;
+};
 if (!globalJobs.__finiq_jobs) {
   globalJobs.__finiq_jobs = new Map<string, JobRecord>();
 }
 export const jobs: Map<string, JobRecord> = globalJobs.__finiq_jobs;
+
+// ============================================================
+// Job Scheduling — FR5.6
+// ============================================================
+
+interface ScheduledJob {
+  id: string;
+  query: string;
+  title: string;
+  priority: "critical" | "high" | "medium" | "low";
+  type?: string;
+  submitter: string;
+  schedule: {
+    cron?: string;   // Cron expression (e.g., "0 9 * * 1-5")
+    runAt?: string;   // ISO timestamp for one-time execution
+  };
+  enabled: boolean;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  createdAt: string;
+  jobsCreated: number;
+}
+
+if (!globalJobs.__finiq_scheduled_jobs) {
+  globalJobs.__finiq_scheduled_jobs = [];
+}
+const scheduledJobs: ScheduledJob[] = globalJobs.__finiq_scheduled_jobs;
+
+/** Parse a simple cron expression and check if it matches the current minute */
+function cronMatchesNow(cron: string): boolean {
+  const parts = cron.trim().split(/\s+/);
+  if (parts.length !== 5) return false;
+  const now = new Date();
+  const fields = [now.getMinutes(), now.getHours(), now.getDate(), now.getMonth() + 1, now.getDay()];
+
+  for (let i = 0; i < 5; i++) {
+    const part = parts[i];
+    if (part === "*") continue;
+    // Handle ranges like "1-5"
+    if (part.includes("-")) {
+      const [lo, hi] = part.split("-").map(Number);
+      if (fields[i] < lo || fields[i] > hi) return false;
+      continue;
+    }
+    // Handle step like "*/5"
+    if (part.startsWith("*/")) {
+      const step = parseInt(part.slice(2), 10);
+      if (fields[i] % step !== 0) return false;
+      continue;
+    }
+    // Handle comma-separated values
+    const vals = part.split(",").map(Number);
+    if (!vals.includes(fields[i])) return false;
+  }
+  return true;
+}
+
+/** Check scheduled jobs and create due jobs */
+function checkScheduledJobs() {
+  const now = new Date();
+  for (const sj of scheduledJobs) {
+    if (!sj.enabled) continue;
+
+    let shouldRun = false;
+
+    if (sj.schedule.runAt) {
+      // One-time schedule
+      const runAt = new Date(sj.schedule.runAt);
+      if (now >= runAt) {
+        shouldRun = true;
+        sj.enabled = false; // Disable after one-time run
+      }
+    } else if (sj.schedule.cron) {
+      // Cron schedule — check if it matches the current minute
+      if (cronMatchesNow(sj.schedule.cron)) {
+        // Prevent double-firing within same minute
+        if (sj.lastRunAt) {
+          const lastRun = new Date(sj.lastRunAt);
+          const diffMs = now.getTime() - lastRun.getTime();
+          if (diffMs < 59000) continue; // Already ran this minute
+        }
+        shouldRun = true;
+      }
+    }
+
+    if (shouldRun) {
+      // Create a job from the scheduled definition
+      const intent = classifyIntent(sj.query);
+      const agentType = resolveAgentType(sj.query);
+      const agent = AGENT_POOL[agentType] || AGENT_POOL.adhoc;
+      const sla = SLA_TARGETS[sj.priority] || SLA_TARGETS.medium;
+      const jobNow = new Date().toISOString();
+
+      const job: JobRecord = {
+        id: generateId(),
+        query: sj.query,
+        title: `[Scheduled] ${sj.title}`,
+        status: "submitted",
+        priority: sj.priority,
+        type: (sj.type as JobRecord["type"]) || INTENT_TO_TYPE[intent] || "Ad-Hoc",
+        agent_type: agent.id,
+        agent_name: agent.name,
+        intent,
+        sla_target_minutes: sla.minutes,
+        sla_deadline: new Date(Date.now() + sla.ms).toISOString(),
+        created_at: jobNow,
+        updated_at: jobNow,
+        completed_at: null,
+        submitted_by: sj.submitter,
+        result: null,
+        error: null,
+        retries: 0,
+        max_retries: 3,
+      };
+
+      jobs.set(job.id, job);
+      job.status = "queued";
+      job.updated_at = new Date().toISOString();
+      agent.activeJobs++;
+
+      processJob(job.id).catch((err) => {
+        console.error(`[Scheduled Job ${job.id}] Processing error:`, err);
+      });
+
+      sj.lastRunAt = jobNow;
+      sj.jobsCreated++;
+    }
+  }
+}
+
+// Start the scheduler interval (once)
+if (!globalJobs.__finiq_scheduler_started) {
+  globalJobs.__finiq_scheduler_started = true;
+  setInterval(checkScheduledJobs, 60000); // Check every 60 seconds
+}
 
 // ============================================================
 // Helpers
@@ -134,6 +274,7 @@ async function processJob(jobId: string) {
   // Transition to processing
   job.status = "processing";
   job.updated_at = new Date().toISOString();
+  broadcastEvent("job:updated", { id: job.id, status: job.status });
 
   try {
     const result = await processLLMQuery(job.query, { entity: undefined, period: undefined });
@@ -147,10 +288,12 @@ async function processJob(jobId: string) {
       intent: result.intent,
       generated_at: new Date().toISOString(),
     };
+    broadcastEvent("job:completed", { id: job.id, status: job.status, title: job.title });
   } catch (err) {
     job.status = "failed";
     job.updated_at = new Date().toISOString();
     job.error = err instanceof Error ? err.message : "Unknown error during processing";
+    broadcastEvent("job:failed", { id: job.id, status: job.status, error: job.error });
   } finally {
     // Free agent capacity
     const agent = AGENT_POOL[job.agent_type];
@@ -175,6 +318,12 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url);
+
+  // FR5.6: Return scheduled jobs list if requested
+  if (searchParams.get("scheduled") === "true") {
+    return NextResponse.json({ scheduledJobs, total: scheduledJobs.length }, { headers });
+  }
+
   const statusFilter = searchParams.get("status");
   const priorityFilter = searchParams.get("priority");
   const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 200);
@@ -227,10 +376,36 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { query, title, priority = "medium", type } = body;
+    const { query, title, priority = "medium", type, schedule } = body;
 
     if (!query || typeof query !== "string" || query.trim().length === 0) {
       return NextResponse.json({ error: "Missing or empty 'query' field" }, { status: 400, headers });
+    }
+
+    // FR5.6: If schedule is provided, create a scheduled job instead
+    if (schedule && (schedule.cron || schedule.runAt)) {
+      const sj: ScheduledJob = {
+        id: `SCHED-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 5).toUpperCase()}`,
+        query: query.trim(),
+        title: (title || query.trim()).substring(0, 200),
+        priority: priority as ScheduledJob["priority"],
+        type: type || undefined,
+        submitter: body.submitter || "current.user@mars.com",
+        schedule: {
+          cron: schedule.cron || undefined,
+          runAt: schedule.runAt || undefined,
+        },
+        enabled: true,
+        lastRunAt: null,
+        nextRunAt: schedule.runAt || null,
+        createdAt: new Date().toISOString(),
+        jobsCreated: 0,
+      };
+
+      scheduledJobs.push(sj);
+
+      const responseHeaders = new Headers(headers);
+      return NextResponse.json({ scheduledJob: sj }, { status: 201, headers: responseHeaders });
     }
 
     const validPriorities = ["critical", "high", "medium", "low"];

@@ -220,6 +220,7 @@ export function CompetitiveContent() {
             <TabsTrigger value="positioning">Positioning</TabsTrigger>
             <TabsTrigger value="news-manda">News &amp; M&amp;A</TabsTrigger>
             <TabsTrigger value="alerts"><Bell className="h-3 w-3 mr-1" />Alerts</TabsTrigger>
+            <TabsTrigger value="porters"><Shield className="h-3 w-3 mr-1" />Porter&apos;s</TabsTrigger>
           </TabsList>
 
           {/* ---------- OVERVIEW TAB ---------- */}
@@ -397,6 +398,11 @@ export function CompetitiveContent() {
           {/* ---------- ALERTS TAB ---------- */}
           <TabsContent value="alerts">
             <AlertsPanel competitors={competitors} />
+          </TabsContent>
+
+          {/* ---------- PORTER'S FIVE FORCES TAB ---------- */}
+          <TabsContent value="porters">
+            <PortersFiveForces competitors={competitors} />
           </TabsContent>
         </Tabs>
       )}
@@ -1495,6 +1501,179 @@ function AlertsPanel({ competitors }: { competitors: Competitor[] }) {
               </TableBody>
             </Table>
           )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ---- Porter's Five Forces Tab — CI#71 ------------------------------------
+
+interface ForceAssessment {
+  force: string;
+  level: "Low" | "Moderate" | "High";
+  score: number; // 1-5
+  drivers: string[];
+}
+
+function PortersFiveForces({ competitors }: { competitors: Competitor[] }) {
+  const forces = useMemo<ForceAssessment[]>(() => {
+    const avgMargin = competitors.reduce((s, c) => s + (c.grossMargin ?? 0), 0) / (competitors.length || 1);
+    const avgGrowth = competitors.reduce((s, c) => s + (c.revenueGrowth ?? 0), 0) / (competitors.length || 1);
+    const totalMktCap = competitors.reduce((s, c) => s + c.marketCap, 0);
+    const topPlayerShare = competitors.length > 0
+      ? (Math.max(...competitors.map((c) => c.marketCap)) / totalMktCap) * 100
+      : 0;
+
+    return [
+      {
+        force: "Competitive Rivalry",
+        level: competitors.length >= 8 ? "High" : competitors.length >= 5 ? "Moderate" : "Low",
+        score: competitors.length >= 8 ? 5 : competitors.length >= 5 ? 4 : 2,
+        drivers: [
+          `${competitors.length} major competitors tracked`,
+          avgMargin > 40 ? `High margins (${avgMargin.toFixed(1)}%) attract competition` : `Moderate margins (${avgMargin.toFixed(1)}%) limit new players`,
+          topPlayerShare > 30 ? `Market concentration: top player holds ${topPlayerShare.toFixed(0)}% of peer cap` : "Fragmented market — no single dominant player",
+          "Brand loyalty is critical differentiator in FMCG",
+        ],
+      },
+      {
+        force: "Threat of New Entrants",
+        level: "Low",
+        score: 2,
+        drivers: [
+          `High capital requirements — avg peer market cap ${fmtB(totalMktCap / (competitors.length || 1))}`,
+          "Strong brand moats and distribution networks",
+          "Regulatory barriers in food safety and labeling",
+          "Economies of scale in manufacturing and procurement",
+        ],
+      },
+      {
+        force: "Bargaining Power of Suppliers",
+        level: "Moderate",
+        score: 3,
+        drivers: [
+          "Commodity inputs (cocoa, dairy, grains) have volatile pricing",
+          "Large buyers can negotiate volume discounts",
+          "Vertical integration reduces dependency (Mars has cocoa farms)",
+          "Multiple sourcing regions mitigate single-supplier risk",
+        ],
+      },
+      {
+        force: "Bargaining Power of Buyers",
+        level: avgMargin < 38 ? "High" : "Moderate",
+        score: avgMargin < 38 ? 4 : 3,
+        drivers: [
+          "Retail consolidation increases buyer leverage",
+          "Private-label alternatives growing in all categories",
+          avgMargin < 38 ? "Margin pressure indicates strong buyer power" : "Healthy margins suggest balanced buyer dynamics",
+          "Brand loyalty partially offsets price sensitivity",
+        ],
+      },
+      {
+        force: "Threat of Substitutes",
+        level: avgGrowth < 2 ? "Moderate" : "Low",
+        score: avgGrowth < 2 ? 3 : 2,
+        drivers: [
+          "Health-conscious consumer trends shift demand",
+          "DTC and specialty brands fragmenting market",
+          avgGrowth < 2 ? `Slow peer growth (${avgGrowth.toFixed(1)}%) suggests substitution pressure` : `Healthy growth (${avgGrowth.toFixed(1)}%) indicates limited substitution`,
+          "Pet care and premium segments more defensible",
+        ],
+      },
+    ];
+  }, [competitors]);
+
+  const levelColor: Record<string, string> = {
+    Low: "text-emerald-400 bg-emerald-400/10 border-emerald-400/30",
+    Moderate: "text-amber-400 bg-amber-400/10 border-amber-400/30",
+    High: "text-red-400 bg-red-400/10 border-red-400/30",
+  };
+
+  const overallScore = forces.reduce((s, f) => s + f.score, 0);
+  const attractiveness = overallScore <= 10 ? "Attractive" : overallScore <= 15 ? "Moderate" : "Challenging";
+
+  return (
+    <div className="space-y-4">
+      {/* Summary card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Target className="h-4 w-4" />
+            Porter&apos;s Five Forces — FMCG / CPG Industry
+          </CardTitle>
+          <CardDescription>
+            Industry attractiveness: <span className="font-semibold text-foreground">{attractiveness}</span>{" "}
+            (score {overallScore}/25 — lower is more attractive)
+          </CardDescription>
+        </CardHeader>
+      </Card>
+
+      {/* Force cards */}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+        {forces.map((f) => (
+          <Card key={f.force}>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm">{f.force}</CardTitle>
+                <Badge variant="outline" className={cn("text-xs", levelColor[f.level])}>
+                  {f.level} ({f.score}/5)
+                </Badge>
+              </div>
+              {/* Visual bar */}
+              <div className="mt-2 h-1.5 w-full rounded-full bg-muted">
+                <div
+                  className={cn("h-1.5 rounded-full", f.score >= 4 ? "bg-red-400" : f.score >= 3 ? "bg-amber-400" : "bg-emerald-400")}
+                  style={{ width: `${(f.score / 5) * 100}%` }}
+                />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-1.5">
+                {f.drivers.map((d, i) => (
+                  <li key={i} className="flex gap-2 text-xs text-muted-foreground">
+                    <ChevronRight className="mt-0.5 h-3 w-3 shrink-0" />
+                    <span>{d}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Peer data table */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Supporting Peer Data</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Company</TableHead>
+                <TableHead className="text-right">Market Cap</TableHead>
+                <TableHead className="text-right">Gross Margin</TableHead>
+                <TableHead className="text-right">Op. Margin</TableHead>
+                <TableHead className="text-right">Revenue Growth</TableHead>
+                <TableHead className="text-right">P/E</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {competitors.map((c) => (
+                <TableRow key={c.ticker}>
+                  <TableCell className="font-medium">{c.name} <span className="text-muted-foreground">({c.ticker})</span></TableCell>
+                  <TableCell className="text-right">{fmtB(c.marketCap)}</TableCell>
+                  <TableCell className="text-right">{fmtPct(c.grossMargin)}</TableCell>
+                  <TableCell className="text-right">{fmtPct(c.operatingMargin)}</TableCell>
+                  <TableCell className={cn("text-right", (c.revenueGrowth ?? 0) >= 0 ? "text-emerald-400" : "text-red-400")}>
+                    {fmtPct(c.revenueGrowth)}
+                  </TableCell>
+                  <TableCell className="text-right">{c.pe > 0 ? c.pe.toFixed(1) + "x" : "N/A"}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </div>

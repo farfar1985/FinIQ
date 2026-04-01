@@ -1,0 +1,255 @@
+# =============================================================================
+# finiq_financial — Denormalized Fact Table (EXTREME RISK)
+# 5.7 BILLION rows. NEVER query without filters. Prefer views instead.
+# =============================================================================
+
+table_name: finiq_financial
+object_type: table
+schema: finsight_core_model
+risk_level: EXTREME
+row_count: 5758891376
+
+discovery:
+  summary: >
+    The fully denormalized financial fact table. Contains every financial record
+    with all dimension attributes pre-joined (38 columns). 5.7 billion rows due to
+    unit consolidation hierarchy (each record appears once per parent unit).
+    PREFER VIEWS OVER THIS TABLE. Only use this directly when you need columns
+    not available in the views (e.g., customer data, brand, segment, specific
+    dimension attributes not in view output).
+  answers_questions:
+    - "Questions requiring columns not in the P&L or NCFO views"
+    - "Cross-dimensional analysis combining unit + brand + customer"
+    - "Balance Sheet or Sources & Uses analysis (not covered by views)"
+  do_not_use_for:
+    - "Standard P&L analysis (use finiq_vw_pl_unit or finiq_vw_pl_brand_product)"
+    - "NCFO analysis (use finiq_vw_ncfo_unit)"
+    - "Any question that can be answered by the views"
+
+sql_context:
+  columns:
+    # --- Identifiers & Filters ---
+    - { name: Date_ID, type: INT, description: "Fiscal period YYYYPP", filter_required: true }
+    - { name: Year, type: INT, description: "Fiscal year" }
+    - { name: Period, type: STRING, description: "Fiscal period (string)" }
+    - { name: Quarter, type: STRING, description: "Fiscal quarter" }
+    - { name: Unit_ID, type: INT, description: "Org unit ID", filter_required: true }
+    - { name: Reporting_Line_ID, type: INT, description: "Reporting line ID" }
+    - { name: Brand_ID, type: INT, description: "Brand ID" }
+    # --- Unit Dimensions ---
+    - { name: Parent_Unit, type: STRING, description: "Parent org unit name" }
+    - { name: Unit, type: STRING, description: "Unit name (UPPERCASE)" }
+    - { name: Unit_Level, type: INT, description: "Hierarchy level (0=top)" }
+    # --- Reporting Line Dimensions ---
+    - { name: Parent_Reporting_Line, type: ARRAY, description: "Array of parent RL names (hierarchy path)" }
+    - { name: Reporting_Line_KPI, type: STRING, description: "RL name" }
+    - { name: Statement, type: ARRAY, description: "Array of financial statement classifications (e.g., P&L, BS)" }
+    # --- Product Dimensions ---
+    - { name: EC_Group, type: STRING, description: "EC Group name" }
+    - { name: Brand, type: STRING, description: "Brand name" }
+    - { name: Segment, type: STRING, description: "Product segment" }
+    - { name: Market_Segment, type: STRING }
+    - { name: Technology, type: STRING }
+    - { name: Supply_Tech, type: STRING }
+    - { name: Product_Consolidation, type: STRING }
+    - { name: Product_Category, type: STRING }
+    - { name: Business_Segment, type: STRING }
+    - { name: Pack_Format, type: STRING }
+    - { name: Economic_Cell, type: STRING }
+    - { name: Archetype, type: STRING, description: "Economic cell archetype: GROWTH ENGINE, SEED, FUEL FOR GROWTH, HARVEST, OTHER" }
+    # --- Customer Dimensions ---
+    - { name: Customer_ID, type: STRING }
+    - { name: Country, type: STRING }
+    - { name: Customer_Name, type: STRING }
+    - { name: SCM_ID, type: STRING, description: "Supply chain management ID" }
+    - { name: Customer_Level_1, type: STRING }
+    - { name: Customer_Level_2, type: STRING }
+    - { name: Customer_Level_3, type: STRING }
+    - { name: Customer_Channel, type: STRING }
+    - { name: Customer_Format, type: STRING }
+    - { name: Customer_Subformat, type: STRING }
+    # --- Values ---
+    - { name: Currency, type: STRING, description: "Local currency code" }
+    - { name: Sign_Conversion, type: INT, description: "+1 or -1, indicates natural sign of the RL" }
+    - { name: USD_Value, type: FLOAT, description: "Financial value in USD" }
+    - { name: Local_Value, type: FLOAT, description: "Financial value in local currency" }
+
+  notes: >
+    Parent_Reporting_Line and Statement are ARRAY columns. To filter by statement,
+    use array_contains(Statement, 'P&L'). To filter by parent RL, use
+    array_contains(Parent_Reporting_Line, 'NET SALES TOTAL').
+
+  safe_query_patterns:
+    - description: "Must always filter by Unit_ID + Date_ID at minimum, and aggregate"
+      sql: |
+        SELECT Unit, Reporting_Line_KPI, Brand, SUM(USD_Value) as Total_USD
+        FROM finiq_financial
+        WHERE Unit_ID = 13000
+          AND Date_ID = 202506
+          AND array_contains(Statement, 'P&L')
+        GROUP BY Unit, Reporting_Line_KPI, Brand
+        ORDER BY Total_USD DESC
+        LIMIT 100
+
+  dangerous_patterns:
+    - pattern: "Any query without WHERE Unit_ID and Date_ID"
+      why: "5.7 billion rows. Will timeout."
+    - pattern: "SELECT * FROM finiq_financial"
+      why: "38 columns x 5.7B rows. Catastrophic."
+    - pattern: "WHERE Statement = 'P&L' (equality on ARRAY column)"
+      why: "Statement is ARRAY type. Use array_contains(Statement, 'P&L') instead."
+
+---
+# =============================================================================
+# finiq_financial_cons — Consolidated Fact Table (EXTREME RISK)
+# 5.8 BILLION rows. Source table for the P&L and NCFO views.
+# =============================================================================
+
+table_name: finiq_financial_cons
+object_type: table
+schema: finsight_core_model
+risk_level: EXTREME
+row_count: 5781441613
+
+discovery:
+  summary: >
+    Consolidated financial fact table. This is the source for finiq_vw_pl_unit
+    and finiq_vw_ncfo_unit views. 5.8 billion rows. Do not query directly
+    unless the views are insufficient for your needs.
+  do_not_use_for:
+    - "Almost everything — use the views instead"
+
+sql_context:
+  notes: "Source for P&L and NCFO views. Same structure as finiq_financial. Do not query directly."
+
+---
+# =============================================================================
+# finiq_financial_base — Normalized Base Fact Table (HIGH RISK)
+# 740M rows. ID-only columns. Must join dimensions manually.
+# =============================================================================
+
+table_name: finiq_financial_base
+object_type: table
+schema: finsight_core_model
+risk_level: HIGH
+row_count: 739574399
+
+discovery:
+  summary: >
+    The normalized base fact table with ID-only columns. 740M rows.
+    This is the pre-consolidation source (before unit hierarchy rollup).
+    Contains Economic_Cell_ID and Unit_Customer_ID which the denormalized
+    table also has, but at the base (non-rolled-up) level. Use only when
+    you need base-level granularity before consolidation.
+  answers_questions:
+    - "Base-level financial data before unit consolidation rollup"
+    - "Analysis at economic cell level with original (non-rolled-up) unit"
+    - "Customer-level analysis at base unit level"
+  do_not_use_for:
+    - "Standard P&L (use views)"
+    - "Any question that doesn't specifically need pre-consolidation data"
+
+sql_context:
+  columns:
+    - { name: Date_ID, type: INT, filter_required: true }
+    - { name: Unit_ID, type: INT, filter_required: true }
+    - { name: RL_ID, type: INT }
+    - { name: Composite_Item_ID, type: STRING, description: "Product composite ID (string, not int)" }
+    - { name: Economic_Cell_ID, type: INT }
+    - { name: Unit_Customer_ID, type: STRING }
+    - { name: USD_Value, type: FLOAT }
+  notes: "ID-only columns. Must join to dimension tables for names. 7.8x smaller than finiq_financial because no consolidation rollup."
+
+---
+# =============================================================================
+# finiq_financial_replan — Budget vs Actual (MEDIUM RISK)
+# 2.7M rows. Budget comparison data.
+# =============================================================================
+
+table_name: finiq_financial_replan
+object_type: table
+schema: finsight_core_model
+risk_level: MEDIUM
+row_count: 2740193
+
+discovery:
+  summary: >
+    Budget vs actual comparison data. Contains both actual financial values
+    and replan (budget/forecast) values. FY2025 has actuals only. FY2026 Q1
+    has both actuals and replan. FY2026 Q2-Q4 has replan (budget) only.
+    Use when anyone asks about budget variance, forecast vs actual, or plan comparison.
+  answers_questions:
+    - "How does actual performance compare to budget?"
+    - "What is the budget variance for this quarter?"
+    - "Show replan vs actual for a specific unit"
+    - "Are we on track against the forecast?"
+    - "Budget to actual comparison by reporting line"
+
+sql_context:
+  columns:
+    - { name: Submission_Type_ID, type: INT, values: [1, 2] }
+    - { name: Date_ID, type: INT, filter_required: true, range: "202501-202613" }
+    - { name: Year, type: INT, description: "Fiscal year" }
+    - { name: Quarter, type: STRING, description: "Fiscal quarter" }
+    - { name: Parent_Unit, type: STRING, description: "Parent unit name" }
+    - { name: Unit, type: STRING, description: "Unit name" }
+    - { name: Unit_Level, type: INT, description: "Hierarchy level" }
+    - { name: Parent_Reporting_Line, type: ARRAY, description: "Array of parent RL names" }
+    - { name: Reporting_Line_KPI, type: STRING, description: "RL name" }
+    - { name: Statement, type: ARRAY, description: "Array of financial statement classifications" }
+    - { name: Currency, type: STRING }
+    - { name: Sign_Conversion, type: INT }
+    - { name: Unit_ID, type: INT, filter_required: true }
+    - { name: Reporting_Line_ID, type: INT }
+    - { name: Actual_USD_Value, type: FLOAT, description: "Actual financial value (null for future periods)" }
+    - { name: Actual_Local_Value, type: FLOAT, description: "Actual in local currency" }
+    - { name: Replan_USD_Value, type: FLOAT, description: "Budget/replan value" }
+    - { name: Replan_Local_Value, type: FLOAT, description: "Replan in local currency" }
+
+  notes: >
+    Parent_Reporting_Line and Statement are ARRAY columns (same as finiq_financial).
+    Use array_contains() for filtering.
+
+  data_availability:
+    - period: "FY2025 (202501-202513)"
+      actuals: true
+      replan: false
+    - period: "FY2026 Q1 (202601-202603)"
+      actuals: true
+      replan: true
+    - period: "FY2026 Q2-Q4 (202604-202613)"
+      actuals: false
+      replan: true
+
+  safe_query_patterns:
+    - description: "Budget variance for a unit and period"
+      sql: |
+        SELECT Unit, Reporting_Line_KPI, Actual_USD_Value, Replan_USD_Value,
+               (Actual_USD_Value - Replan_USD_Value) AS Variance
+        FROM finiq_financial_replan
+        WHERE Unit_ID = 13000
+          AND Date_ID = 202506
+
+---
+# =============================================================================
+# finiq_financial_replan_cons — Consolidated Replan (SAFE)
+# 186K rows. Rolled-up budget vs actual.
+# =============================================================================
+
+table_name: finiq_financial_replan_cons
+object_type: table
+schema: finsight_core_model
+risk_level: SAFE
+row_count: 185574
+
+discovery:
+  summary: >
+    Consolidated (rolled-up) version of budget vs actual data. Only 186K rows.
+    Safe to query with minimal filters. Use for high-level budget variance
+    analysis across the org hierarchy.
+  answers_questions:
+    - "Consolidated budget vs actual at division/GBU level"
+    - "High-level forecast comparison across the organization"
+
+sql_context:
+  notes: "Consolidated rollup of finiq_financial_replan. Same columns but aggregated through the unit hierarchy."

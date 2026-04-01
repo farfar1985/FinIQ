@@ -1,7 +1,16 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Loader2, ChevronDown, ChevronRight, Play, Hash } from "lucide-react";
+import { Send, Loader2, ChevronDown, ChevronRight, Play, Hash, Undo2, Redo2 } from "lucide-react";
+import {
+  type UndoRedoState,
+  createUndoRedoState,
+  pushState as urPush,
+  undo as urUndo,
+  redo as urRedo,
+  canUndo as urCanUndo,
+  canRedo as urCanRedo,
+} from "@/lib/undo-redo";
 import { ProvenanceBadge } from "@/components/provenance-badge";
 import { useUIStore } from "@/stores/ui-store";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -503,6 +512,45 @@ export function QueryContent() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const dataMode = useUIStore((state) => state.dataMode);
 
+  // FR8.11: Undo/redo for conversation history
+  const [undoRedo, setUndoRedo] = useState<UndoRedoState<Message[]>>(
+    createUndoRedoState<Message[]>([])
+  );
+
+  const handleUndo = useCallback(() => {
+    setUndoRedo((prev) => {
+      const next = urUndo(prev);
+      setMessages(next.present);
+      return next;
+    });
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    setUndoRedo((prev) => {
+      const next = urRedo(prev);
+      setMessages(next.present);
+      return next;
+    });
+  }, []);
+
+  // Keyboard shortcuts: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if (
+        ((e.ctrlKey || e.metaKey) && e.key === "z" && e.shiftKey) ||
+        ((e.ctrlKey || e.metaKey) && e.key === "y")
+      ) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleUndo, handleRedo]);
+
   // Scroll to bottom on new messages
   useEffect(() => {
     if (scrollRef.current) {
@@ -560,7 +608,11 @@ export function QueryContent() {
           data: json.data,
         };
 
-        setMessages((prev) => [...prev, assistantMsg]);
+        setMessages((prev) => {
+          const updated = [...prev, assistantMsg];
+          setUndoRedo((ur) => urPush(ur, updated));
+          return updated;
+        });
       } catch {
         const errorMsg: Message = {
           id: `e-${Date.now()}`,
@@ -612,8 +664,30 @@ export function QueryContent() {
             className="flex flex-1 flex-col"
             style={{ minHeight: "calc(100vh - 180px)" }}
           >
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Amira Assistant</CardTitle>
+              <div className="flex gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleUndo}
+                  disabled={!urCanUndo(undoRedo)}
+                  title="Undo (Ctrl+Z)"
+                  className="h-8 w-8"
+                >
+                  <Undo2 className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleRedo}
+                  disabled={!urCanRedo(undoRedo)}
+                  title="Redo (Ctrl+Shift+Z)"
+                  className="h-8 w-8"
+                >
+                  <Redo2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="flex flex-1 flex-col">
               {/* Message area */}

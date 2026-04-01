@@ -136,12 +136,41 @@ export function JobsContent() {
     }
   }, []);
 
-  // Start polling on mount
+  // Start polling on mount + SSE for real-time updates (FR8.3)
   useEffect(() => {
     fetchJobs();
     pollRef.current = setInterval(fetchJobs, POLL_INTERVAL_MS);
+
+    // Connect SSE stream for real-time job updates
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource("/api/jobs/stream");
+
+      eventSource.addEventListener("job:created", () => {
+        // Refresh job list when a new job is created
+        fetchJobs();
+      });
+      eventSource.addEventListener("job:completed", () => {
+        fetchJobs();
+      });
+      eventSource.addEventListener("job:failed", () => {
+        fetchJobs();
+      });
+      eventSource.addEventListener("job:updated", () => {
+        fetchJobs();
+      });
+
+      eventSource.onerror = () => {
+        // SSE connection error — polling continues as fallback
+        eventSource?.close();
+      };
+    } catch {
+      // SSE not available — polling continues as fallback
+    }
+
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      eventSource?.close();
     };
   }, [fetchJobs]);
 

@@ -114,6 +114,53 @@ export async function POST(
   try {
     const body = await request.json();
 
+    // FR5.7: Collaborative review workflow — approve/reject/comment
+    if (body.action === "approve") {
+      if (job.status !== "completed") {
+        return NextResponse.json(
+          { error: `Only completed jobs can be approved. Current status: ${job.status}` },
+          { status: 400, headers }
+        );
+      }
+      job.updated_at = new Date().toISOString();
+      (job as Record<string, unknown>).review = {
+        status: "approved",
+        reviewer: body.reviewer || "reviewer@mars.com",
+        comment: body.comment || "",
+        reviewedAt: job.updated_at,
+      };
+      return NextResponse.json({ job, message: `Job ${id} approved` }, { headers });
+    }
+
+    if (body.action === "reject") {
+      if (job.status !== "completed") {
+        return NextResponse.json(
+          { error: `Only completed jobs can be rejected. Current status: ${job.status}` },
+          { status: 400, headers }
+        );
+      }
+      job.updated_at = new Date().toISOString();
+      (job as Record<string, unknown>).review = {
+        status: "rejected",
+        reviewer: body.reviewer || "reviewer@mars.com",
+        comment: body.comment || "",
+        reviewedAt: job.updated_at,
+      };
+      return NextResponse.json({ job, message: `Job ${id} rejected — will be re-queued for revision` }, { headers });
+    }
+
+    if (body.action === "comment") {
+      job.updated_at = new Date().toISOString();
+      const comments = ((job as Record<string, unknown>).comments as Array<Record<string, string>>) || [];
+      comments.push({
+        author: body.reviewer || "reviewer@mars.com",
+        text: body.comment || "",
+        timestamp: job.updated_at,
+      });
+      (job as Record<string, unknown>).comments = comments;
+      return NextResponse.json({ job, message: `Comment added to job ${id}` }, { headers });
+    }
+
     if (body.action === "retry") {
       if (job.status !== "failed") {
         return NextResponse.json(

@@ -26,6 +26,8 @@ import {
   Play,
   AlertCircle,
   Terminal,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -42,6 +44,23 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { useUIStore, type DataMode } from "@/stores/ui-store";
+import {
+  type UndoRedoState,
+  createUndoRedoState,
+  pushState as urPush,
+  undo as urUndo,
+  redo as urRedo,
+  canUndo as urCanUndo,
+  canRedo as urCanRedo,
+} from "@/lib/undo-redo";
+
+// ---- Explorer state snapshot for undo/redo --------------------------------
+
+interface ExplorerSnapshot {
+  selectedTable: string | null;
+  selectedColumns: string[];
+  tableFilter: string;
+}
 
 // ---- Types ----------------------------------------------------------------
 
@@ -271,6 +290,70 @@ export function ExplorerContent() {
   const [catalogName, setCatalogName] = useState<string>("");
   const [schemaName, setSchemaName] = useState<string>("");
 
+  // Undo/Redo state — FR8.11
+  const [undoRedo, setUndoRedo] = useState<UndoRedoState<ExplorerSnapshot>>(
+    createUndoRedoState<ExplorerSnapshot>({
+      selectedTable: null,
+      selectedColumns: [],
+      tableFilter: "",
+    })
+  );
+  const undoRedoRef = useRef(undoRedo);
+  undoRedoRef.current = undoRedo;
+
+  /** Push current explorer state to undo history */
+  const pushUndoState = useCallback(() => {
+    const snapshot: ExplorerSnapshot = {
+      selectedTable,
+      selectedColumns: Array.from(selectedColumns),
+      tableFilter,
+    };
+    setUndoRedo((prev) => urPush(prev, snapshot));
+  }, [selectedTable, selectedColumns, tableFilter]);
+
+  /** Restore a snapshot to the explorer state */
+  const restoreSnapshot = useCallback((snapshot: ExplorerSnapshot) => {
+    setSelectedTable(snapshot.selectedTable);
+    setSelectedColumns(new Set(snapshot.selectedColumns));
+    setTableFilter(snapshot.tableFilter);
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    setUndoRedo((prev) => {
+      if (!urCanUndo(prev)) return prev;
+      const next = urUndo(prev);
+      restoreSnapshot(next.present);
+      return next;
+    });
+  }, [restoreSnapshot]);
+
+  const handleRedo = useCallback(() => {
+    setUndoRedo((prev) => {
+      if (!urCanRedo(prev)) return prev;
+      const next = urRedo(prev);
+      restoreSnapshot(next.present);
+      return next;
+    });
+  }, [restoreSnapshot]);
+
+  // Keyboard shortcuts: Ctrl+Z / Ctrl+Shift+Z
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === "z" && e.shiftKey) {
+        e.preventDefault();
+        handleRedo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === "y") {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleUndo, handleRedo]);
+
   // Active main tab
   const [activeTab, setActiveTab] = useState("data");
 
@@ -495,6 +578,7 @@ export function ExplorerContent() {
   }, [sqlColumns, sqlRows]);
 
   const toggleColumn = (name: string) => {
+    pushUndoState(); // Track column changes for undo
     setSelectedColumns((prev) => {
       const next = new Set(prev);
       if (next.has(name)) next.delete(name);
@@ -575,26 +659,50 @@ export function ExplorerContent() {
             Browse Databricks tables, run SQL queries, and visualize data
           </p>
         </div>
-        {selectedTable && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Database className="h-3 w-3" />
-            {catalogName && (
-              <>
-                <span>{catalogName}</span>
-                <ChevronRight className="h-3 w-3" />
-              </>
-            )}
-            {schemaName && (
-              <>
-                <span>{schemaName}</span>
-                <ChevronRight className="h-3 w-3" />
-              </>
-            )}
-            <span className="font-medium text-foreground">
-              {selectedTable}
-            </span>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Undo/Redo buttons — FR8.11 */}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleUndo}
+            disabled={!urCanUndo(undoRedo)}
+            title="Undo (Ctrl+Z)"
+            className="h-8 w-8"
+          >
+            <Undo2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleRedo}
+            disabled={!urCanRedo(undoRedo)}
+            title="Redo (Ctrl+Shift+Z)"
+            className="h-8 w-8"
+          >
+            <Redo2 className="h-3.5 w-3.5" />
+          </Button>
+
+          {selectedTable && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground ml-2">
+              <Database className="h-3 w-3" />
+              {catalogName && (
+                <>
+                  <span>{catalogName}</span>
+                  <ChevronRight className="h-3 w-3" />
+                </>
+              )}
+              {schemaName && (
+                <>
+                  <span>{schemaName}</span>
+                  <ChevronRight className="h-3 w-3" />
+                </>
+              )}
+              <span className="font-medium text-foreground">
+                {selectedTable}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-12 gap-4">
@@ -661,11 +769,12 @@ export function ExplorerContent() {
                       {items.map((t) => (
                         <button
                           key={t.name}
-                          onClick={() =>
+                          onClick={() => {
+                            pushUndoState();
                             setSelectedTable(
                               selectedTable === t.name ? null : t.name
-                            )
-                          }
+                            );
+                          }}
                           className={cn(
                             "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
                             selectedTable === t.name
@@ -824,7 +933,7 @@ export function ExplorerContent() {
                         key={t}
                         variant="outline"
                         size="xs"
-                        onClick={() => setSelectedTable(t)}
+                        onClick={() => { pushUndoState(); setSelectedTable(t); }}
                         className="font-mono text-[10px]"
                       >
                         {t.replace("finiq_", "")}

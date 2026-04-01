@@ -1,0 +1,193 @@
+# =============================================================================
+# finiq_vw_pl_unit — P&L by Organizational Unit
+# PRIMARY query target for all P&L analysis by business unit
+# =============================================================================
+
+table_name: finiq_vw_pl_unit
+object_type: view
+schema: finsight_core_model
+risk_level: USE_WITH_FILTER
+row_estimate: "Scans finiq_financial_cons (5.7B rows) — MUST filter by Unit_Alias and Date_ID"
+
+# -----------------------------------------------------------------------------
+# DISCOVERY (natural language — used for finding this table)
+# Embedded separately for semantic search when user asks a question
+# -----------------------------------------------------------------------------
+discovery:
+  summary: >
+    The main view for Profit & Loss analysis by organizational unit at Mars.
+    Use this when anyone asks about revenue, sales, margins, costs, profit,
+    P&L performance, or financial KPIs for any business unit, division,
+    region, market, or the company overall.
+  answers_questions:
+    - "What is the revenue for Mars Wrigley this quarter?"
+    - "Show me the P&L for Pet Nutrition Europe"
+    - "What are the margins for the Snacking division?"
+    - "Compare net sales across GBUs"
+    - "What is the organic growth for Mars Inc?"
+    - "Show controllable profit by region"
+    - "How did prime costs change year over year?"
+    - "What is the A&CP shape percentage for MW USA?"
+    - "P&L breakdown for any unit, division, region, or market"
+    - "Year-over-year growth analysis by business unit"
+    - "Budget vs actual comparison (when combined with replan data)"
+  do_not_use_for:
+    - "P&L by brand or product (use finiq_vw_pl_brand_product instead)"
+    - "Cash flow / NCFO analysis (use finiq_vw_ncfo_unit instead)"
+    - "Customer-level analysis (use finiq_financial_base instead)"
+    - "Balance sheet analysis (query fact tables with BS RL_IDs)"
+
+# -----------------------------------------------------------------------------
+# SQL GENERATION CONTEXT (technical — used when building the actual query)
+# Embedded separately with full column detail and query patterns
+# -----------------------------------------------------------------------------
+sql_context:
+  source_logic: >
+    Joins finiq_financial_cons with Dimensions_View_Date_Map and Dimensions_Date
+    from the finsight_core_model_mvp3 schema. Filters to P&L-specific RL_IDs.
+    Joins Dimensions_Unit for Unit_Alias (Title Case) and Dimensions_Reporting_Line for RL_Alias.
+    Pre-computes periodic and YTD values for current year (CY) and last year (LY).
+
+  columns:
+    - name: Date_ID
+      type: INT
+      description: "Fiscal period in YYYYPP format (e.g., 202506)"
+      filter_required: true
+
+    - name: Unit_Alias
+      type: STRING
+      description: "Organization unit name from Dimensions_Unit (e.g., 'MW USA Market', 'Mars Incorporated (r)')"
+      filter_required: true
+      notes: "Case-sensitive! Not always Title Case — e.g., 'Mars Incorporated (r)' has lowercase r. Always verify exact casing."
+
+    - name: RL_Alias
+      type: STRING
+      description: "Reporting line name in Title Case (e.g., 'Net Sales Total', 'Controllable Profit')"
+
+    - name: YTD_LY_Value
+      type: DOUBLE
+      description: "Year-to-date value for Last Year (LY)"
+
+    - name: YTD_CY_Value
+      type: DOUBLE
+      description: "Year-to-date value for Current Year (CY)"
+
+    - name: Periodic_LY_Value
+      type: DOUBLE
+      description: "Single-period value for Last Year (LY)"
+
+    - name: Periodic_CY_Value
+      type: DOUBLE
+      description: "Single-period value for Current Year (CY)"
+
+  value_columns_guide: >
+    The view pre-computes 4 value columns instead of using View_ID/Date_Offset:
+      - Periodic_CY_Value: Current year value for this single period
+      - Periodic_LY_Value: Last year value for this single period
+      - YTD_CY_Value: Year-to-date cumulative value for current year
+      - YTD_LY_Value: Year-to-date cumulative value for last year
+    For YoY comparison: compare Periodic_CY_Value vs Periodic_LY_Value (or YTD variants).
+    For quarterly totals: SUM the Periodic_CY_Value across the quarter's periods.
+
+  key_reporting_lines:
+    - rl_alias: "Net Sales Total"
+      sign: "+1"
+    - rl_alias: "Net Sales 3rd Party"
+      sign: "+1"
+    - rl_alias: "GSV 3rd Party"
+      sign: "+1"
+    - rl_alias: "Prime Costs"
+      sign: "-1"
+    - rl_alias: "Raws Costs"
+      sign: "-1"
+    - rl_alias: "Pkg Costs"
+      sign: "-1"
+    - rl_alias: "Conversion Costs"
+      sign: "-1"
+    - rl_alias: "Depreciation"
+      sign: "-1"
+    - rl_alias: "Margin After Conversion"
+      sign: "+1"
+    - rl_alias: "Trade Expenditures"
+      sign: "-1"
+    - rl_alias: "Advertising & Cons Promotion"
+      sign: "-1"
+    - rl_alias: "Other Franch & Sales Cost"
+      sign: "-1"
+    - rl_alias: "Controllable Overhead Costs"
+      sign: "-1"
+    - rl_alias: "General & Admin Overheads"
+      sign: "-1"
+    - rl_alias: "Controllable Contribution"
+      sign: "+1"
+    - rl_alias: "Controllable Profit"
+      sign: "+1"
+    - rl_alias: "Controllable Earnings"
+      sign: "+1"
+    - rl_alias: "3rd Party Volume - Tonnes"
+      sign: "KPI (volume)"
+    - rl_alias: "Growth % - 3rd Party Organic"
+      sign: "KPI (percentage)"
+    - rl_alias: "Price Growth %"
+      sign: "KPI (percentage)"
+    - rl_alias: "Growth % - 3rd P Volume"
+      sign: "KPI (percentage)"
+    - rl_alias: "Growth % - 3rd P Mix"
+      sign: "KPI (percentage)"
+    - rl_alias: "MS.Growth % - 3rd P Volume"
+      sign: "KPI (percentage)"
+    - rl_alias: "MS.Growth % - 3rd P Mix"
+      sign: "KPI (percentage)"
+
+  safe_query_patterns:
+    - description: "P&L for a specific unit and period (single period, current year)"
+      sql: |
+        SELECT Unit_Alias, RL_Alias, Date_ID, Periodic_CY_Value
+        FROM finiq_vw_pl_unit
+        WHERE Unit_Alias = 'Mars Incorporated (r)'
+          AND Date_ID = 202506
+
+    - description: "YoY comparison for a unit (single period)"
+      sql: |
+        SELECT Unit_Alias, RL_Alias, Date_ID,
+               Periodic_CY_Value, Periodic_LY_Value,
+               (Periodic_CY_Value - Periodic_LY_Value) AS Variance
+        FROM finiq_vw_pl_unit
+        WHERE Unit_Alias = 'MW USA Market'
+          AND Date_ID = 202506
+
+    - description: "YTD comparison for a unit"
+      sql: |
+        SELECT Unit_Alias, RL_Alias, Date_ID,
+               YTD_CY_Value, YTD_LY_Value
+        FROM finiq_vw_pl_unit
+        WHERE Unit_Alias = 'MW USA Market'
+          AND Date_ID = 202506
+
+    - description: "Quarterly total (sum periodic values across quarter periods)"
+      sql: |
+        SELECT Unit_Alias, RL_Alias,
+               SUM(Periodic_CY_Value) AS Q_CY_Value,
+               SUM(Periodic_LY_Value) AS Q_LY_Value
+        FROM finiq_vw_pl_unit
+        WHERE Unit_Alias = 'Mars Incorporated (r)'
+          AND Date_ID IN (202510, 202511, 202512, 202513)
+        GROUP BY Unit_Alias, RL_Alias
+
+    - description: "Compare multiple units for a period"
+      sql: |
+        SELECT Unit_Alias, RL_Alias, SUM(Periodic_CY_Value) AS Total_CY
+        FROM finiq_vw_pl_unit
+        WHERE Unit_Alias IN ('MW USA Market', 'PN USA Market', 'RC USA Market')
+          AND Date_ID = 202506
+        GROUP BY Unit_Alias, RL_Alias
+
+  dangerous_patterns:
+    - pattern: "SELECT * FROM finiq_vw_pl_unit (no WHERE clause)"
+      why: "Scans entire 5.7B row fact table. Always filter by Unit_Alias and Date_ID."
+    - pattern: "WHERE Unit_Alias = 'MW USA MARKET' (uppercase) or 'Mars Incorporated (R)' (uppercase R)"
+      why: "View uses specific casing from Dimensions_Unit. Use exact casing: 'MW USA Market', 'Mars Incorporated (r)'. Case matters!"
+    - pattern: "WHERE RL_Alias = 'NET SALES TOTAL' (uppercase)"
+      why: "RL_Alias uses Title Case: 'Net Sales Total', not 'NET SALES TOTAL'."
+    - pattern: "Referencing View_ID, Date_Offset, or USD_Value columns"
+      why: "These columns do not exist. Use Periodic_CY_Value, Periodic_LY_Value, YTD_CY_Value, YTD_LY_Value instead."
