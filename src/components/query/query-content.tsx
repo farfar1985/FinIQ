@@ -75,10 +75,10 @@ interface Message {
 // ---------------------------------------------------------------------------
 
 const SUGGESTED_QUERIES = [
-  "What was Petcare's organic growth in P06?",
-  "Compare MAC Shape across GBUs",
-  "Show budget variance for Snacking",
-  "Organic growth trend for Mars Wrigley over time",
+  "Show net sales for Mars Incorporated",
+  "What is the organic growth for GBU Petcare?",
+  "Compare margin after conversion across all GBUs",
+  "Show revenue trend for Mars Wrigley Division",
 ];
 
 const RECENT_QUERIES = [
