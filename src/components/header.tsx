@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Bell, Search, User } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
 import { cn } from "@/lib/utils";
@@ -7,6 +8,8 @@ import { cn } from "@/lib/utils";
 export function Header() {
   const sidebarExpanded = useUIStore((state) => state.sidebarExpanded);
   const dataMode = useUIStore((state) => state.dataMode);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   return (
     <header
@@ -28,16 +31,18 @@ export function Header() {
       {/* Right section */}
       <div className="flex items-center gap-3">
         {/* Data mode indicator */}
-        <span
-          className={cn(
-            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-            dataMode === "real"
-              ? "bg-positive/15 text-positive"
-              : "bg-primary/15 text-primary"
-          )}
-        >
-          {dataMode === "real" ? "LIVE" : "SIM"}
-        </span>
+        {mounted && (
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+              dataMode === "real"
+                ? "bg-positive/15 text-positive"
+                : "bg-primary/15 text-primary"
+            )}
+          >
+            {dataMode === "real" ? "LIVE" : "SIM"}
+          </span>
+        )}
 
         {/* Notifications */}
         <button className="relative rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
