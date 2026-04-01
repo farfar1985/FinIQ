@@ -327,11 +327,13 @@ type SortDirection = "asc" | "desc";
 function KPIDataTable({
   entity,
   period,
+  realData,
 }: {
   entity: string;
   period: string;
+  realData?: FinancialRow[] | null;
 }) {
-  const financialData = useMemo(() => generateFinancialData(), []);
+  const financialData = realData && realData.length > 0 ? realData : generateFinancialData();
   const accounts = useMemo(() => generateAccounts(), []);
 
   const [sortColumn, setSortColumn] = useState<SortColumn>("account");
@@ -1176,7 +1178,7 @@ export function ReportsContent() {
                 )}
 
                 {/* KPI detail table */}
-                <KPIDataTable entity={selectedEntity} period={selectedPeriod} />
+                <KPIDataTable entity={selectedEntity} period={selectedPeriod} realData={realPLData} />
               </>
             )}
 
