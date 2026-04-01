@@ -30,9 +30,35 @@ import { useUIStore } from "@/stores/ui-store";
 const TABS = [
   { id: "connection", label: "Connection", icon: Settings },
   { id: "templates", label: "Templates", icon: FileText },
-  { id: "users", label: "Users", icon: Users },
+  { id: "users", label: "Users & RBAC", icon: Users },
   { id: "system", label: "System", icon: Server },
 ] as const;
+
+// FR7.5: RBAC role definitions
+const RBAC_ROLES = [
+  { role: "Admin", permissions: "Full access: configure, manage users, all data, all features", count: 2 },
+  { role: "Analyst", permissions: "Query, reports, exports, data explorer, job management", count: 8 },
+  { role: "Executive", permissions: "Dashboards, reports, CI, submit queries/jobs (read-focused)", count: 15 },
+  { role: "Viewer", permissions: "View-only: dashboards and competitive intelligence", count: 25 },
+];
+
+// FR7.2: Org hierarchy
+const ORG_HIERARCHY = [
+  { level: 0, name: "Mars Incorporated", units: 1 },
+  { level: 1, name: "GBUs", units: 5, examples: "Petcare, Snacking, Food & Nutrition, Mars Wrigley, Global Corporate" },
+  { level: 2, name: "Divisions", units: 20, examples: "Petcare NA, Petcare EU, Snacking Legacy, Wrigley Intl" },
+  { level: 3, name: "Regions", units: 50, examples: "MW USA Market, RC France Market, PN UK Market" },
+  { level: 4, name: "Sub-regions", units: 150, examples: "AC Denmark Market, AC Israel Market, MW Germany Market" },
+  { level: 5, name: "Markets", units: 540, examples: "766 total Unit_Alias values in Databricks" },
+];
+
+// FR7.3: Peer group configuration
+const PEER_GROUPS = [
+  { id: "pg1", name: "Global Confectionery", companies: "Mars, Mondelez, Hershey, Ferrero, Nestlé", metrics: "OG%, Revenue, Gross Margin" },
+  { id: "pg2", name: "Petcare Leaders", companies: "Mars Petcare, Nestlé Purina, Colgate (Hill's), Freshpet, IDEXX", metrics: "OG%, Revenue, Market Share" },
+  { id: "pg3", name: "Global FMCG", companies: "Mars, P&G, Unilever, Nestlé, General Mills, Kraft Heinz, Kellanova", metrics: "OG%, Operating Margin, EBITDA" },
+  { id: "pg4", name: "Snacking Peers", companies: "Mars Wrigley, Mondelez, Hershey, J.M. Smucker, General Mills", metrics: "OG%, MAC%, A&CP%" },
+];
 
 type TabId = (typeof TABS)[number]["id"];
 
@@ -387,43 +413,133 @@ export function AdminContent() {
 
       {/* Users Tab */}
       {activeTab === "users" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>User Management</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>GBU Access</TableHead>
-                  <TableHead>Last Login</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {USERS.map((user) => (
-                  <TableRow key={user.email}>
-                    <TableCell className="font-medium">{user.name}</TableCell>
-                    <TableCell className="text-xs">{user.email}</TableCell>
-                    <TableCell>
-                      <span
-                        className={`inline-flex h-5 items-center rounded-full px-2 text-xs font-medium ${
-                          roleColors[user.role] ?? ""
-                        }`}
-                      >
-                        {user.role}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-xs">{user.gbuAccess}</TableCell>
-                    <TableCell className="text-xs">{user.lastLogin}</TableCell>
+        <div className="space-y-4">
+          {/* User Management */}
+          <Card>
+            <CardHeader>
+              <CardTitle>User Management</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>GBU Access</TableHead>
+                    <TableHead>Last Login</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                </TableHeader>
+                <TableBody>
+                  {USERS.map((user) => (
+                    <TableRow key={user.email}>
+                      <TableCell className="font-medium">{user.name}</TableCell>
+                      <TableCell className="text-xs">{user.email}</TableCell>
+                      <TableCell>
+                        <span
+                          className={`inline-flex h-5 items-center rounded-full px-2 text-xs font-medium ${
+                            roleColors[user.role] ?? ""
+                          }`}
+                        >
+                          {user.role}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-xs">{user.gbuAccess}</TableCell>
+                      <TableCell className="text-xs">{user.lastLogin}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* FR7.5: RBAC Roles */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Role-Based Access Control (RBAC)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Permissions</TableHead>
+                    <TableHead className="text-right">Users</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {RBAC_ROLES.map((r) => (
+                    <TableRow key={r.role}>
+                      <TableCell>
+                        <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs font-medium ${roleColors[r.role] ?? "bg-muted text-foreground"}`}>
+                          {r.role}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-xs">{r.permissions}</TableCell>
+                      <TableCell className="text-right text-xs">{r.count}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* FR7.2: Org Hierarchy */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Organization Hierarchy</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Level</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Units</TableHead>
+                    <TableHead>Examples</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {ORG_HIERARCHY.map((h) => (
+                    <TableRow key={h.level}>
+                      <TableCell className="font-mono text-xs">{h.level}</TableCell>
+                      <TableCell className="font-medium text-xs">{h.name}</TableCell>
+                      <TableCell className="text-xs">{h.units}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{h.examples || ""}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* FR7.3: Peer Groups */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Peer Group Configuration</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Peer Group</TableHead>
+                    <TableHead>Companies</TableHead>
+                    <TableHead>Metrics</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {PEER_GROUPS.map((pg) => (
+                    <TableRow key={pg.id}>
+                      <TableCell className="font-medium text-xs">{pg.name}</TableCell>
+                      <TableCell className="text-xs">{pg.companies}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{pg.metrics}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* System Tab */}

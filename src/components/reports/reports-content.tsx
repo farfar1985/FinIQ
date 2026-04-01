@@ -709,6 +709,178 @@ function BudgetVarianceTab() {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Custom Report Builder (FR2.5)
+// ---------------------------------------------------------------------------
+
+const AVAILABLE_KPIS = [
+  { code: "S900083", label: "Organic Growth", alias: "Growth % - 3rd Party Organic" },
+  { code: "S100010", label: "Net Revenue", alias: "Net Sales Total" },
+  { code: "S200010", label: "MAC", alias: "Margin After Conversion" },
+  { code: "S200020", label: "A&CP", alias: "Advertising & Cons Promotion" },
+  { code: "S300010", label: "CE", alias: "Controllable Earnings" },
+  { code: "S300020", label: "Overhead", alias: "Controllable Overhead Costs" },
+  { code: "S500010", label: "NCFO", alias: "Net Cash From Operations" },
+  { code: "S100020", label: "Gross Profit", alias: "Gross Profit" },
+  { code: "S600010", label: "EBITDA", alias: "EBITDA" },
+  { code: "S400020", label: "Depreciation", alias: "Depreciation" },
+];
+
+function CustomReportBuilder() {
+  const [selectedKPIs, setSelectedKPIs] = useState<Set<string>>(
+    new Set(["S900083", "S100010", "S200010", "S300010", "S500010"])
+  );
+  const [reportEntity, setReportEntity] = useState("Mars Incorporated (r)");
+  const [reportPeriods, setReportPeriods] = useState("202501,202502,202503");
+  const [reportData, setReportData] = useState<Record<string, unknown>[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const toggleKPI = (code: string) => {
+    setSelectedKPIs((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  };
+
+  const handleBuildReport = async () => {
+    setLoading(true);
+    try {
+      const selectedAliases = AVAILABLE_KPIS
+        .filter((k) => selectedKPIs.has(k.code))
+        .map((k) => `'${k.alias}'`)
+        .join(", ");
+      const periods = reportPeriods.split(",").map((p) => p.trim()).join(", ");
+
+      const res = await fetch("/api/databricks/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          table: "__raw_sql__",
+          mode: "real",
+          sql: `SELECT Date_ID, Unit_Alias, RL_Alias, Periodic_CY_Value, Periodic_LY_Value, YTD_CY_Value, YTD_LY_Value FROM corporate_finance_analytics_prod.finsight_core_model.finiq_vw_pl_unit WHERE LOWER(Unit_Alias) LIKE LOWER('%${reportEntity.replace(/'/g, "''")}%') AND Date_ID IN (${periods}) AND RL_Alias IN (${selectedAliases}) ORDER BY Date_ID, RL_Alias`,
+        }),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        setReportData(json.rows || []);
+      }
+    } catch {
+      setReportData([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Custom Report Builder</CardTitle>
+          <CardDescription>Select KPIs, entity, and periods to build a custom report from live Databricks data.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* KPI Selection */}
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Select KPIs
+            </label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {AVAILABLE_KPIS.map((kpi) => (
+                <button
+                  key={kpi.code}
+                  onClick={() => toggleKPI(kpi.code)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    selectedKPIs.has(kpi.code)
+                      ? "bg-blue-500/20 text-blue-400 border border-blue-500/40"
+                      : "bg-muted/50 text-muted-foreground border border-transparent hover:border-foreground/10"
+                  }`}
+                >
+                  {kpi.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Entity & Periods */}
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Entity</label>
+              <input
+                type="text"
+                value={reportEntity}
+                onChange={(e) => setReportEntity(e.target.value)}
+                className="mt-1 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+                placeholder="e.g., Mars Incorporated (r)"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Periods (Date_IDs)</label>
+              <input
+                type="text"
+                value={reportPeriods}
+                onChange={(e) => setReportPeriods(e.target.value)}
+                className="mt-1 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+                placeholder="e.g., 202501,202502,202503"
+              />
+            </div>
+          </div>
+
+          <Button onClick={handleBuildReport} disabled={loading || selectedKPIs.size === 0}>
+            {loading ? "Building from Databricks..." : `Build Report (${selectedKPIs.size} KPIs)`}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Results */}
+      {reportData && reportData.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Report Results — {reportData.length} rows</CardTitle>
+          </CardHeader>
+          <CardContent className="px-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {Object.keys(reportData[0]).map((col) => (
+                    <TableHead key={col}>{col}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {reportData.map((row, i) => (
+                  <TableRow key={i}>
+                    {Object.values(row).map((val, j) => (
+                      <TableCell key={j} className="text-xs font-mono tabular-nums">
+                        {typeof val === "number"
+                          ? Math.abs(val) >= 1000000
+                            ? `$${(val / 1000000).toFixed(1)}M`
+                            : val.toFixed(2)
+                          : String(val ?? "")}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {reportData && reportData.length === 0 && (
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            No data found. Check entity name and periods.
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -811,12 +983,29 @@ export function ReportsContent() {
   }, [generated, selectedEntity, entityName, selectedPeriod, entities, financialData, realPLData]);
 
   // Apply format filter: Summary=all, WWW=positive only, WNWW=negative only
+  // FR2.1: Each format produces distinct narrative tone
   const filteredNarratives = useMemo(() => {
+    let filtered: typeof narratives;
     switch (selectedFormat) {
       case "www":
-        return narratives.filter((card) => card.isPositive);
+        filtered = narratives.filter((card) => card.isPositive);
+        // Enhance narrative with positive framing
+        return filtered.map((card) => ({
+          ...card,
+          narrative: card.narrative
+            .replace(/decline/g, "moderation")
+            .replace(/deterioration/g, "stabilization") +
+            (card.top3.length > 0 ? ` Top performers: ${card.top3.map((t) => t.name).join(", ")}.` : ""),
+        }));
       case "wnww":
-        return narratives.filter((card) => !card.isPositive);
+        filtered = narratives.filter((card) => !card.isPositive);
+        // Enhance narrative with action-oriented framing
+        return filtered.map((card) => ({
+          ...card,
+          narrative: card.narrative +
+            " This requires attention and corrective action." +
+            (card.bottom3.length > 0 ? ` Underperformers: ${card.bottom3.map((t) => t.name).join(", ")}.` : ""),
+        }));
       default:
         return narratives;
     }
@@ -1011,24 +1200,9 @@ export function ReportsContent() {
           <BudgetVarianceTab />
         </TabsContent>
 
-        {/* ---- Custom Reports ---- */}
+        {/* ---- Custom Reports (FR2.5) ---- */}
         <TabsContent value="custom">
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-20">
-              <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-muted">
-                <FileText className="size-7 text-muted-foreground" />
-              </div>
-              <h3 className="text-base font-medium">Custom Reports</h3>
-              <p className="mt-1 max-w-sm text-center text-sm text-muted-foreground">
-                Coming Soon. Custom report builder with drag-and-drop KPI selection,
-                configurable layouts, and scheduled distribution will be available in the next
-                release.
-              </p>
-              <Badge variant="secondary" className="mt-4">
-                Q3 2025
-              </Badge>
-            </CardContent>
-          </Card>
+          <CustomReportBuilder />
         </TabsContent>
       </Tabs>
     </div>
