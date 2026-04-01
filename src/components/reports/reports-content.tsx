@@ -522,7 +522,9 @@ function BudgetVarianceTab() {
       setLoadingVariance(true);
       try {
         const eName = entities.find((e) => e.id === selectedEntity)?.name || selectedEntity;
-        const dateId = parseInt(selectedPeriod.replace("P", "").replace("_", ""));
+        // Build correct Date_ID: YYYYPP format (e.g., 202506 for FY2025 P06)
+        const periodNum = selectedPeriod.match(/P(\d+)/)?.[1] || "06";
+        const dateId = parseInt(`${selectedYear}${periodNum.padStart(2, "0")}`);
         const res = await fetch("/api/reports", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -543,7 +545,7 @@ function BudgetVarianceTab() {
     }
     fetchVariance();
     return () => { cancelled = true; };
-  }, [selectedEntity, selectedPeriod, entities]);
+  }, [selectedEntity, selectedPeriod, selectedYear, entities]);
 
   const entityMap = useMemo(() => {
     const map: Record<string, string> = {};
