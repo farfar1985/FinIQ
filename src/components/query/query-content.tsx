@@ -61,6 +61,7 @@ interface Message {
   content: string;
   timestamp: Date;
   data?: StructuredData;
+  jobPrompt?: string; // Original query to offer as job submission
 }
 
 // ---------------------------------------------------------------------------
@@ -600,12 +601,22 @@ export function QueryContent() {
 
         const json = await res.json();
 
+        const responseText: string = json.text ?? "Sorry, I could not process that query.";
+
+        // Detect no-data / error responses to offer job board fallback
+        const noData = !json.data
+          || (json.data?.rows && json.data.rows.length === 0)
+          || /no data found|could not process|error|please check/i.test(responseText);
+
         const assistantMsg: Message = {
           id: `a-${Date.now()}`,
           role: "assistant",
-          content: json.text ?? "Sorry, I could not process that query.",
+          content: noData
+            ? `${responseText}\n\nWould you like to submit this as a job to the Job Board? An agent will process it asynchronously.`
+            : responseText,
           timestamp: new Date(),
           data: json.data,
+          jobPrompt: noData ? text : undefined,
         };
 
         setMessages((prev) => {
@@ -747,6 +758,38 @@ export function QueryContent() {
                             source={dataMode === "real" ? "Databricks" : "Simulated Data"}
                           />
                         </div>
+                      )}
+
+                      {/* Job Board fallback button */}
+                      {msg.jobPrompt && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="mt-2 text-xs"
+                          onClick={async () => {
+                            try {
+                              const res = await fetch("/api/jobs", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ query: msg.jobPrompt, priority: "medium" }),
+                              });
+                              if (res.ok) {
+                                const job = await res.json();
+                                const confirmMsg: Message = {
+                                  id: `j-${Date.now()}`,
+                                  role: "assistant",
+                                  content: `Job submitted (${job.job?.id || "queued"}). You can track it on the Job Board.`,
+                                  timestamp: new Date(),
+                                };
+                                setMessages((prev) => [...prev, confirmMsg]);
+                              }
+                            } catch {
+                              // ignore
+                            }
+                          }}
+                        >
+                          <Play className="mr-1 h-3 w-3" /> Submit to Job Board
+                        </Button>
                       )}
 
                       <p

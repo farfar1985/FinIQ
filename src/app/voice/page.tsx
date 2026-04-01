@@ -14,10 +14,12 @@ interface Transcript {
   timestamp: number;
 }
 
-const VOICE_WS_URL =
-  typeof window !== "undefined"
-    ? `ws://${window.location.hostname}:${process.env.NEXT_PUBLIC_VOICE_PORT || 3002}`
-    : "";
+function getVoiceWsUrl(): string {
+  if (typeof window === "undefined") return "";
+  const host = window.location.hostname || "localhost";
+  const port = process.env.NEXT_PUBLIC_VOICE_PORT || "3002";
+  return `ws://${host}:${port}`;
+}
 
 export default function VoicePage() {
   const [state, setState] = useState<ConnectionState>("disconnected");
@@ -53,10 +55,14 @@ export default function VoicePage() {
       streamRef.current = stream;
 
       const audioCtx = new AudioContext({ sampleRate: 24000 });
+      // Resume AudioContext (browsers require user gesture)
+      if (audioCtx.state === "suspended") {
+        await audioCtx.resume();
+      }
       audioContextRef.current = audioCtx;
 
       // Connect to voice WebSocket server
-      const ws = new WebSocket(VOICE_WS_URL);
+      const ws = new WebSocket(getVoiceWsUrl());
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -68,9 +74,14 @@ export default function VoicePage() {
         const processor = audioCtx.createScriptProcessor(4096, 1, 1);
         processorRef.current = processor;
 
+        let audioChunkCount = 0;
         processor.onaudioprocess = (e) => {
           if (ws.readyState !== WebSocket.OPEN || isMuted) return;
           const pcm = e.inputBuffer.getChannelData(0);
+          audioChunkCount++;
+          if (audioChunkCount % 50 === 1) {
+            console.log(`[voice] Audio chunk #${audioChunkCount}, max amplitude: ${Math.max(...Array.from(pcm).map(Math.abs)).toFixed(4)}`);
+          }
           // Convert Float32 → Int16 PCM → base64
           const int16 = new Int16Array(pcm.length);
           for (let i = 0; i < pcm.length; i++) {

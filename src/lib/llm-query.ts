@@ -117,6 +117,9 @@ const COMPETITOR_ALIASES: Record<string, string> = {
   unilever: "UL", "kraft heinz": "KHC", khc: "KHC",
   nsrgy: "NSRGY", oreo: "MDLZ", kitkat: "NSRGY",
   "kit kat": "NSRGY", nescafe: "NSRGY", purina: "NSRGY",
+  "coca cola": "KO", "coca-cola": "KO", coke: "KO",
+  pepsi: "PEP", pepsico: "PEP",
+  danone: "BN", "kellogg": "K", "campbell": "CPB",
 };
 
 // Short tickers that need word boundary checks to avoid false positives
@@ -157,6 +160,9 @@ export function isCIQuery(query: string): boolean {
 }
 
 export function classifyIntent(message: string): Intent {
+  // Check for competitor mentions first — always route to CI
+  if (isCIQuery(message)) return "ci";
+
   const lower = message.toLowerCase();
   for (const [intent, keywords] of Object.entries(INTENT_KEYWORDS)) {
     if (keywords.some((kw) => lower.includes(kw))) {
