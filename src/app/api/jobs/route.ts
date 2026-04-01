@@ -14,7 +14,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { processLLMQuery } from "@/lib/llm-query";
-import { broadcastEvent } from "@/app/api/events/route";
+import { broadcastEvent } from "@/lib/sse-broadcast";
 
 // ============================================================
 // Types & Constants

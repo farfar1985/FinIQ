@@ -43,10 +43,17 @@ export interface StructuredData {
   chartType?: "area" | "bar";
 }
 
+export interface FollowUpSuggestion {
+  label: string;
+  query: string;
+}
+
 export interface QueryResponse {
   text: string;
   intent: string;
   data?: StructuredData;
+  followUps?: FollowUpSuggestion[];
+  isFollowUp?: boolean; // True if this was a chart/table toggle on existing data
 }
 
 // ---------------------------------------------------------------------------
@@ -180,41 +187,134 @@ const ENTITY_MAP: Record<string, string> = {
   "mars inc": "MARS",
   "mars incorporated": "MARS",
   corporate: "MARS",
+  "all gbus": "ALL_GBUS",
+  "across gbus": "ALL_GBUS",
+  "each gbu": "ALL_GBUS",
+  "every gbu": "ALL_GBUS",
+  // GBUs — multiple aliases for fuzzy matching
   petcare: "GBU_PET",
   "mars petcare": "GBU_PET",
   "pet care": "GBU_PET",
+  "pet nutrition": "GBU_PET",
   snacking: "GBU_SNK",
   "mars snacking": "GBU_SNK",
   "food & nutrition": "GBU_FN",
   "food and nutrition": "GBU_FN",
+  "fn": "GBU_FN",
+  "f&n": "GBU_FN",
   "mars wrigley": "GBU_MW",
   wrigley: "GBU_MW",
+  "mw": "GBU_MW",
+  // Divisions
   "chocolate na": "SUB_SNK_CHOC",
+  "chocolate north america": "SUB_SNK_CHOC",
   "royal canin": "SUB_PET_ROYAL",
+  "rc": "SUB_PET_ROYAL",
   "ben's original": "SUB_FN_RICE",
+  "bens original": "SUB_FN_RICE",
   "gum & mints": "SUB_MW_GUM",
+  "gum and mints": "SUB_MW_GUM",
   "petcare na": "DIV_PET_NA",
   "petcare north america": "DIV_PET_NA",
   "petcare europe": "DIV_PET_EU",
   "snacking na": "DIV_SNK_NA",
+  "snacking north america": "DIV_SNK_NA",
   "snacking europe": "DIV_SNK_EU",
   "wrigley international": "DIV_MW_INTL",
+  "wrigley intl": "DIV_MW_INTL",
   "wrigley na": "DIV_MW_NA",
+  "wrigley north america": "DIV_MW_NA",
+  // Common informal names that users type
+  "global corporate": "MARS",
+  "mars global": "MARS",
+  "mars vet health": "DIV_PET_VET",
+  "mvh": "DIV_PET_VET",
+  "science & diagnostics": "DIV_PET_DIAG",
+  "hotel chocolat": "SUB_SNK_HC",
+  "kellanova": "SUB_SNK_KELL",
 };
+
+// ---------------------------------------------------------------------------
+// Fuzzy entity matching — Levenshtein distance for typos and near-misses
+// ---------------------------------------------------------------------------
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+  }
+  return dp[m][n];
+}
+
+function fuzzyMatchEntity(query: string): string | null {
+  const q = query.toLowerCase();
+  const aliases = Object.keys(ENTITY_MAP);
+
+  // First try exact substring match (sorted by length desc for longest match)
+  const sorted = aliases.sort((a, b) => b.length - a.length);
+  for (const alias of sorted) {
+    if (q.includes(alias)) return ENTITY_MAP[alias];
+  }
+
+  // Then try fuzzy match: extract candidate words/phrases from query
+  // and compare against aliases
+  const words = q.split(/\s+/);
+  let bestMatch: string | null = null;
+  let bestScore = Infinity;
+  const threshold = 2; // Max Levenshtein distance for a match
+
+  for (const alias of aliases) {
+    // Skip very short aliases for fuzzy (too many false positives)
+    if (alias.length < 4) continue;
+
+    // Try matching against sliding windows of query words
+    const aliasWords = alias.split(/\s+/);
+    for (let i = 0; i <= words.length - aliasWords.length; i++) {
+      const candidate = words.slice(i, i + aliasWords.length).join(" ");
+      const dist = levenshtein(candidate, alias);
+      if (dist <= threshold && dist < bestScore) {
+        bestScore = dist;
+        bestMatch = ENTITY_MAP[alias];
+      }
+    }
+
+    // Also try each individual word against single-word aliases
+    if (aliasWords.length === 1) {
+      for (const word of words) {
+        const dist = levenshtein(word, alias);
+        if (dist <= threshold && dist < bestScore) {
+          bestScore = dist;
+          bestMatch = ENTITY_MAP[alias];
+        }
+      }
+    }
+  }
+
+  return bestMatch;
+}
 
 function extractEntity(
   query: string,
   contextEntity?: string
 ): string | null {
-  const q = query.toLowerCase();
-  // Sort by length descending so "mars petcare" matches before "petcare"
-  const sorted = Object.entries(ENTITY_MAP).sort(
-    (a, b) => b[0].length - a[0].length
-  );
-  for (const [alias, id] of sorted) {
-    if (q.includes(alias)) return id;
-  }
-  if (/\b(all gbus?|across gbus?|each gbu|every gbu)\b/.test(q)) return "ALL_GBUS";
+  // Try exact + fuzzy matching
+  const matched = fuzzyMatchEntity(query);
+  if (matched) return matched;
+
+  // Check "all GBUs" pattern
+  if (/\b(all gbus?|across gbus?|each gbu|every gbu)\b/.test(query.toLowerCase())) return "ALL_GBUS";
+
+  // Fall back to context from previous turns
   return contextEntity ?? null;
 }
 
@@ -587,18 +687,68 @@ async function handlePES(
 
 async function handleVariance(
   entityId: string,
+  query: string,
   entities: Entity[],
   accounts: Account[],
-  replanData: ReplanRow[]
+  replanData: ReplanRow[],
+  contextPeriod?: string
 ): Promise<QueryResponse> {
   const eName = entityName(entities, entityId);
 
-  const rows = replanData.filter(
-    (r) => r.entity_id === entityId && r.date_id === "P06_2025"
+  // Extract period from query or use context, fallback to latest available
+  const periodMatch = query.match(/\b[pP](0?[1-9]|1[0-3])\b/);
+  const quarterMatch = query.match(/\b[qQ]([1-4])\b/);
+  let targetPeriods: string[] = [];
+
+  if (periodMatch) {
+    const pNum = periodMatch[1].padStart(2, "0");
+    targetPeriods = [`P${pNum}_2025`];
+  } else if (quarterMatch) {
+    const q = parseInt(quarterMatch[1]);
+    const periodMap: Record<number, string[]> = {
+      1: ["P01_2025", "P02_2025", "P03_2025"],
+      2: ["P04_2025", "P05_2025", "P06_2025"],
+      3: ["P07_2025", "P08_2025", "P09_2025"],
+      4: ["P10_2025", "P11_2025", "P12_2025"],
+    };
+    targetPeriods = periodMap[q] || ["P06_2025"];
+  } else if (contextPeriod) {
+    const pMatch = contextPeriod.match(/P(\d+)/i);
+    if (pMatch) {
+      const pNum = pMatch[1].padStart(2, "0");
+      targetPeriods = [`P${pNum}_2025`];
+    }
+  }
+
+  // If no period detected, find the latest period with data for this entity
+  if (targetPeriods.length === 0) {
+    const entityRows = replanData.filter((r) => r.entity_id === entityId);
+    if (entityRows.length > 0) {
+      const latestPeriod = entityRows
+        .map((r) => r.date_id)
+        .sort()
+        .pop()!;
+      targetPeriods = [latestPeriod];
+    } else {
+      targetPeriods = ["P06_2025"];
+    }
+  }
+
+  // Also try parent entity if no rows found (handle "all GBUs" or corporate roll-up)
+  let rows = replanData.filter(
+    (r) => r.entity_id === entityId && targetPeriods.includes(r.date_id)
   );
 
+  // If "ALL_GBUS", aggregate across all GBU entities
+  if (entityId === "ALL_GBUS" && rows.length === 0) {
+    const gbuEntities = entities.filter((e) => e.level === "GBU");
+    rows = replanData.filter(
+      (r) => gbuEntities.some((g) => g.id === r.entity_id) && targetPeriods.includes(r.date_id)
+    );
+  }
+
   if (rows.length === 0) {
-    return { text: `No replan data found for ${eName}.`, intent: "variance" };
+    return { text: `No replan data found for ${eName} in ${targetPeriods.join(", ")}. Try specifying a different period (e.g., "budget variance for Petcare in P06").`, intent: "variance" };
   }
 
   // Sort by absolute variance descending, take top 10
@@ -1000,10 +1150,168 @@ async function handleAdhoc(
 // Main entry point
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Follow-up detection — identifies "show as chart", "as table", etc.
+// ---------------------------------------------------------------------------
+
+const CHART_FOLLOW_UP_PATTERNS = [
+  /\b(show|display|render|view|see)\s+(it\s+)?(as\s+)?(a\s+)?(chart|graph|plot|visual)/i,
+  /\b(chart|graph|plot|visuali[sz]e)\s+(this|that|it|the data|these)/i,
+  /\bcan\s+you\s+(chart|graph|plot|visuali[sz]e)/i,
+  /\b(make|turn)\s+(it|this|that)\s+into\s+a?\s*(chart|graph)/i,
+  /\b(bar|area|line)\s*chart/i,
+];
+
+const TABLE_FOLLOW_UP_PATTERNS = [
+  /\b(show|display|render|view|see)\s+(it\s+)?(as\s+)?(a\s+)?table/i,
+  /\b(table|tabular)\s+(view|format)/i,
+  /\bshow\s+(the\s+)?data/i,
+];
+
+function isChartFollowUp(query: string): boolean {
+  return CHART_FOLLOW_UP_PATTERNS.some((p) => p.test(query));
+}
+
+function isTableFollowUp(query: string): boolean {
+  return TABLE_FOLLOW_UP_PATTERNS.some((p) => p.test(query));
+}
+
+// ---------------------------------------------------------------------------
+// Context-aware follow-up suggestions
+// ---------------------------------------------------------------------------
+
+function generateFollowUps(
+  intent: Intent,
+  entityId: string,
+  entityName: string,
+  hasChart: boolean,
+  hasTable: boolean,
+): FollowUpSuggestion[] {
+  const suggestions: FollowUpSuggestion[] = [];
+
+  // Toggle view type
+  if (hasChart) {
+    suggestions.push({ label: "Show as table", query: "Show this as a table" });
+  } else if (hasTable) {
+    suggestions.push({ label: "Show as chart", query: "Show this as a chart" });
+  }
+
+  // Intent-specific follow-ups
+  switch (intent) {
+    case "pes":
+      suggestions.push(
+        { label: "What's working well?", query: `What's working well for ${entityName}?` },
+        { label: "Show trend", query: `Show organic growth trend for ${entityName} over time` },
+        { label: "Compare GBUs", query: "Compare MAC Shape across all GBUs" },
+      );
+      break;
+    case "variance":
+      suggestions.push(
+        { label: "Top variances", query: `Which accounts have the largest unfavorable variance for ${entityName}?` },
+        { label: "Show trend", query: `Show budget variance trend for ${entityName}` },
+        { label: "Three-way comparison", query: `Compare ${entityName} actual vs replan vs forecast` },
+      );
+      break;
+    case "trend":
+      suggestions.push(
+        { label: "Show rankings", query: `Rank all entities by this metric` },
+        { label: "Budget variance", query: `Show budget variance for ${entityName}` },
+        { label: "Full PES report", query: `Generate period end summary for ${entityName}` },
+      );
+      break;
+    case "ranking":
+      suggestions.push(
+        { label: "Show as trend", query: `Show this metric as a trend over time` },
+        { label: "Drill into top performer", query: `Show details for the top ranked entity` },
+      );
+      break;
+    case "product":
+      suggestions.push(
+        { label: "Show trends", query: `Show revenue trend for ${entityName} over time` },
+        { label: "Compare margins", query: `Compare MAC Shape for ${entityName} segments` },
+      );
+      break;
+    case "ci":
+      suggestions.push(
+        { label: "SWOT analysis", query: "Show SWOT analysis" },
+        { label: "Porter's Five Forces", query: "Show Porter's Five Forces" },
+      );
+      break;
+    default:
+      suggestions.push(
+        { label: "Show PES summary", query: `Generate period end summary for ${entityName}` },
+        { label: "Budget variance", query: `Show budget variance for ${entityName}` },
+        { label: "Organic growth trend", query: `Show organic growth trend for ${entityName}` },
+      );
+  }
+
+  // Export option
+  suggestions.push({ label: "Export to XLSX", query: "Export this to spreadsheet" });
+
+  return suggestions.slice(0, 4); // Max 4 follow-up chips
+}
+
+// ---------------------------------------------------------------------------
+// Main entry point
+// ---------------------------------------------------------------------------
+
 export async function processLLMQuery(
   query: string,
-  context?: { entity?: string; period?: string }
+  context?: { entity?: string; period?: string },
+  lastResponseData?: StructuredData
 ): Promise<QueryResponse> {
+  // Check if this is a chart/table follow-up on existing data
+  if (lastResponseData) {
+    if (isChartFollowUp(query) && lastResponseData.rows && lastResponseData.rows.length > 0) {
+      // Re-render existing data as chart
+      const chartData = lastResponseData.chartData ?? lastResponseData.rows.slice(0, 15).map((r) => {
+        const keys = Object.keys(r);
+        const labelKey = keys[0];
+        const valueKey = keys.find((k) => typeof r[k] === "number" || /^\$?-?[\d,.]+[BMK%]?$/.test(String(r[k] ?? "")));
+        const value = valueKey ? parseFloat(String(r[valueKey]).replace(/[^0-9.\-]/g, "")) : 0;
+        return { label: String(r[labelKey] ?? ""), value };
+      });
+
+      // Detect preferred chart type from query
+      const preferBar = /\bbar\b/i.test(query);
+      const preferArea = /\b(area|line)\b/i.test(query);
+      const chartType = preferBar ? "bar" as const : preferArea ? "area" as const : "bar" as const;
+
+      return {
+        text: "Here's the data visualized as a chart:",
+        intent: "follow-up",
+        isFollowUp: true,
+        data: {
+          type: "chart",
+          chartType,
+          chartData,
+          columns: lastResponseData.columns,
+          rows: lastResponseData.rows,
+        },
+      };
+    }
+
+    if (isTableFollowUp(query) && lastResponseData.chartData && lastResponseData.chartData.length > 0) {
+      // Re-render existing chart data as table
+      const rows = lastResponseData.rows ?? lastResponseData.chartData.map((d) => ({
+        Name: d.label,
+        Value: d.value,
+      }));
+      const columns = lastResponseData.columns ?? ["Name", "Value"];
+
+      return {
+        text: "Here's the data in table format:",
+        intent: "follow-up",
+        isFollowUp: true,
+        data: {
+          type: "table",
+          columns,
+          rows,
+        },
+      };
+    }
+  }
+
   const intent = classifyIntent(query);
   const entities = generateEntities();
   const accounts = generateAccounts();
@@ -1011,31 +1319,42 @@ export async function processLLMQuery(
   const replanData = generateReplanData();
 
   const entityId = extractEntity(query, context?.entity) ?? "MARS";
+  const eName = entityName(entities, entityId);
+
+  let result: QueryResponse;
 
   switch (intent) {
     case "ci":
-      return handleCI();
-
+      result = await handleCI();
+      break;
     case "pes":
-      return handlePES(entityId, query, entities, accounts, financialData);
-
+      result = await handlePES(entityId, query, entities, accounts, financialData);
+      break;
     case "variance":
-      return handleVariance(entityId, entities, accounts, replanData);
-
+      result = await handleVariance(entityId, query, entities, accounts, replanData, context?.period);
+      break;
     case "forecast":
-      return handleForecast(entityId, entities, accounts, replanData);
-
+      result = await handleForecast(entityId, entities, accounts, replanData);
+      break;
     case "product":
-      return handleProduct(entityId, query, entities, accounts, financialData);
-
+      result = await handleProduct(entityId, query, entities, accounts, financialData);
+      break;
     case "trend":
-      return handleTrend(entityId, query, entities, accounts, financialData);
-
+      result = await handleTrend(entityId, query, entities, accounts, financialData);
+      break;
     case "ranking":
-      return handleRanking(query, entities, accounts, financialData);
-
+      result = await handleRanking(query, entities, accounts, financialData);
+      break;
     case "adhoc":
     default:
-      return handleAdhoc(query, entityId, entities, accounts, financialData);
+      result = await handleAdhoc(query, entityId, entities, accounts, financialData);
+      break;
   }
+
+  // Add contextual follow-up suggestions
+  const hasChart = !!result.data?.chartData && result.data.chartData.length > 0;
+  const hasTable = !!result.data?.rows && result.data.rows.length > 0;
+  result.followUps = generateFollowUps(intent, entityId, eName, hasChart, hasTable);
+
+  return result;
 }

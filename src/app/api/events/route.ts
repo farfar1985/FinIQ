@@ -3,48 +3,16 @@
  *
  * GET /api/events — Returns an SSE stream that broadcasts job state changes.
  *
- * Other API routes call broadcastEvent() to push updates to all connected
- * clients. Events include: job:created, job:updated, job:completed, job:failed.
+ * Other API routes call broadcastEvent() from @/lib/sse-broadcast to push
+ * updates to all connected clients.
  */
 
 import { NextResponse } from "next/server";
+import { controllers, encoder } from "@/lib/sse-broadcast";
 
-// ---------------------------------------------------------------------------
-// SSE broadcaster — global so other routes can import broadcastEvent
-// ---------------------------------------------------------------------------
-
-type SSEController = ReadableStreamDefaultController<Uint8Array>;
-
-const g = globalThis as unknown as {
-  __finiq_sse_controllers?: Set<SSEController>;
-};
-if (!g.__finiq_sse_controllers) {
-  g.__finiq_sse_controllers = new Set<SSEController>();
-}
-const controllers: Set<SSEController> = g.__finiq_sse_controllers;
-
-const encoder = new TextEncoder();
-
-/**
- * Broadcast an event to all connected SSE clients.
- * Call this from other API routes (e.g., jobs) when state changes.
- */
-export function broadcastEvent(
-  type: string,
-  data: Record<string, unknown>
-): void {
-  const payload = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
-  const encoded = encoder.encode(payload);
-
-  for (const controller of controllers) {
-    try {
-      controller.enqueue(encoded);
-    } catch {
-      // Client disconnected — remove on next cleanup
-      controllers.delete(controller);
-    }
-  }
-}
+// Re-export broadcastEvent for backward compatibility — but note:
+// Next.js route files should only export HTTP methods. Other routes
+// should import directly from "@/lib/sse-broadcast".
 
 // ---------------------------------------------------------------------------
 // GET /api/events — SSE endpoint
@@ -64,7 +32,9 @@ export async function GET() {
       controller.enqueue(encoder.encode(welcome));
     },
     cancel(controller) {
-      controllers.delete(controller as SSEController);
+      controllers.delete(
+        controller as ReadableStreamDefaultController<Uint8Array>
+      );
     },
   });
 

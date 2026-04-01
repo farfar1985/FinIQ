@@ -71,39 +71,151 @@ export function isConfigured(): boolean {
 
 function fqn(table: string): string {
   const cfg = getActiveConfig();
-  return `\`${cfg.catalog}\`.\`${cfg.schema}\`.\`${table}\``;
+  return `${cfg.catalog}.${cfg.schema}.${table}`;
+}
+
+// ---- Warehouse auto-start -------------------------------------------------
+
+async function ensureWarehouseRunning(): Promise<void> {
+  const cfg = getActiveConfig();
+  if (!cfg.host || !cfg.token) return;
+
+  const warehouseId = cfg.httpPath.split("/").pop();
+  if (!warehouseId) return;
+
+  try {
+    // Check warehouse state
+    const statusRes = await fetch(
+      `https://${cfg.host}/api/2.0/sql/warehouses/${warehouseId}`,
+      { headers: { Authorization: `Bearer ${cfg.token}` } }
+    );
+    if (!statusRes.ok) return;
+    const status = await statusRes.json();
+
+    if (status.state === "RUNNING") return;
+
+    // Start the warehouse
+    console.log(`[Databricks] Warehouse is ${status.state}, starting...`);
+    await fetch(
+      `https://${cfg.host}/api/2.0/sql/warehouses/${warehouseId}/start`,
+      { method: "POST", headers: { Authorization: `Bearer ${cfg.token}` } }
+    );
+
+    // Wait for it to be running (poll every 5s, max 90s)
+    for (let i = 0; i < 18; i++) {
+      await new Promise((r) => setTimeout(r, 5000));
+      const checkRes = await fetch(
+        `https://${cfg.host}/api/2.0/sql/warehouses/${warehouseId}`,
+        { headers: { Authorization: `Bearer ${cfg.token}` } }
+      );
+      if (!checkRes.ok) continue;
+      const check = await checkRes.json();
+      if (check.state === "RUNNING") {
+        console.log(`[Databricks] Warehouse is RUNNING (took ~${(i + 1) * 5}s)`);
+        return;
+      }
+      console.log(`[Databricks] Warehouse state: ${check.state}, waiting...`);
+    }
+    console.warn("[Databricks] Warehouse did not start within 90s");
+  } catch (err) {
+    console.warn("[Databricks] Could not check/start warehouse:", err);
+  }
 }
 
 // ---- Shared Databricks execution helper -----------------------------------
+// Uses the SQL Statements REST API (reliable) instead of the SDK (gets 404s).
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function executeQuery<T = Record<string, any>>(
   sql: string,
 ): Promise<T[]> {
   const cfg = getActiveConfig();
-  const { DBSQLClient } = await import("@databricks/sql");
-  const client = new DBSQLClient();
-  await client.connect({
-    host: cfg.host,
-    path: cfg.httpPath,
-    token: cfg.token,
-  });
-  try {
-    const session = await client.openSession();
-    try {
-      const operation = await session.executeStatement(sql, {
-        runAsync: true,
-        maxRows: 10000,
-      });
-      const rows = (await operation.fetchAll()) as T[];
-      await operation.close();
-      return rows;
-    } finally {
-      await session.close();
-    }
-  } finally {
-    await client.close();
+  const warehouseId = cfg.httpPath.split("/").pop();
+  if (!warehouseId || !cfg.host || !cfg.token) {
+    throw new Error("Databricks not configured");
   }
+
+  // Ensure warehouse is running
+  await ensureWarehouseRunning();
+
+  // Use SQL Statements REST API — proven reliable
+  console.log(`[Databricks SQL] ${sql.substring(0, 200)}...`);
+  const res = await fetch(
+    `https://${cfg.host}/api/2.0/sql/statements`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${cfg.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        warehouse_id: warehouseId,
+        statement: sql,
+        wait_timeout: "50s",
+        disposition: "INLINE",
+        format: "JSON_ARRAY",
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`Databricks API returned ${res.status}: ${res.statusText} — ${errBody.substring(0, 300)}`);
+  }
+
+  let data = await res.json();
+
+  if (data.status?.state === "FAILED") {
+    throw new Error(`SQL failed: ${data.status?.error?.message || "Unknown error"}`);
+  }
+
+  // Poll for PENDING/RUNNING queries (warehouse may need time for large scans)
+  if (data.status?.state === "PENDING" || data.status?.state === "RUNNING") {
+    const statementId = data.statement_id;
+    if (!statementId) return [];
+
+    for (let poll = 0; poll < 24; poll++) { // Poll up to 120s (24 * 5s)
+      await new Promise((r) => setTimeout(r, 5000));
+      const pollRes = await fetch(
+        `https://${cfg.host}/api/2.0/sql/statements/${statementId}`,
+        { headers: { Authorization: `Bearer ${cfg.token}` } }
+      );
+      if (!pollRes.ok) continue;
+      data = await pollRes.json();
+      console.log(`[Databricks] Poll ${poll + 1}: ${data.status?.state}`);
+      if (data.status?.state === "SUCCEEDED") break;
+      if (data.status?.state === "FAILED") {
+        throw new Error(`SQL failed: ${data.status?.error?.message || "Unknown"}`);
+      }
+    }
+    if (data.status?.state !== "SUCCEEDED") {
+      console.warn(`[Databricks] Query timed out in state: ${data.status?.state}`);
+      return [];
+    }
+  }
+
+  if (data.status?.state !== "SUCCEEDED") {
+    console.warn(`[Databricks] Unexpected state: ${data.status?.state}`);
+    return [];
+  }
+
+  // Parse result: columns + data_array → array of objects
+  const columns: { name: string }[] = data.manifest?.schema?.columns || [];
+  const rows: unknown[][] = data.result?.data_array || [];
+
+  return rows.map((row) => {
+    const obj: Record<string, unknown> = {};
+    for (let i = 0; i < columns.length; i++) {
+      const val = row[i];
+      // Try to parse numbers
+      if (val !== null && val !== undefined && val !== "" && !isNaN(Number(val))) {
+        obj[columns[i].name] = Number(val);
+      } else {
+        obj[columns[i].name] = val;
+      }
+    }
+    return obj as T;
+  });
 }
 
 /** Execute a raw SQL query (exported for API routes). Only works in real mode. */

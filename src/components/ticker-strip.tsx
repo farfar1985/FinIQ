@@ -41,7 +41,14 @@ function generateSimulatedTickers(): TickerData[] {
 
 export function TickerStrip() {
   const sidebarExpanded = useUIStore((state) => state.sidebarExpanded);
-  const [tickers, setTickers] = useState<TickerData[]>(generateSimulatedTickers);
+  const [tickers, setTickers] = useState<TickerData[]>([]);
+  const [mounted, setMounted] = useState(false);
+
+  // Set simulated data only after mount to avoid hydration mismatch
+  useEffect(() => {
+    setMounted(true);
+    setTickers(generateSimulatedTickers());
+  }, []);
   const [isLive, setIsLive] = useState(false);
 
   // Fetch from FMP dashboard endpoint on mount, fall back to simulated

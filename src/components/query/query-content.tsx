@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Loader2, ChevronDown, ChevronRight, Play, Hash, Undo2, Redo2 } from "lucide-react";
+import { Send, Loader2, ChevronDown, ChevronRight, Play, Hash, Undo2, Redo2, BarChart3, TableIcon, Download, TrendingUp, ArrowRight } from "lucide-react";
 import {
   type UndoRedoState,
   createUndoRedoState,
@@ -55,6 +55,11 @@ interface StructuredData {
   chartType?: "area" | "bar";
 }
 
+interface FollowUpSuggestion {
+  label: string;
+  query: string;
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -62,6 +67,7 @@ interface Message {
   timestamp: Date;
   data?: StructuredData;
   jobPrompt?: string; // Original query to offer as job submission
+  followUps?: FollowUpSuggestion[];
 }
 
 // ---------------------------------------------------------------------------
@@ -589,6 +595,10 @@ export function QueryContent() {
           content: m.content,
         }));
 
+        // Find the last assistant message's data for follow-up re-rendering
+        const lastAssistant = [...updatedMessages].reverse().find((m) => m.role === "assistant");
+        const lastResponseData = lastAssistant?.data ?? undefined;
+
         const res = await fetch("/api/query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -596,6 +606,7 @@ export function QueryContent() {
             query: text,
             context: { entity: ctx.entity, period: ctx.period },
             history,
+            lastResponseData,
           }),
         });
 
@@ -617,6 +628,7 @@ export function QueryContent() {
           timestamp: new Date(),
           data: json.data,
           jobPrompt: noData ? text : undefined,
+          followUps: json.followUps ?? undefined,
         };
 
         setMessages((prev) => {
@@ -676,7 +688,10 @@ export function QueryContent() {
             style={{ minHeight: "calc(100vh - 180px)" }}
           >
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Amira Assistant</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <span className="inline-flex h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                Amira Assistant
+              </CardTitle>
               <div className="flex gap-1">
                 <Button
                   variant="outline"
@@ -708,20 +723,36 @@ export function QueryContent() {
                 style={{ maxHeight: "calc(100vh - 380px)" }}
               >
                 {messages.length === 0 && (
-                  <div className="flex h-full items-center justify-center">
-                    <p className="text-sm text-muted-foreground">
-                      Ask a question about financial data, metrics, or
-                      forecasts to get started.
-                    </p>
+                  <div className="flex h-full flex-col items-center justify-center gap-4">
+                    <div className="text-center">
+                      <h3 className="text-lg font-semibold text-foreground mb-1">Hi, I&apos;m Amira</h3>
+                      <p className="text-sm text-muted-foreground max-w-md">
+                        Your AI financial analyst. Ask me about P&amp;L performance,
+                        budget variances, organic growth, or any Mars financial data.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 justify-center max-w-lg">
+                      {SUGGESTED_QUERIES.map((q) => (
+                        <button
+                          key={q}
+                          onClick={() => handleChipClick(q)}
+                          disabled={isLoading}
+                          className="rounded-full border border-foreground/10 bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground transition-all hover:bg-blue-500/10 hover:border-blue-500/30 hover:text-blue-400 disabled:opacity-50"
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 
-                {messages.map((msg) => (
+                {messages.map((msg, idx) => (
                   <div
                     key={msg.id}
                     className={`flex ${
                       msg.role === "user" ? "justify-end" : "justify-start"
-                    }`}
+                    } animate-in fade-in slide-in-from-bottom-2 duration-300`}
+                    style={{ animationDelay: `${Math.min(idx * 50, 200)}ms` }}
                   >
                     <div
                       className={`rounded-xl px-3 py-2 text-sm ${
@@ -805,35 +836,76 @@ export function QueryContent() {
                         })}
                       </p>
                     </div>
+
+                    {/* Follow-up suggestion chips — only on the last assistant message */}
+                    {msg.role === "assistant" &&
+                      msg.followUps &&
+                      msg.followUps.length > 0 &&
+                      idx === messages.length - 1 &&
+                      !isLoading && (
+                        <div className="mt-0 ml-0" />
+                      )}
                   </div>
                 ))}
 
-                {/* Loading indicator */}
+                {/* Follow-up chips below the last assistant message */}
+                {!isLoading && messages.length > 0 && messages[messages.length - 1]?.role === "assistant" && messages[messages.length - 1]?.followUps && (
+                  <div className="flex flex-wrap gap-1.5 pl-1 animate-in fade-in slide-in-from-bottom-1 duration-500" style={{ animationDelay: "200ms" }}>
+                    {messages[messages.length - 1].followUps!.map((fu, i) => {
+                      // Pick icon based on label
+                      const icon = fu.label.toLowerCase().includes("chart") ? <BarChart3 className="mr-1 h-3 w-3" />
+                        : fu.label.toLowerCase().includes("table") ? <TableIcon className="mr-1 h-3 w-3" />
+                        : fu.label.toLowerCase().includes("export") ? <Download className="mr-1 h-3 w-3" />
+                        : fu.label.toLowerCase().includes("trend") ? <TrendingUp className="mr-1 h-3 w-3" />
+                        : <ArrowRight className="mr-1 h-3 w-3" />;
+
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => handleSend(fu.query)}
+                          disabled={isLoading}
+                          className="flex items-center rounded-full border border-blue-500/20 bg-blue-500/5 px-3 py-1.5 text-xs text-blue-400 transition-all hover:bg-blue-500/15 hover:border-blue-500/40 hover:text-blue-300 disabled:opacity-50"
+                        >
+                          {icon}
+                          {fu.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Typing indicator — animated dots like human chat */}
                 {isLoading && (
-                  <div className="flex justify-start">
-                    <div className="flex items-center gap-2 rounded-xl bg-muted/70 px-3 py-2 text-sm ring-1 ring-foreground/5">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                      <span className="text-muted-foreground">
-                        Analyzing...
+                  <div className="flex justify-start animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <div className="flex items-center gap-2 rounded-xl bg-muted/70 px-4 py-3 text-sm ring-1 ring-foreground/5">
+                      <div className="flex items-center gap-1">
+                        <span className="inline-block h-2 w-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: "0ms" }} />
+                        <span className="inline-block h-2 w-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: "150ms" }} />
+                        <span className="inline-block h-2 w-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+                      </div>
+                      <span className="text-muted-foreground text-xs ml-1">
+                        Amira is thinking...
                       </span>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Suggested chips (CR-034: auto-submit on click) */}
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {SUGGESTED_QUERIES.map((q) => (
-                  <button
-                    key={q}
-                    onClick={() => handleChipClick(q)}
-                    disabled={isLoading}
-                    className="rounded-full border border-foreground/10 bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
+              {/* Suggested chips — only show when no messages yet */}
+              {messages.length > 0 && messages.length < 3 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {SUGGESTED_QUERIES.map((q) => (
+                    <button
+                      key={q}
+                      onClick={() => handleChipClick(q)}
+                      disabled={isLoading}
+                      className="rounded-full border border-foreground/10 bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Input */}
               <div className="mt-2 flex gap-2">

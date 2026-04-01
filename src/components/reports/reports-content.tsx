@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import {
   FileText,
   TrendingUp,
@@ -478,12 +478,44 @@ function KPIDataTable({
 // ---------------------------------------------------------------------------
 
 function BudgetVarianceTab() {
-  const replanData = useMemo(() => generateReplanData(), []);
+  const replanDataSim = useMemo(() => generateReplanData(), []);
   const entities = useMemo(() => generateEntities(), []);
   const accounts = useMemo(() => generateAccounts(), []);
 
   const [selectedEntity, setSelectedEntity] = useState("MARS");
   const [selectedPeriod, setSelectedPeriod] = useState("P06_2025");
+  const [realVariance, setRealVariance] = useState<Record<string, unknown>[] | null>(null);
+  const [loadingVariance, setLoadingVariance] = useState(false);
+
+  // Fetch real variance data when entity/period changes
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchVariance() {
+      setLoadingVariance(true);
+      try {
+        const eName = entities.find((e) => e.id === selectedEntity)?.name || selectedEntity;
+        const dateId = parseInt(selectedPeriod.replace("P", "").replace("_", ""));
+        const res = await fetch("/api/reports", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "variance", unitAlias: eName, dateId }),
+        });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (!cancelled && json.source === "databricks" && json.varianceData?.length > 0) {
+          setRealVariance(json.varianceData);
+        } else {
+          setRealVariance(null);
+        }
+      } catch {
+        setRealVariance(null);
+      } finally {
+        if (!cancelled) setLoadingVariance(false);
+      }
+    }
+    fetchVariance();
+    return () => { cancelled = true; };
+  }, [selectedEntity, selectedPeriod, entities]);
 
   const entityMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -498,10 +530,25 @@ function BudgetVarianceTab() {
   }, [accounts]);
 
   const filtered = useMemo(() => {
-    return replanData.filter(
+    // If we have real data, map it to the expected shape
+    if (realVariance && realVariance.length > 0) {
+      return realVariance.map((r) => ({
+        entity_id: selectedEntity,
+        account_code: String(r.Reporting_Line_KPI || ""),
+        date_id: selectedPeriod,
+        actual_usd: (r.Actual_USD_Value as number) || 0,
+        replan_usd: (r.Replan_USD_Value as number) || 0,
+        variance: (r.Variance as number) || 0,
+        variance_pct: ((r.Replan_USD_Value as number) || 0) !== 0
+          ? (((r.Actual_USD_Value as number) || 0) - ((r.Replan_USD_Value as number) || 0)) / Math.abs((r.Replan_USD_Value as number)) * 100
+          : 0,
+      }));
+    }
+    // Fall back to simulated
+    return replanDataSim.filter(
       (r) => r.entity_id === selectedEntity && r.date_id === selectedPeriod
     );
-  }, [replanData, selectedEntity, selectedPeriod]);
+  }, [realVariance, replanDataSim, selectedEntity, selectedPeriod]);
 
   return (
     <div className="space-y-4">
@@ -622,8 +669,32 @@ function BudgetVarianceTab() {
 // ---------------------------------------------------------------------------
 
 export function ReportsContent() {
-  const entities = useMemo(() => generateEntities(), []);
-  const financialData = useMemo(() => generateFinancialData(), []);
+  const [entities, setEntities] = useState(() => generateEntities());
+  const [financialData, setFinancialData] = useState(() => generateFinancialData());
+  const [realEntities, setRealEntities] = useState<string[]>([]);
+
+  // Fetch real entity list from Databricks on mount
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchRealEntities() {
+      try {
+        const res = await fetch("/api/reports", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "entities", dateId: 202503 }),
+        });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (!cancelled && json.source === "databricks" && json.entities?.length > 0) {
+          setRealEntities(json.entities);
+        }
+      } catch {
+        // Keep simulated fallback
+      }
+    }
+    fetchRealEntities();
+    return () => { cancelled = true; };
+  }, []);
 
   const [selectedEntity, setSelectedEntity] = useState("MARS");
   const [selectedPeriod, setSelectedPeriod] = useState("P06_2025");

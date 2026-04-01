@@ -15,7 +15,12 @@ import {
   processLLMQuery,
   classifyIntent as llmClassifyIntent,
   isCIQuery,
+  type QueryResponse as LLMQueryResponse,
+  type StructuredData as LLMStructuredData,
 } from "@/lib/llm-query";
+import { isRealMode, isConfigured, executeRawSql, setModeOverride, type DataMode } from "@/data/databricks";
+import { SCHEMA_CONTEXT } from "@/lib/schema-context";
+import Anthropic from "@anthropic-ai/sdk";
 
 // ---------------------------------------------------------------------------
 // POST /api/query
@@ -30,6 +35,7 @@ interface QueryRequest {
   query: string;
   context?: { entity?: string; period?: string };
   history?: { role: string; content: string }[];
+  lastResponseData?: StructuredData; // For chart/table follow-ups
 }
 
 interface StructuredData {
@@ -528,6 +534,135 @@ function handleReport(
   };
 }
 
+// ---- Real Databricks NL query (LLM generates SQL, runs against live data) ---
+
+async function processRealDatabricksQuery(
+  query: string,
+  context?: { entity?: string; period?: string },
+  lastResponseData?: StructuredData,
+): Promise<QueryResponse | null> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey || !isConfigured()) return null;
+
+  // Check for follow-up (chart/table toggle) — reuse existing data
+  if (lastResponseData) {
+    const lower = query.toLowerCase();
+    const isChartReq = /\b(show|display|view|see).*(chart|graph|plot|visual)/i.test(lower) || /\b(bar|area|line)\s*chart/i.test(lower);
+    const isTableReq = /\b(show|display|view|see).*table/i.test(lower) || /\btable\s*(view|format)/i.test(lower);
+
+    if (isChartReq && lastResponseData.rows && lastResponseData.rows.length > 0) {
+      const chartData = lastResponseData.chartData ?? lastResponseData.rows.slice(0, 15).map((r) => {
+        const keys = Object.keys(r);
+        const labelKey = keys[0];
+        const valueKey = keys.find((k) => typeof r[k] === "number" || /^\$?-?[\d,.]+[BMK%]?$/.test(String(r[k] ?? "")));
+        const value = valueKey ? parseFloat(String(r[valueKey]).replace(/[^0-9.\-]/g, "")) : 0;
+        return { label: String(r[labelKey] ?? ""), value };
+      });
+      return { text: "Here's the data visualized as a chart:", intent: "follow-up", data: { type: "chart", chartType: "bar", chartData, columns: lastResponseData.columns, rows: lastResponseData.rows } };
+    }
+    if (isTableReq && lastResponseData.chartData) {
+      return { text: "Here's the data in table format:", intent: "follow-up", data: { type: "table", columns: lastResponseData.columns ?? ["Name", "Value"], rows: lastResponseData.rows ?? lastResponseData.chartData.map((d) => ({ Name: d.label, Value: d.value })) } };
+    }
+  }
+
+  const client = new Anthropic({ apiKey });
+
+  try {
+    // Step 1: LLM generates SQL from natural language
+    const sqlResponse = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1024,
+      system: `${SCHEMA_CONTEXT}\n\nYou are generating SQL for a live Databricks warehouse. Return ONLY a JSON object with:\n- "sql": the SQL query string (use fully qualified table names with catalog.schema prefix: corporate_finance_analytics_prod.finsight_core_model.<table>)\n- "description": what this query answers (1 sentence)\n- "chartType": "bar" or "area" (which chart best fits)\n\nContext: user is asking about entity "${context?.entity || "Mars Inc"}", period "${context?.period || "latest"}"\n\nReturn ONLY valid JSON, no markdown.`,
+      messages: [{ role: "user", content: query }],
+    });
+
+    const responseText = sqlResponse.content[0]?.type === "text" ? sqlResponse.content[0].text : "";
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    const sql = parsed.sql as string;
+    const description = parsed.description as string || "Query results";
+    const chartType = (parsed.chartType as "bar" | "area") || "bar";
+
+    if (!sql) return null;
+
+    // Safety check
+    const sqlUpper = sql.trim().toUpperCase();
+    if (!sqlUpper.startsWith("SELECT")) return null;
+
+    // Step 2: Execute against real Databricks
+    console.log("[/api/query] Executing real Databricks SQL:", sql);
+    const rows = await executeRawSql(sql, 500);
+
+    if (!rows || rows.length === 0) {
+      return { text: `No data found for your query. ${description}`, intent: "adhoc" };
+    }
+
+    // Step 3: Format response
+    const columns = Object.keys(rows[0]);
+    const tableRows = rows.map((r) => {
+      const formatted: Record<string, unknown> = {};
+      for (const col of columns) {
+        const val = r[col];
+        // Format numbers nicely
+        if (typeof val === "number") {
+          formatted[col] = Math.abs(val) >= 1000000
+            ? `$${(val / 1000000).toFixed(1)}M`
+            : Math.abs(val) < 1 && val !== 0
+            ? `${(val * 100).toFixed(1)}%`
+            : val.toFixed(1);
+        } else {
+          formatted[col] = val;
+        }
+      }
+      return formatted;
+    });
+
+    // Build chart data from first label + numeric column
+    const labelCol = columns[0];
+    const valueCol = columns.find((c) => typeof rows[0][c] === "number") || columns[1];
+    const chartData = rows.slice(0, 15).map((r) => ({
+      label: String(r[labelCol] ?? ""),
+      value: typeof r[valueCol] === "number" ? r[valueCol] as number : parseFloat(String(r[valueCol] ?? "0")),
+    }));
+
+    // Step 4: LLM summarizes results
+    let summary = description;
+    try {
+      const summaryResp = await client.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 512,
+        messages: [{
+          role: "user",
+          content: `Summarize this financial data for a business user. Question: "${query}"\n\nData (${rows.length} rows, sample):\n${JSON.stringify(rows.slice(0, 10), null, 2)}\n\nBe concise. Use specific numbers. Never say "replace" or "fragmented".`,
+        }],
+      });
+      summary = summaryResp.content[0]?.type === "text" ? summaryResp.content[0].text : description;
+    } catch {
+      // Use description as fallback
+    }
+
+    // Generate follow-up suggestions
+    const followUps = [
+      { label: chartType === "bar" ? "Show as area chart" : "Show as bar chart", query: `Show this as a ${chartType === "bar" ? "area" : "bar"} chart` },
+      { label: "Show as table", query: "Show this as a table" },
+      { label: "Export to XLSX", query: "Export this to spreadsheet" },
+    ];
+
+    return {
+      text: summary,
+      intent: "databricks",
+      data: { type: "chart", chartType, chartData, columns, rows: tableRows },
+      followUps,
+    } as QueryResponse & { followUps: { label: string; query: string }[] };
+
+  } catch (err) {
+    console.error("[/api/query] Real Databricks query failed:", err);
+    return null; // Fall through to simulated
+  }
+}
+
 // ---- Main handler ----------------------------------------------------------
 
 export async function POST(request: NextRequest) {
@@ -553,26 +688,43 @@ export async function POST(request: NextRequest) {
     }
 
     // -----------------------------------------------------------------------
-    // LLM-first path: if ANTHROPIC_API_KEY is configured, use the
-    // Anthropic-powered query engine with 7 intents, AI narratives,
-    // trend analysis, and ad-hoc SQL generation.
+    // REAL DATABRICKS PATH: If DATA_MODE=real and Databricks configured,
+    // use LLM to generate SQL and run against live production data.
+    // -----------------------------------------------------------------------
+    const dataMode = process.env.DATA_MODE || process.env.NEXT_PUBLIC_DATA_MODE || "simulated";
+    if (dataMode === "real") {
+      setModeOverride("real");
+      try {
+        const realResponse = await processRealDatabricksQuery(
+          query,
+          { entity: context?.entity ?? undefined, period: context?.period ?? undefined },
+          body.lastResponseData,
+        );
+        if (realResponse && realResponse.text) {
+          return NextResponse.json(realResponse);
+        }
+      } catch (realErr) {
+        console.warn("[/api/query] Real Databricks query failed, falling back:", realErr);
+      } finally {
+        setModeOverride(null);
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // LLM + SIMULATED path: use the intent-based query engine with
+    // simulated data generators. Falls back to regex if LLM fails.
     // -----------------------------------------------------------------------
     if (process.env.ANTHROPIC_API_KEY) {
       try {
-        // Check for CI intent — route competitor queries through LLM engine
-        const llmIntent = llmClassifyIntent(query);
-
         const llmResponse = await processLLMQuery(query, {
           entity: context?.entity ?? undefined,
           period: context?.period ?? undefined,
-        });
+        }, body.lastResponseData);
 
-        // If LLM returned a valid response, use it
         if (llmResponse && llmResponse.text) {
           return NextResponse.json(llmResponse);
         }
       } catch (llmError) {
-        // LLM failed — fall through to regex-based logic
         console.warn("[/api/query] LLM query failed, falling back to regex:", llmError);
       }
     }

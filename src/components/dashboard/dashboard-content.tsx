@@ -1,16 +1,14 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
-import { GripVertical } from "lucide-react";
-import { generateKPISummary } from "@/data/simulated";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { GripVertical, Loader2 } from "lucide-react";
+import { generateKPISummary, type KPISummary } from "@/data/simulated";
 import { KPICard } from "@/components/dashboard/kpi-card";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { PLSummaryTable } from "@/components/dashboard/pl-summary-table";
 import { RecentJobs } from "@/components/dashboard/recent-jobs";
 import { CompetitorsCard } from "@/components/dashboard/competitors-card";
 import { RevenueTreemap } from "@/components/dashboard/revenue-treemap";
-
-const kpis = generateKPISummary();
 
 function formatKPIValue(value: number, unit: "%" | "$M" | "$B"): string {
   switch (unit) {
@@ -74,10 +72,33 @@ function DraggableWidget({
 }
 
 export function DashboardContent() {
+  const [kpis, setKpis] = useState<KPISummary[]>(generateKPISummary());
+  const [loading, setLoading] = useState(true);
   const [mainWidgets, setMainWidgets] = useState(DEFAULT_MAIN);
   const [sideWidgets, setSideWidgets] = useState(DEFAULT_SIDE);
   const dragIndex = useRef<number | null>(null);
   const dragColumn = useRef<"main" | "side">("main");
+
+  // Fetch real dashboard data on mount
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchDashboard() {
+      try {
+        const res = await fetch("/api/dashboard");
+        if (!res.ok) return;
+        const json = await res.json();
+        if (!cancelled && json.kpis) {
+          setKpis(json.kpis);
+        }
+      } catch {
+        // Keep simulated fallback
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    fetchDashboard();
+    return () => { cancelled = true; };
+  }, []);
 
   const handleDragStart = useCallback((column: "main" | "side", index: number) => {
     dragIndex.current = index;
@@ -104,7 +125,13 @@ export function DashboardContent() {
     <div className="flex flex-col gap-4">
       {/* KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-        {kpis.map((kpi) => (
+        {loading && (
+          <div className="col-span-6 flex items-center justify-center py-4">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <span className="ml-2 text-sm text-muted-foreground">Loading live data...</span>
+          </div>
+        )}
+        {!loading && kpis.map((kpi) => (
           <KPICard
             key={kpi.id}
             title={kpi.label}
