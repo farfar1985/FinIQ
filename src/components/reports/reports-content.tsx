@@ -50,6 +50,33 @@ const KPI_DEFS: KPIDef[] = [
   { key: "ncfo", label: "NCFO", metric: "NCFO", accountCode: "S500010", unit: "$M", higherIsBetter: true },
 ];
 
+// Map real Databricks RL_Alias names to simulated account codes
+// so computeNarratives can match either format
+const RL_ALIAS_TO_CODE: Record<string, string> = {
+  "Growth % - 3rd Party Organic": "S900083",
+  "Margin After Conversion": "S200010",
+  "Advertising & Cons Promotion": "S200020",
+  "Controllable Earnings": "S300010",
+  "Controllable Overhead Costs": "S300020",
+  "Net Cash From Operations": "S500010",
+  "Net Sales Total": "S100010",
+  "Net Sales 3rd Party": "S100010",
+  "Gross Profit": "S100020",
+  "COGS": "S100030",
+  "Prime Costs": "S100030",
+  "Depreciation": "S400020",
+  "EBITDA": "S600010",
+  "Net Income": "S600020",
+  "Operating Profit": "S400010",
+  "Trade Expenditures": "S700010",
+  "Price Growth %": "S700020",
+  "Growth % - 3rd P Volume": "S700010",
+  "3rd Party Volume - Tonnes": "S800010",
+  "Controllable Contribution": "S350010",
+  "Controllable Profit": "S350020",
+  "General & Admin Overheads": "S300030",
+};
+
 // ---------------------------------------------------------------------------
 // Data-driven narrative generation
 // ---------------------------------------------------------------------------
@@ -748,15 +775,20 @@ export function ReportsContent() {
 
       if (json.source === "databricks" && json.plData?.length > 0) {
         // Convert Databricks rows to FinancialRow shape for computeNarratives
-        const converted: FinancialRow[] = json.plData.map((r: Record<string, unknown>) => ({
-          entity_id: selectedEntity,
-          account_code: r.RL_Alias as string, // Use RL_Alias as account_code
-          date_id: selectedPeriod,
-          periodic_cy_value: (r.Periodic_CY_Value as number) || 0,
-          periodic_ly_value: (r.Periodic_LY_Value as number) || 0,
-          ytd_cy_value: (r.YTD_CY_Value as number) || 0,
-          ytd_ly_value: (r.YTD_LY_Value as number) || 0,
-        }));
+        // Map RL_Alias to simulated account codes so narrative engine can match
+        const converted: FinancialRow[] = json.plData.map((r: Record<string, unknown>) => {
+          const rlAlias = r.RL_Alias as string;
+          const accountCode = RL_ALIAS_TO_CODE[rlAlias] || rlAlias;
+          return {
+            entity_id: selectedEntity,
+            account_code: accountCode,
+            date_id: selectedPeriod,
+            periodic_cy_value: (r.Periodic_CY_Value as number) || 0,
+            periodic_ly_value: (r.Periodic_LY_Value as number) || 0,
+            ytd_cy_value: (r.YTD_CY_Value as number) || 0,
+            ytd_ly_value: (r.YTD_LY_Value as number) || 0,
+          };
+        });
         setRealPLData(converted);
       }
     } catch {
