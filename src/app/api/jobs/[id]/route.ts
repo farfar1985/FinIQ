@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { jobs, type JobRecord } from "@/app/api/jobs/route";
-import { processLLMQuery } from "@/lib/llm-query";
+// processLLMQuery removed — jobs now use real Databricks only
 
 // ============================================================
 // GET /api/jobs/[id]
@@ -209,16 +209,10 @@ async function retryProcessJob(jobId: string) {
   job.updated_at = new Date().toISOString();
 
   try {
-    const result = await processLLMQuery(job.query, { entity: undefined, period: undefined });
-    job.status = "completed";
-    job.completed_at = new Date().toISOString();
-    job.updated_at = job.completed_at;
-    job.result = {
-      summary: result.text || `Analysis complete for: "${job.query}"`,
-      data: result.data || null,
-      intent: result.intent,
-      generated_at: new Date().toISOString(),
-    };
+    // Jobs use real Databricks — reprocessing not supported without full Databricks path
+    job.status = "failed";
+    job.updated_at = new Date().toISOString();
+    job.error = "Job reprocessing requires re-submission through the Query page.";
   } catch (err) {
     job.status = "failed";
     job.updated_at = new Date().toISOString();

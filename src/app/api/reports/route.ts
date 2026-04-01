@@ -96,11 +96,11 @@ export async function POST(request: NextRequest) {
       case "variance": {
         const safeUnit = (unitAlias || "Mars Incorporated (r)").replace(/'/g, "''");
 
-        // Find the Unit_ID for this alias from the dim table
+        // Find the Unit_ID for this alias using full name match
         const unitRows = await executeRawSql(`
           SELECT Child_Unit_ID, Child_Unit
           FROM ${fqn("finiq_dim_unit")}
-          WHERE UPPER(Child_Unit) LIKE UPPER('%${safeUnit.split(" ")[0]}%')
+          WHERE UPPER(Child_Unit) = UPPER('${safeUnit}')
           LIMIT 5
         `).catch(() => []);
 
@@ -115,12 +115,12 @@ export async function POST(request: NextRequest) {
             LIMIT 100
           `);
         } else {
-          // Try by unit name directly
+          // Try by unit name with LIKE (fuzzy match)
           varianceRows = await executeRawSql(`
             SELECT Unit, Reporting_Line_KPI, Actual_USD_Value, Replan_USD_Value,
                    (Actual_USD_Value - Replan_USD_Value) AS Variance
             FROM ${fqn("finiq_financial_replan")}
-            WHERE Unit LIKE '%${safeUnit.split(" ")[0]}%' AND Date_ID = ${dateId || 202503}
+            WHERE LOWER(Unit) LIKE LOWER('%${safeUnit}%') AND Date_ID = ${dateId || 202503}
             LIMIT 100
           `);
         }

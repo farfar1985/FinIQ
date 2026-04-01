@@ -18,14 +18,43 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { Button } from "@/components/ui/button";
 import { Select, SelectOption } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import {
-  generateEntities,
-  generateAccounts,
-  generateFinancialData,
-  generateReplanData,
-  type Entity,
-  type FinancialRow,
-} from "@/data/simulated";
+// Types previously imported from simulated — now defined inline
+interface Entity {
+  id: string;
+  name: string;
+  alias: string;
+  parent_id: string | null;
+  level: "Corporate" | "GBU" | "Division" | "Region" | "Sub-unit";
+}
+
+interface Account {
+  id: string;
+  code: string;
+  name: string;
+  formula: string | null;
+  category: "Revenue" | "Cost" | "Margin" | "Overhead" | "Cash Flow";
+  sort_order: number;
+}
+
+interface FinancialRow {
+  entity_id: string;
+  account_code: string;
+  date_id: string;
+  ytd_ly_value: number;
+  ytd_cy_value: number;
+  periodic_ly_value: number;
+  periodic_cy_value: number;
+}
+
+interface ReplanRow {
+  entity_id: string;
+  account_code: string;
+  date_id: string;
+  actual_usd: number;
+  replan_usd: number;
+  variance: number;
+  variance_pct: number;
+}
 
 // ---------------------------------------------------------------------------
 // KPI definitions mapping account codes to narrative KPIs
@@ -333,8 +362,40 @@ function KPIDataTable({
   period: string;
   realData?: FinancialRow[] | null;
 }) {
-  const financialData = realData && realData.length > 0 ? realData : generateFinancialData();
-  const accounts = useMemo(() => generateAccounts(), []);
+  const financialData = realData && realData.length > 0 ? realData : [];
+
+  // Derive accounts from real data — each unique account_code becomes a row
+  const accounts = useMemo<Account[]>(() => {
+    if (financialData.length === 0) return [];
+    const seen = new Set<string>();
+    const accts: Account[] = [];
+    // Reverse lookup: code → friendly name
+    const CODE_TO_NAME: Record<string, string> = {
+      S900083: "Organic Growth", S100010: "Net Revenue", S100020: "Gross Profit",
+      S100030: "COGS", S200010: "MAC", S200020: "A&CP", S300010: "CE",
+      S300020: "Controllable Overhead", S350010: "Controllable Contribution",
+      S350020: "Controllable Profit", S300030: "General & Admin Overheads",
+      S400010: "Operating Profit", S400020: "Depreciation & Amortization",
+      S500010: "NCFO", S600010: "EBITDA", S600020: "Net Income",
+      S700010: "Volume", S700020: "Price/Mix", S700030: "FX Impact",
+      S800010: "3rd Party Volume", S200030: "Trade Spend",
+    };
+    for (const row of financialData) {
+      const code = row.account_code;
+      if (!seen.has(code)) {
+        seen.add(code);
+        accts.push({
+          id: code,
+          code,
+          name: CODE_TO_NAME[code] || code,
+          formula: null,
+          category: "Revenue" as const,
+          sort_order: accts.length,
+        });
+      }
+    }
+    return accts.sort((a, b) => a.name.localeCompare(b.name));
+  }, [financialData]);
 
   const [sortColumn, setSortColumn] = useState<SortColumn>("account");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
@@ -507,9 +568,30 @@ function KPIDataTable({
 // ---------------------------------------------------------------------------
 
 function BudgetVarianceTab() {
-  const replanDataSim = useMemo(() => generateReplanData(), []);
-  const entities = useMemo(() => generateEntities(), []);
-  const accounts = useMemo(() => generateAccounts(), []);
+  const replanDataSim = useMemo<ReplanRow[]>(() => [], []);
+  const accounts = useMemo<Account[]>(() => [], []);
+  const [realEntityNames, setRealEntityNames] = useState<string[]>([]);
+
+  // Fetch real entity list for dropdown
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchEntities() {
+      try {
+        const res = await fetch("/api/reports", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "entities", dateId: 202503 }),
+        });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (!cancelled && json.entities?.length > 0) {
+          setRealEntityNames(json.entities);
+        }
+      } catch { /* empty state */ }
+    }
+    fetchEntities();
+    return () => { cancelled = true; };
+  }, []);
 
   const [selectedEntity, setSelectedEntity] = useState("MARS");
   const [selectedPeriod, setSelectedPeriod] = useState("P06_2025");
@@ -523,7 +605,7 @@ function BudgetVarianceTab() {
     async function fetchVariance() {
       setLoadingVariance(true);
       try {
-        const eName = entities.find((e) => e.id === selectedEntity)?.name || selectedEntity;
+        const eName = selectedEntity;
         // Build correct Date_ID: YYYYPP format (e.g., 202506 for FY2025 P06)
         const periodNum = selectedPeriod.match(/P(\d+)/)?.[1] || "06";
         const dateId = parseInt(`${selectedYear}${periodNum.padStart(2, "0")}`);
@@ -547,13 +629,13 @@ function BudgetVarianceTab() {
     }
     fetchVariance();
     return () => { cancelled = true; };
-  }, [selectedEntity, selectedPeriod, selectedYear, entities]);
+  }, [selectedEntity, selectedPeriod, selectedYear]);
 
   const entityMap = useMemo(() => {
     const map: Record<string, string> = {};
-    for (const e of entities) map[e.id] = e.name;
+    for (const name of realEntityNames) map[name] = name;
     return map;
-  }, [entities]);
+  }, [realEntityNames]);
 
   const accountMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -576,7 +658,7 @@ function BudgetVarianceTab() {
           : 0,
       }));
     }
-    // Fall back to simulated
+    // No simulated fallback — return empty filtered set
     return replanDataSim.filter(
       (r) => r.entity_id === selectedEntity && r.date_id === selectedPeriod
     );
@@ -590,11 +672,14 @@ function BudgetVarianceTab() {
             value={selectedEntity}
             onChange={(e) => setSelectedEntity(e.target.value)}
           >
-            {entities.map((e) => (
-              <SelectOption key={e.id} value={e.id}>
-                {e.name}
-              </SelectOption>
-            ))}
+            {realEntityNames.length > 0
+              ? realEntityNames.slice(0, 50).map((name) => (
+                  <SelectOption key={name} value={name}>
+                    {name}
+                  </SelectOption>
+                ))
+              : <SelectOption value="">Loading entities...</SelectOption>
+            }
           </Select>
         </div>
         <div className="w-36">
@@ -887,8 +972,8 @@ function CustomReportBuilder() {
 // ---------------------------------------------------------------------------
 
 export function ReportsContent() {
-  const [entities, setEntities] = useState(() => generateEntities());
-  const [financialData, setFinancialData] = useState(() => generateFinancialData());
+  const [entities, setEntities] = useState<Entity[]>([]);
+  const [financialData, setFinancialData] = useState<FinancialRow[]>([]);
   const [realEntities, setRealEntities] = useState<string[]>([]);
 
   // Fetch real entity list from Databricks on mount
@@ -907,7 +992,7 @@ export function ReportsContent() {
           setRealEntities(json.entities);
         }
       } catch {
-        // Keep simulated fallback
+        // No simulated fallback — empty state shown
       }
     }
     fetchRealEntities();

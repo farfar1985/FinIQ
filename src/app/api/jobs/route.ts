@@ -13,8 +13,11 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { processLLMQuery } from "@/lib/llm-query";
+// processLLMQuery removed — no simulated fallback
 import { broadcastEvent } from "@/lib/sse-broadcast";
+import { isConfigured, executeRawSql, setModeOverride, getActiveConfig } from "@/data/databricks";
+import { SCHEMA_CONTEXT } from "@/lib/schema-context";
+import Anthropic from "@anthropic-ai/sdk";
 
 // ============================================================
 // Types & Constants
@@ -277,7 +280,70 @@ async function processJob(jobId: string) {
   broadcastEvent("job:updated", { id: job.id, status: job.status });
 
   try {
-    const result = await processLLMQuery(job.query, { entity: undefined, period: undefined });
+    const dataMode = process.env.DATA_MODE || process.env.NEXT_PUBLIC_DATA_MODE || "simulated";
+    let result: { text: string; data?: unknown; intent: string } | null = null;
+
+    // Try real Databricks first
+    if (dataMode === "real" && isConfigured() && process.env.ANTHROPIC_API_KEY) {
+      setModeOverride("real");
+      try {
+        const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+        const sqlResponse = await client.messages.create({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 1024,
+          system: `${SCHEMA_CONTEXT}\n\nGenerate SQL for a live Databricks warehouse. Use fully qualified names: corporate_finance_analytics_prod.finsight_core_model.<table>.\nUse LOWER() for Unit_Alias comparisons. Default period: Date_ID = 202503.\nKEEP QUERIES SIMPLE: Always filter by specific Unit_Alias and Date_ID. Never scan all units or all periods at once. Use LIMIT 100.\nFor "top 5 GBUs" use: WHERE LOWER(Unit_Alias) LIKE 'gbu%' or specific GBU names.\nReturn ONLY a JSON object with: "sql" (the query), "description" (1 sentence).`,
+          messages: [{ role: "user", content: job.query }],
+        });
+        const responseText = sqlResponse.content[0]?.type === "text" ? sqlResponse.content[0].text : "";
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (parsed.sql && parsed.sql.trim().toUpperCase().startsWith("SELECT")) {
+            const rows = await executeRawSql(parsed.sql, 500, 60); // 5 min timeout for jobs
+            if (rows && rows.length > 0) {
+              // Summarize with LLM
+              const summaryResp = await client.messages.create({
+                model: "claude-haiku-4-5-20251001",
+                max_tokens: 1024,
+                messages: [{ role: "user", content: `Provide an executive summary for this financial query. Question: "${job.query}"\n\nData (${rows.length} rows, sample):\n${JSON.stringify(rows.slice(0, 15), null, 2)}\n\nBe thorough. Use specific numbers. Include key findings, trends, and recommendations. Never say "replace" or "fragmented".` }],
+              });
+              const summary = summaryResp.content[0]?.type === "text" ? summaryResp.content[0].text : parsed.description;
+              const columns = Object.keys(rows[0]);
+              result = {
+                text: summary,
+                intent: "databricks",
+                data: {
+                  type: "table",
+                  columns,
+                  rows: rows.slice(0, 50).map((r) => {
+                    const formatted: Record<string, unknown> = {};
+                    for (const col of columns) {
+                      const val = r[col];
+                      formatted[col] = typeof val === "number" && Math.abs(val) >= 1000000
+                        ? `$${(val / 1000000).toFixed(1)}M`
+                        : val;
+                    }
+                    return formatted;
+                  }),
+                },
+              };
+            }
+          }
+        }
+      } catch (dbErr) {
+        console.warn("[jobs] Real Databricks query failed:", dbErr);
+      } finally {
+        setModeOverride(null);
+      }
+    }
+
+    // No simulated fallback — if Databricks failed, report it
+    if (!result) {
+      result = {
+        text: `Could not retrieve real data from Databricks for this query. The warehouse may be slow or the query too complex. Please try a more specific query or try again when the warehouse is warm.`,
+        intent: "error",
+      };
+    }
 
     job.status = "completed";
     job.completed_at = new Date().toISOString();

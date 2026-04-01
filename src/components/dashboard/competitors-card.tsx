@@ -11,7 +11,18 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Loader2 } from "lucide-react";
-import { generateCompetitorData, type CompetitorRow } from "@/data/simulated";
+// CompetitorRow type — previously imported from simulated, now defined inline
+interface CompetitorRow {
+  company: string;
+  ticker: string;
+  revenue_bn: number;
+  organic_growth_pct: number;
+  gross_margin_pct: number;
+  operating_margin_pct: number;
+  ebitda_margin_pct: number;
+  pe_ratio: number;
+  market_cap_bn: number;
+}
 import { cn } from "@/lib/utils";
 
 function ColoredValue({ value, suffix = "" }: { value: number; suffix?: string }) {
@@ -30,7 +41,7 @@ function ColoredValue({ value, suffix = "" }: { value: number; suffix?: string }
 }
 
 export function CompetitorsCard() {
-  const [competitors, setCompetitors] = useState<CompetitorRow[]>(generateCompetitorData());
+  const [competitors, setCompetitors] = useState<CompetitorRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -57,7 +68,7 @@ export function CompetitorsCard() {
           setCompetitors(mapped);
         }
       } catch {
-        // Keep simulated fallback
+        // No simulated fallback — empty state shown
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -75,6 +86,10 @@ export function CompetitorsCard() {
         {loading ? (
           <div className="flex items-center justify-center py-6">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          </div>
+        ) : competitors.length === 0 ? (
+          <div className="flex items-center justify-center py-6">
+            <span className="text-sm text-muted-foreground">No competitor data available.</span>
           </div>
         ) : (
           <Table>

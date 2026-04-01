@@ -128,6 +128,7 @@ async function ensureWarehouseRunning(): Promise<void> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function executeQuery<T = Record<string, any>>(
   sql: string,
+  maxPolls = 24, // Default 120s (24 * 5s)
 ): Promise<T[]> {
   const cfg = getActiveConfig();
   const warehouseId = cfg.httpPath.split("/").pop();
@@ -174,7 +175,7 @@ async function executeQuery<T = Record<string, any>>(
     const statementId = data.statement_id;
     if (!statementId) return [];
 
-    for (let poll = 0; poll < 24; poll++) { // Poll up to 120s (24 * 5s)
+    for (let poll = 0; poll < maxPolls; poll++) {
       await new Promise((r) => setTimeout(r, 5000));
       const pollRes = await fetch(
         `https://${cfg.host}/api/2.0/sql/statements/${statementId}`,
@@ -220,12 +221,12 @@ async function executeQuery<T = Record<string, any>>(
 
 /** Execute a raw SQL query (exported for API routes). Only works in real mode. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function executeRawSql(sql: string, limit = 1000): Promise<Record<string, any>[]> {
+export async function executeRawSql(sql: string, limit = 1000, maxPolls = 24): Promise<Record<string, any>[]> {
   // Append LIMIT if not already present (safety net)
   const trimmed = sql.trim().replace(/;$/, "");
   const hasLimit = /\bLIMIT\s+\d+/i.test(trimmed);
   const safeSql = hasLimit ? trimmed : `${trimmed} LIMIT ${limit}`;
-  return executeQuery(safeSql);
+  return executeQuery(safeSql, maxPolls);
 }
 
 // ---- Schema introspection (real mode) -------------------------------------

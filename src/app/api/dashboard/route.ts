@@ -14,16 +14,16 @@ import {
   setModeOverride,
   getActiveConfig,
 } from "@/data/databricks";
-import {
-  generateKPISummary,
-  generateTimeSeriesData,
-  generateFinancialData,
-  generateEntities,
-  generateAccounts,
-  generateReplanData,
-  generateCompetitorData,
-  type KPISummary,
-} from "@/data/simulated";
+// KPISummary type — previously imported from simulated, now defined inline
+interface KPISummary {
+  id: string;
+  label: string;
+  value: number;
+  unit: "%" | "$M" | "$B";
+  change: number;
+  trend: number[];
+  status: "positive" | "neutral" | "negative";
+}
 
 function fqn(table: string): string {
   const cfg = getActiveConfig();
@@ -282,13 +282,13 @@ export async function GET() {
 
         const result = {
           source: "databricks",
-          kpis: kpis && kpis.length > 0 ? kpis : generateKPISummary(),
-          timeSeries: timeSeries && timeSeries.length > 0 ? timeSeries : generateTimeSeriesData(12),
-          plSummary: plSummary && plSummary.rows.length > 0 ? plSummary : { columns: [], rows: [] },
+          kpis: kpis ?? [],
+          timeSeries: timeSeries ?? [],
+          plSummary: plSummary ?? { columns: [], rows: [] },
           entities: entities ?? [],
         };
 
-        // Only cache if we got real data (not all fallbacks)
+        // Only cache if we got some real data
         if ((kpis && kpis.length > 0) || (timeSeries && timeSeries.length > 0) || (plSummary && plSummary.rows.length > 0)) {
           _cache.data = result;
           _cache.timestamp = Date.now();
@@ -303,11 +303,11 @@ export async function GET() {
     }
   }
 
-  // Fallback to simulated
+  // No simulated fallback — return empty data with error source
   return NextResponse.json({
-    source: "simulated",
-    kpis: generateKPISummary(),
-    timeSeries: generateTimeSeriesData(12),
+    source: "error",
+    kpis: [],
+    timeSeries: [],
     plSummary: { columns: [], rows: [] },
     entities: [],
   });

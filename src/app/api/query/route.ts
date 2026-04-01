@@ -12,7 +12,7 @@ import {
   type CompetitorRow,
 } from "@/data/simulated";
 import {
-  processLLMQuery,
+  // processLLMQuery removed — real Databricks only
   classifyIntent as llmClassifyIntent,
   isCIQuery,
   type QueryResponse as LLMQueryResponse,
@@ -711,23 +711,12 @@ export async function POST(request: NextRequest) {
     }
 
     // -----------------------------------------------------------------------
-    // LLM + SIMULATED path: use the intent-based query engine with
-    // simulated data generators. Falls back to regex if LLM fails.
+    // If real Databricks path didn't return data, return error — no simulated fallback
     // -----------------------------------------------------------------------
-    if (process.env.ANTHROPIC_API_KEY) {
-      try {
-        const llmResponse = await processLLMQuery(query, {
-          entity: context?.entity ?? undefined,
-          period: context?.period ?? undefined,
-        }, body.lastResponseData);
-
-        if (llmResponse && llmResponse.text) {
-          return NextResponse.json(llmResponse);
-        }
-      } catch (llmError) {
-        console.warn("[/api/query] LLM query failed, falling back to regex:", llmError);
-      }
-    }
+    return NextResponse.json({
+      text: "Could not retrieve data from Databricks. The warehouse may be starting up or the query timed out. Please try again in a moment, or try a more specific query.",
+      intent: "error",
+    });
 
     // -----------------------------------------------------------------------
     // Regex fallback: original intent classification and handlers

@@ -2,7 +2,16 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { GripVertical, Loader2 } from "lucide-react";
-import { generateKPISummary, type KPISummary } from "@/data/simulated";
+// KPISummary type — previously imported from simulated, now defined inline
+interface KPISummary {
+  id: string;
+  label: string;
+  value: number;
+  unit: "%" | "$M" | "$B";
+  change: number;
+  trend: number[];
+  status: "positive" | "neutral" | "negative";
+}
 import { KPICard } from "@/components/dashboard/kpi-card";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { PLSummaryTable } from "@/components/dashboard/pl-summary-table";
@@ -72,7 +81,7 @@ function DraggableWidget({
 }
 
 export function DashboardContent() {
-  const [kpis, setKpis] = useState<KPISummary[]>(generateKPISummary());
+  const [kpis, setKpis] = useState<KPISummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [mainWidgets, setMainWidgets] = useState(DEFAULT_MAIN);
   const [sideWidgets, setSideWidgets] = useState(DEFAULT_SIDE);
@@ -91,7 +100,7 @@ export function DashboardContent() {
           setKpis(json.kpis);
         }
       } catch {
-        // Keep simulated fallback
+        // No simulated fallback — empty state shown
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -131,7 +140,12 @@ export function DashboardContent() {
             <span className="ml-2 text-sm text-muted-foreground">Loading live data...</span>
           </div>
         )}
-        {!loading && kpis.map((kpi) => (
+        {!loading && kpis.length === 0 && (
+          <div className="col-span-6 flex items-center justify-center py-4">
+            <span className="text-sm text-muted-foreground">No KPI data available. Connect to Databricks to see live data.</span>
+          </div>
+        )}
+        {!loading && kpis.length > 0 && kpis.map((kpi) => (
           <KPICard
             key={kpi.id}
             title={kpi.label}

@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
-import { generateTimeSeriesData } from "@/data/simulated";
+// Simulated data import removed — empty state used instead
 
 function CustomTooltip({
   active,
@@ -35,7 +35,7 @@ function CustomTooltip({
 }
 
 export function RevenueChart() {
-  const [data, setData] = useState(generateTimeSeriesData(12));
+  const [data, setData] = useState<{ date: string; value: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -49,7 +49,7 @@ export function RevenueChart() {
           setData(json.timeSeries);
         }
       } catch {
-        // Keep simulated fallback
+        // No simulated fallback — empty state shown
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -67,6 +67,10 @@ export function RevenueChart() {
         {loading ? (
           <div className="flex h-[280px] items-center justify-center">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : data.length === 0 ? (
+          <div className="flex h-[280px] items-center justify-center">
+            <span className="text-sm text-muted-foreground">No revenue data available.</span>
           </div>
         ) : (
           <div className="h-[280px] w-full">
