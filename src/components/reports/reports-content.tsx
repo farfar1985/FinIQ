@@ -716,17 +716,65 @@ export function ReportsContent() {
   const [selectedYear, setSelectedYear] = useState("2025");
   const [selectedFormat, setSelectedFormat] = useState("summary");
   const [generated, setGenerated] = useState(false);
+  const [realPLData, setRealPLData] = useState<FinancialRow[] | null>(null);
+  const [loadingReport, setLoadingReport] = useState(false);
 
-  const entityName = useMemo(() => {
+  // Use real entity name from Databricks if available, else simulated
+  const selectedEntityName = useMemo(() => {
+    if (realEntities.length > 0 && realEntities.includes(selectedEntity)) {
+      return selectedEntity; // Real entities use Unit_Alias as both ID and name
+    }
     const e = entities.find((e) => e.id === selectedEntity);
     return e ? e.name : selectedEntity;
-  }, [entities, selectedEntity]);
+  }, [entities, realEntities, selectedEntity]);
 
-  // Compute data-driven narratives from actual financial data
+  // When "Generate Report" is clicked, fetch real data from Databricks
+  const handleGenerate = useCallback(async () => {
+    setGenerated(true);
+    setLoadingReport(true);
+    try {
+      const unitAlias = realEntities.includes(selectedEntity) ? selectedEntity : selectedEntityName;
+      const yearNum = selectedYear;
+      const periodNum = selectedPeriod.replace(`_${yearNum}`, "").replace("P", "");
+      const dateId = parseInt(`${yearNum}${periodNum.padStart(2, "0")}`);
+
+      const res = await fetch("/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "pes", unitAlias, dateId }),
+      });
+      if (!res.ok) throw new Error("Failed to fetch");
+      const json = await res.json();
+
+      if (json.source === "databricks" && json.plData?.length > 0) {
+        // Convert Databricks rows to FinancialRow shape for computeNarratives
+        const converted: FinancialRow[] = json.plData.map((r: Record<string, unknown>) => ({
+          entity_id: selectedEntity,
+          account_code: r.RL_Alias as string, // Use RL_Alias as account_code
+          date_id: selectedPeriod,
+          periodic_cy_value: (r.Periodic_CY_Value as number) || 0,
+          periodic_ly_value: (r.Periodic_LY_Value as number) || 0,
+          ytd_cy_value: (r.YTD_CY_Value as number) || 0,
+          ytd_ly_value: (r.YTD_LY_Value as number) || 0,
+        }));
+        setRealPLData(converted);
+      }
+    } catch {
+      // Fall back to simulated
+      setRealPLData(null);
+    } finally {
+      setLoadingReport(false);
+    }
+  }, [selectedEntity, selectedEntityName, selectedPeriod, selectedYear, realEntities]);
+
+  const entityName = selectedEntityName;
+
+  // Compute data-driven narratives — use real data if available, else simulated
   const narratives = useMemo(() => {
     if (!generated) return [];
-    return computeNarratives(selectedEntity, entityName, selectedPeriod, entities, financialData);
-  }, [generated, selectedEntity, entityName, selectedPeriod, entities, financialData]);
+    const dataToUse = realPLData ?? financialData;
+    return computeNarratives(selectedEntity, entityName, selectedPeriod, entities, dataToUse);
+  }, [generated, selectedEntity, entityName, selectedPeriod, entities, financialData, realPLData]);
 
   // Apply format filter: Summary=all, WWW=positive only, WNWW=negative only
   const filteredNarratives = useMemo(() => {
@@ -785,13 +833,19 @@ export function ReportsContent() {
                           setGenerated(false);
                         }}
                       >
-                        {entities
-                          .filter((e) => ["Corporate", "GBU"].includes(e.level))
-                          .map((e) => (
-                            <SelectOption key={e.id} value={e.id}>
-                              {e.name}
-                            </SelectOption>
-                          ))}
+                        {realEntities.length > 0
+                          ? realEntities.slice(0, 50).map((name) => (
+                              <SelectOption key={name} value={name}>
+                                {name}
+                              </SelectOption>
+                            ))
+                          : entities
+                              .filter((e) => ["Corporate", "GBU"].includes(e.level))
+                              .map((e) => (
+                                <SelectOption key={e.id} value={e.id}>
+                                  {e.name}
+                                </SelectOption>
+                              ))}
                       </Select>
                     </div>
                   </div>
@@ -859,7 +913,9 @@ export function ReportsContent() {
                     </div>
                   </div>
 
-                  <Button onClick={() => setGenerated(true)}>Generate Report</Button>
+                  <Button onClick={handleGenerate} disabled={loadingReport}>
+                    {loadingReport ? "Fetching from Databricks..." : "Generate Report"}
+                  </Button>
                 </div>
               </CardContent>
             </Card>
