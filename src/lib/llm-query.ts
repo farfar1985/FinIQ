@@ -26,7 +26,7 @@ import {
 const MODEL = "claude-haiku-4-5-20251001";
 
 function getClient(): Anthropic | null {
-  const key = process.env.ANTHROPIC_API_KEY;
+  const key = process.env.FINIQ_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
   return new Anthropic({ apiKey: key });
 }

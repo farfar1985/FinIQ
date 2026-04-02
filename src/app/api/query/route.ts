@@ -541,7 +541,8 @@ async function processRealDatabricksQuery(
   context?: { entity?: string; period?: string },
   lastResponseData?: StructuredData,
 ): Promise<QueryResponse | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.FINIQ_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
+  console.log("[/api/query] apiKey present:", !!apiKey, "| isConfigured:", isConfigured());
   if (!apiKey || !isConfigured()) return null;
 
   // Check for follow-up (chart/table toggle) — reuse existing data
@@ -665,8 +666,9 @@ async function processRealDatabricksQuery(
     } as QueryResponse & { followUps: { label: string; query: string }[] };
 
   } catch (err) {
-    console.error("[/api/query] Real Databricks query failed:", err);
-    return null; // Fall through to simulated
+    console.error("[/api/query] Real Databricks query failed:", err instanceof Error ? err.message : err);
+    console.error("[/api/query] Stack:", err instanceof Error ? err.stack : "no stack");
+    return null; // Fall through to error response
   }
 }
 
@@ -699,6 +701,7 @@ export async function POST(request: NextRequest) {
     // use LLM to generate SQL and run against live production data.
     // -----------------------------------------------------------------------
     const dataMode = process.env.DATA_MODE || process.env.NEXT_PUBLIC_DATA_MODE || "simulated";
+    console.log("[/api/query] dataMode:", dataMode, "| query:", query.substring(0, 80));
     if (dataMode === "real") {
       setModeOverride("real");
       try {

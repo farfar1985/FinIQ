@@ -65,9 +65,12 @@ export function RevenueTreemap() {
   useEffect(() => {
     let cancelled = false;
     async function fetchData() {
-      try {
-        const res = await fetch("/api/dashboard");
-        if (!res.ok) return;
+      for (let attempt = 0; attempt < 60; attempt++) {
+        if (cancelled) return;
+        try {
+          const res = await fetch("/api/dashboard");
+          if (res.status === 202) { await new Promise((r) => setTimeout(r, 5000)); continue; }
+          if (!res.ok) return;
         const json = await res.json();
         if (cancelled) return;
 
@@ -96,13 +99,13 @@ export function RevenueTreemap() {
             setData(gbuRows);
           }
         }
+        return;
       } catch {
-        // Empty state
-      } finally {
-        if (!cancelled) setLoading(false);
+        await new Promise((r) => setTimeout(r, 5000));
+      }
       }
     }
-    fetchData();
+    fetchData().finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
 

@@ -160,21 +160,6 @@ async function fetchRealKPIs(): Promise<KPISummary[]> {
     });
   }
 
-  // Fill in any missing KPIs with defaults
-  for (const [, meta] of Object.entries(rlMap)) {
-    if (!kpis.find((k) => k.id === meta.id)) {
-      kpis.push({
-        id: meta.id,
-        label: meta.label,
-        value: 0,
-        unit: meta.unit,
-        change: 0,
-        trend: [0, 0],
-        status: "neutral",
-      });
-    }
-  }
-
   return kpis;
 }
 
@@ -262,6 +247,45 @@ async function fetchRealEntities(): Promise<{ id: number; name: string; level: n
 const _cache: { data: Record<string, unknown> | null; timestamp: number } = { data: null, timestamp: 0 };
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+// Pre-warm cache on module load (first import triggers this)
+let _warmingUp = false;
+async function prewarmCache() {
+  if (_warmingUp || _cache.data) return;
+  _warmingUp = true;
+  const dataMode = process.env.DATA_MODE || process.env.NEXT_PUBLIC_DATA_MODE || "simulated";
+  if (dataMode !== "real") { _warmingUp = false; return; }
+  setModeOverride("real");
+  try {
+    if (!isConfigured()) return;
+    console.log("[dashboard] Pre-warming cache in background...");
+    const [kpis, timeSeries, plSummary, entities] = await Promise.all([
+      fetchRealKPIs().catch(() => null),
+      fetchRealTimeSeries().catch(() => null),
+      fetchRealPLSummary().catch(() => null),
+      fetchRealEntities().catch(() => null),
+    ]);
+    const result = {
+      source: "databricks",
+      kpis: kpis ?? [],
+      timeSeries: timeSeries ?? [],
+      plSummary: plSummary ?? { columns: [], rows: [] },
+      entities: entities ?? [],
+    };
+    if ((kpis && kpis.length > 0) || (timeSeries && timeSeries.length > 0)) {
+      _cache.data = result;
+      _cache.timestamp = Date.now();
+      console.log("[dashboard] Cache pre-warmed successfully!");
+    }
+  } catch (err) {
+    console.warn("[dashboard] Pre-warm failed:", err);
+  } finally {
+    setModeOverride(null);
+    _warmingUp = false;
+  }
+}
+// Fire pre-warm immediately on module load
+prewarmCache();
+
 export async function GET() {
   const dataMode = process.env.DATA_MODE || process.env.NEXT_PUBLIC_DATA_MODE || "simulated";
 
@@ -270,15 +294,22 @@ export async function GET() {
     return NextResponse.json(_cache.data);
   }
 
+  // If pre-warm is in progress, tell client to retry shortly
+  if (_warmingUp) {
+    return NextResponse.json({ source: "warming", message: "Dashboard data is loading, please wait..." }, { status: 202 });
+  }
+
   if (dataMode === "real") {
     setModeOverride("real");
     try {
       if (isConfigured()) {
-        // Run sequentially — first query wakes the warehouse, subsequent ones succeed
-        const kpis = await fetchRealKPIs().catch((e) => { console.warn("[dashboard] KPI fetch failed:", e.message || e); return null; });
-        const timeSeries = await fetchRealTimeSeries().catch((e) => { console.warn("[dashboard] TimeSeries fetch failed:", e.message || e); return null; });
-        const plSummary = await fetchRealPLSummary().catch((e) => { console.warn("[dashboard] PL fetch failed:", e.message || e); return null; });
-        const entities = await fetchRealEntities().catch((e) => { console.warn("[dashboard] Entities fetch failed:", e.message || e); return null; });
+        // Run all queries in parallel — warehouse is kept alive by health endpoint
+        const [kpis, timeSeries, plSummary, entities] = await Promise.all([
+          fetchRealKPIs().catch((e) => { console.warn("[dashboard] KPI fetch failed:", e.message || e); return null; }),
+          fetchRealTimeSeries().catch((e) => { console.warn("[dashboard] TimeSeries fetch failed:", e.message || e); return null; }),
+          fetchRealPLSummary().catch((e) => { console.warn("[dashboard] PL fetch failed:", e.message || e); return null; }),
+          fetchRealEntities().catch((e) => { console.warn("[dashboard] Entities fetch failed:", e.message || e); return null; }),
+        ]);
 
         const result = {
           source: "databricks",

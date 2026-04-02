@@ -45,21 +45,24 @@ export function PLSummaryTable() {
   useEffect(() => {
     let cancelled = false;
     async function fetchData() {
-      try {
-        const res = await fetch("/api/dashboard");
-        if (!res.ok) return;
-        const json = await res.json();
-        if (!cancelled && json.plSummary?.rows?.length > 0) {
-          setRows(json.plSummary.rows);
-          setColumns(json.plSummary.columns);
+      for (let attempt = 0; attempt < 60; attempt++) {
+        if (cancelled) return;
+        try {
+          const res = await fetch("/api/dashboard");
+          if (res.status === 202) { await new Promise((r) => setTimeout(r, 5000)); continue; }
+          if (!res.ok) return;
+          const json = await res.json();
+          if (!cancelled && json.plSummary?.rows?.length > 0) {
+            setRows(json.plSummary.rows);
+            setColumns(json.plSummary.columns);
+          }
+          return;
+        } catch {
+          await new Promise((r) => setTimeout(r, 5000));
         }
-      } catch {
-        // Keep empty state
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     }
-    fetchData();
+    fetchData().finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
 

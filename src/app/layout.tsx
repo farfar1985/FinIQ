@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
-import { WarehouseKeepAlive } from "@/components/warehouse-keepalive";
+import { WarehouseGate } from "@/components/warehouse-keepalive";
 import "./globals.css";
 
 const ibmPlexSans = IBM_Plex_Sans({
@@ -33,8 +33,9 @@ export default function RootLayout({
         className={`${ibmPlexSans.variable} ${jetbrainsMono.variable} font-sans antialiased`}
       >
         <ThemeProvider>
-          <WarehouseKeepAlive />
-          {children}
+          <WarehouseGate>
+            {children}
+          </WarehouseGate>
         </ThemeProvider>
       </body>
     </html>

@@ -88,24 +88,33 @@ export function DashboardContent() {
   const dragIndex = useRef<number | null>(null);
   const dragColumn = useRef<"main" | "side">("main");
 
-  // Fetch real dashboard data on mount
+  // Fetch real dashboard data on mount — retries while cache is warming
   useEffect(() => {
     let cancelled = false;
     async function fetchDashboard() {
-      try {
-        const res = await fetch("/api/dashboard");
-        if (!res.ok) return;
-        const json = await res.json();
-        if (!cancelled && json.kpis) {
-          setKpis(json.kpis);
+      const maxRetries = 60; // up to 5 min of retries (60 * 5s)
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        if (cancelled) return;
+        try {
+          const res = await fetch("/api/dashboard");
+          if (res.status === 202) {
+            // Cache is warming up — wait and retry
+            await new Promise((r) => setTimeout(r, 5000));
+            continue;
+          }
+          if (!res.ok) return;
+          const json = await res.json();
+          if (!cancelled && json.kpis) {
+            setKpis(json.kpis);
+          }
+          return; // success — stop retrying
+        } catch {
+          // Network error — retry after delay
+          await new Promise((r) => setTimeout(r, 5000));
         }
-      } catch {
-        // No simulated fallback — empty state shown
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     }
-    fetchDashboard();
+    fetchDashboard().finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
 

@@ -284,10 +284,11 @@ async function processJob(jobId: string) {
     let result: { text: string; data?: unknown; intent: string } | null = null;
 
     // Try real Databricks first
-    if (dataMode === "real" && isConfigured() && process.env.ANTHROPIC_API_KEY) {
+    const _anthropicKey = process.env.FINIQ_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
+    if (dataMode === "real" && isConfigured() && _anthropicKey) {
       setModeOverride("real");
       try {
-        const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+        const client = new Anthropic({ apiKey: _anthropicKey });
         const sqlResponse = await client.messages.create({
           model: "claude-haiku-4-5-20251001",
           max_tokens: 1024,
