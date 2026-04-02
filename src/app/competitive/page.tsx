@@ -627,6 +627,51 @@ export default function CompetitivePage() {
     }).sort((a, b) => b.count - a.count);
   }, [transcripts, selectedCompany]);
 
+  /* -- NLP Sentiment Analysis (CI3) -- */
+  const sentimentData = useMemo(() => {
+    const content = transcripts[selectedCompany] || "";
+    if (!content) return null;
+    const text = content.toLowerCase();
+
+    const positiveWords = ["growth", "strong", "exceeded", "improved", "optimistic", "record", "momentum", "confident", "outperformed", "robust", "positive", "beat", "upside", "acceleration"];
+    const negativeWords = ["decline", "headwind", "challenging", "weak", "pressure", "miss", "risk", "uncertainty", "softness", "contraction", "downturn", "lower", "negative", "concern"];
+
+    let posCount = 0;
+    let negCount = 0;
+    for (const w of positiveWords) posCount += (text.match(new RegExp(`\\b${w}\\w*\\b`, "g")) || []).length;
+    for (const w of negativeWords) negCount += (text.match(new RegExp(`\\b${w}\\w*\\b`, "g")) || []).length;
+
+    const total = posCount + negCount;
+    const score = total > 0 ? ((posCount - negCount) / total) : 0;
+    const label = score > 0.2 ? "Bullish" : score < -0.2 ? "Bearish" : "Neutral";
+
+    // Topic extraction
+    const topicPatterns: [string, RegExp, string][] = [
+      ["Pricing", /\bpric(e|ing|es)\b/gi, "bg-blue-500/20 text-blue-400"],
+      ["Volume", /\bvolume\b/gi, "bg-purple-500/20 text-purple-400"],
+      ["Margin", /\bmargin\b/gi, "bg-amber-500/20 text-amber-400"],
+      ["Innovation", /\b(innovat|new product|launch|R&D)\b/gi, "bg-emerald-500/20 text-emerald-400"],
+      ["Cost", /\b(cost|expense|inflation|commodity)\b/gi, "bg-red-500/20 text-red-400"],
+      ["Guidance", /\b(guidance|outlook|forecast|expect)\b/gi, "bg-cyan-500/20 text-cyan-400"],
+    ];
+    const topics = topicPatterns
+      .map(([topic, re, badge]) => {
+        const matches = content.match(re);
+        return matches && matches.length > 0 ? { topic, count: matches.length, badge } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => b!.count - a!.count) as { topic: string; count: number; badge: string }[];
+
+    // Key quotes
+    const sentences = content.split(/[.!?]+/).filter((s) => s.trim().length > 20);
+    const keyQuotes = sentences
+      .filter((s) => /\b(expect|guidance|outlook|growth|margin|target|confident|challenge)\b/i.test(s))
+      .slice(0, 3)
+      .map((s) => s.trim());
+
+    return { label, score, posCount, negCount, topics, keyQuotes, wordCount: content.split(/\s+/).length };
+  }, [transcripts, selectedCompany]);
+
   /* -- SWOT generation from ratios -- */
   const swotData = useMemo(() => {
     const r = ratios[selectedCompany]?.[0];
@@ -1032,6 +1077,45 @@ export default function CompetitivePage() {
         {/* TAB: EARNINGS */}
         {tab === "earnings" && !isLoading && (
           <div className="space-y-6">
+            {/* NLP Sentiment Panel (CI3) */}
+            {sentimentData && (
+              <div className="bg-card rounded-xl ring-1 ring-foreground/10 p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">NLP Analysis — {COMPETITOR_NAMES[selectedCompany]}</h3>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground">{sentimentData.wordCount.toLocaleString()} words</span>
+                    <span className={cn(
+                      "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                      sentimentData.score > 0.2 ? "bg-emerald-500/10 text-emerald-400" :
+                      sentimentData.score < -0.2 ? "bg-red-500/10 text-red-400" :
+                      "bg-amber-500/10 text-amber-400"
+                    )}>
+                      {sentimentData.label} ({sentimentData.posCount}+ / {sentimentData.negCount}-)
+                    </span>
+                  </div>
+                </div>
+                {sentimentData.topics.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {sentimentData.topics.map((t) => (
+                      <span key={t.topic} className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", t.badge)}>
+                        {t.topic} ({t.count})
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {sentimentData.keyQuotes.length > 0 && (
+                  <div className="space-y-1 pt-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Key Statements</span>
+                    {sentimentData.keyQuotes.map((q, i) => (
+                      <p key={i} className="text-[11px] text-muted-foreground italic leading-relaxed border-l-2 border-primary/30 pl-2">
+                        &ldquo;{q.slice(0, 200)}{q.length > 200 ? "..." : ""}&rdquo;
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="bg-card rounded-xl ring-1 ring-foreground/10 p-4 space-y-3">
               <h3 className="text-sm font-semibold">
                 Earnings Call Transcript — {COMPETITOR_NAMES[selectedCompany]} (Q4 2025)
@@ -1161,18 +1245,30 @@ export default function CompetitivePage() {
         {tab === "strategy" && !isLoading && (
           <div className="space-y-6">
             <div className="bg-card rounded-xl ring-1 ring-foreground/10 p-4 space-y-3">
-              <h3 className="text-sm font-semibold">M&A Activity — {COMPETITOR_NAMES[selectedCompany]}</h3>
+              <h3 className="text-sm font-semibold">M&A Timeline — {COMPETITOR_NAMES[selectedCompany]}</h3>
               {(maDeals[selectedCompany] || []).length > 0 ? (
-                <div className="space-y-2">
-                  {(maDeals[selectedCompany] || []).slice(0, 10).map((deal, i) => (
-                    <div key={i} className="flex items-start gap-3 text-xs border-l-2 border-primary/30 pl-3">
-                      <span className="text-muted-foreground font-mono shrink-0">{deal.datedAcquired?.slice(0, 10) || "\u2014"}</span>
-                      <div>
-                        <span className="font-medium">{deal.companyName}</span>
-                        <span className="text-muted-foreground"> &rarr; </span>
-                        <span className="font-medium">{deal.targetedCompanyName}</span>
+                <div className="space-y-0">
+                  {(maDeals[selectedCompany] || []).slice(0, 10).map((deal, i, arr) => (
+                    <div key={i} className="relative flex gap-3 pb-4 last:pb-0">
+                      <div className="flex flex-col items-center">
+                        <div className="h-3 w-3 rounded-full border-2 border-primary bg-background shrink-0 mt-0.5" />
+                        {i < Math.min(arr.length, 10) - 1 && (
+                          <div className="w-px flex-1 bg-border" />
+                        )}
+                      </div>
+                      <div className="flex-1 rounded-lg border border-border bg-muted/30 p-2.5 -mt-0.5">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs">
+                            <span className="font-semibold">{deal.companyName}</span>
+                            <span className="text-muted-foreground"> &rarr; </span>
+                            <span className="font-semibold">{deal.targetedCompanyName}</span>
+                          </div>
+                          <span className="text-[10px] text-muted-foreground font-mono shrink-0 ml-2">
+                            {deal.datedAcquired?.slice(0, 10) || "\u2014"}
+                          </span>
+                        </div>
                         {deal.transactionAmount && (
-                          <span className="text-muted-foreground ml-2">(${deal.transactionAmount})</span>
+                          <span className="text-[10px] text-muted-foreground">Deal value: ${deal.transactionAmount}</span>
                         )}
                       </div>
                     </div>
