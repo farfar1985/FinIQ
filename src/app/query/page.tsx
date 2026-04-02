@@ -1,5 +1,16 @@
+import dynamic from "next/dynamic";
 import { AppShell } from "@/components/app-shell";
-import { QueryContent } from "@/components/query/query-content";
+
+const QueryContent = dynamic(
+  () => import("@/components/query/query-content").then((m) => ({ default: m.QueryContent })),
+  {
+    loading: () => (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-pulse text-sm text-muted-foreground">Loading query interface...</div>
+      </div>
+    ),
+  }
+);
 
 export default function QueryPage() {
   return (

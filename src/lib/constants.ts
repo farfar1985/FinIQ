@@ -66,7 +66,7 @@ export const ACCOUNT_ALIASES: Record<string, string> = {
 
 export const PERIODS = Array.from({ length: 13 }, (_, i) => `P${String(i + 1).padStart(2, "0")}`);
 
-export const FMP_COMPETITORS = ["MDLZ", "HSY", "GIS", "CL", "UL", "SJM", "NESN"] as const;
+export const FMP_COMPETITORS = ["NSRGY", "MDLZ", "HSY", "CL", "SJM", "GIS", "PG", "UL", "KHC", "K"] as const;
 
 export const DEFAULT_PROMPTS = [
   "Show me RC Japan P13 results",

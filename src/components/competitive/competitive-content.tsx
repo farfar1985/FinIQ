@@ -9,7 +9,7 @@ import {
   Swords, TrendingUp, TrendingDown, Loader2, ExternalLink,
   ChevronRight, FileText, Building2, BarChart3, DollarSign,
   Users, Leaf, RefreshCw, Newspaper, Target, Shield, Crosshair,
-  Bell, Plus, Trash2,
+  Bell, Plus, Trash2, ArrowRight,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -711,13 +711,17 @@ function EarningsTab({ competitors }: { competitors: Competitor[] }) {
                   <span className="ml-2 text-xs text-muted-foreground">Loading transcript...</span>
                 </div>
               ) : transcript?.content ? (
-                <div className="max-h-[400px] overflow-y-auto rounded border border-border p-3">
+                <div className="space-y-3">
+                  {/* NLP Insight Summary — CI3 */}
+                  <TranscriptInsights content={transcript.content} ticker={selectedTicker} />
+                  <div className="max-h-[300px] overflow-y-auto rounded border border-border p-3">
                   <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
                     {transcript.content.slice(0, 5000)}
                     {transcript.content.length > 5000 && (
                       <span className="text-primary"> ... [truncated]</span>
                     )}
                   </p>
+                </div>
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground py-4">
@@ -728,6 +732,93 @@ function EarningsTab({ competitors }: { competitors: Competitor[] }) {
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---- Transcript NLP Insights (CI3) ----------------------------------------
+
+function TranscriptInsights({ content, ticker }: { content: string; ticker: string }) {
+  const insights = useMemo(() => {
+    const text = content.toLowerCase();
+    const sentences = content.split(/[.!?]+/).filter((s) => s.trim().length > 20);
+
+    // Sentiment analysis — keyword-based
+    const positiveWords = ["growth", "strong", "exceeded", "improved", "optimistic", "record", "momentum", "confident", "outperformed", "robust", "positive", "beat", "upside", "acceleration"];
+    const negativeWords = ["decline", "headwind", "challenging", "weak", "pressure", "miss", "risk", "uncertainty", "softness", "contraction", "downturn", "lower", "negative", "concern"];
+
+    let posCount = 0;
+    let negCount = 0;
+    for (const w of positiveWords) posCount += (text.match(new RegExp(`\\b${w}\\w*\\b`, "g")) || []).length;
+    for (const w of negativeWords) negCount += (text.match(new RegExp(`\\b${w}\\w*\\b`, "g")) || []).length;
+
+    const totalSentiment = posCount + negCount;
+    const sentimentScore = totalSentiment > 0 ? ((posCount - negCount) / totalSentiment) : 0;
+    const sentimentLabel = sentimentScore > 0.2 ? "Bullish" : sentimentScore < -0.2 ? "Bearish" : "Neutral";
+    const sentimentColor = sentimentScore > 0.2 ? "text-emerald-400" : sentimentScore < -0.2 ? "text-red-400" : "text-amber-400";
+
+    // Key topic extraction
+    const topics: { topic: string; count: number; badge: string }[] = [];
+    const topicPatterns: [string, RegExp, string][] = [
+      ["Pricing", /\bpric(e|ing|es)\b/gi, "bg-blue-500/20 text-blue-400"],
+      ["Volume", /\bvolume\b/gi, "bg-purple-500/20 text-purple-400"],
+      ["Margin", /\bmargin\b/gi, "bg-amber-500/20 text-amber-400"],
+      ["Innovation", /\b(innovat|new product|launch|R&D)\b/gi, "bg-emerald-500/20 text-emerald-400"],
+      ["Cost", /\b(cost|expense|inflation|commodity)\b/gi, "bg-red-500/20 text-red-400"],
+      ["Guidance", /\b(guidance|outlook|forecast|expect)\b/gi, "bg-cyan-500/20 text-cyan-400"],
+      ["M&A", /\b(acqui|merger|divest|portfolio)\b/gi, "bg-orange-500/20 text-orange-400"],
+      ["ESG", /\b(sustainab|ESG|environment|carbon|emission)\b/gi, "bg-green-500/20 text-green-400"],
+    ];
+    for (const [topic, re, badge] of topicPatterns) {
+      const matches = content.match(re);
+      if (matches && matches.length > 0) topics.push({ topic, count: matches.length, badge });
+    }
+    topics.sort((a, b) => b.count - a.count);
+
+    // Key quotes — sentences with strong signal words
+    const keyQuotes = sentences
+      .filter((s) => {
+        const lower = s.toLowerCase();
+        return /\b(expect|guidance|outlook|growth|margin|target|confident|challenge)\b/.test(lower);
+      })
+      .slice(0, 3)
+      .map((s) => s.trim());
+
+    return { sentimentLabel, sentimentColor, sentimentScore, posCount, negCount, topics: topics.slice(0, 6), keyQuotes, wordCount: content.split(/\s+/).length };
+  }, [content]);
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">NLP Analysis</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-muted-foreground">{insights.wordCount.toLocaleString()} words</span>
+          <Badge className={cn("text-[10px]", insights.sentimentColor, insights.sentimentScore > 0.2 ? "bg-emerald-500/10" : insights.sentimentScore < -0.2 ? "bg-red-500/10" : "bg-amber-500/10")}>
+            {insights.sentimentLabel} ({insights.posCount}+ / {insights.negCount}-)
+          </Badge>
+        </div>
+      </div>
+      {/* Topic tags */}
+      {insights.topics.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {insights.topics.map((t) => (
+            <span key={t.topic} className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", t.badge)}>
+              {t.topic} ({t.count})
+            </span>
+          ))}
+        </div>
+      )}
+      {/* Key quotes */}
+      {insights.keyQuotes.length > 0 && (
+        <div className="space-y-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Key Statements</span>
+          {insights.keyQuotes.map((q, i) => (
+            <p key={i} className="text-[11px] text-muted-foreground italic leading-relaxed border-l-2 border-primary/30 pl-2">
+              &ldquo;{q.slice(0, 200)}{q.length > 200 ? "..." : ""}&rdquo;
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -908,26 +999,40 @@ function NewsMandATab() {
                 <span className="ml-2 text-xs text-muted-foreground">Loading M&amp;A data...</span>
               </div>
             ) : deals.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Acquirer</TableHead>
-                    <TableHead>Target</TableHead>
-                    <TableHead className="text-right">Date</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {deals.slice(0, 15).map((deal, idx) => (
-                    <TableRow key={idx}>
-                      <TableCell className="text-xs">{deal.companyName}</TableCell>
-                      <TableCell className="text-xs">{deal.targetedCompanyName}</TableCell>
-                      <TableCell className="text-right text-xs text-muted-foreground">
-                        {deal.transactionDate ? new Date(deal.transactionDate).toLocaleDateString() : "\u2014"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <div className="space-y-0 max-h-[500px] overflow-y-auto">
+                {deals.slice(0, 15).map((deal, idx) => {
+                  const d = deal.transactionDate ? new Date(deal.transactionDate) : null;
+                  return (
+                    <div key={idx} className="relative flex gap-3 pb-4 last:pb-0">
+                      {/* Timeline line */}
+                      <div className="flex flex-col items-center">
+                        <div className="h-3 w-3 rounded-full border-2 border-primary bg-background shrink-0 mt-0.5" />
+                        {idx < Math.min(deals.length, 15) - 1 && (
+                          <div className="w-px flex-1 bg-border" />
+                        )}
+                      </div>
+                      {/* Deal card */}
+                      <div className="flex-1 rounded-lg border border-border bg-muted/30 p-2.5 -mt-0.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold">{deal.companyName}</span>
+                          <span className="text-[10px] text-muted-foreground font-mono">
+                            {d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "\u2014"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 mt-1">
+                          <ArrowRight className="h-3 w-3 text-primary shrink-0" />
+                          <span className="text-xs text-muted-foreground">{deal.targetedCompanyName}</span>
+                        </div>
+                        {deal.url && (
+                          <a href={deal.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary hover:underline mt-1 inline-flex items-center gap-0.5">
+                            Details <ExternalLink className="h-2.5 w-2.5" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <Target className="h-8 w-8 text-muted-foreground/30 mb-2" />

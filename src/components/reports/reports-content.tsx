@@ -10,7 +10,10 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  ChevronRight,
   Clock,
+  Search,
+  ZoomIn,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -273,6 +276,7 @@ function computeNarratives(
 // ---------------------------------------------------------------------------
 
 function NarrativeCardComponent({ card }: { card: NarrativeCard }) {
+  const [expanded, setExpanded] = useState(false);
   const valueColor = card.isPositive ? "text-emerald-400" : "text-red-400";
   const changeIcon = card.isPositive ? (
     <TrendingUp className="size-4" />
@@ -282,9 +286,15 @@ function NarrativeCardComponent({ card }: { card: NarrativeCard }) {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader
+        className="cursor-pointer select-none"
+        onClick={() => setExpanded((prev) => !prev)}
+      >
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm">{card.kpi}</CardTitle>
+          <div className="flex items-center gap-2">
+            <ChevronRight className={`size-4 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
+            <CardTitle className="text-sm">{card.kpi}</CardTitle>
+          </div>
           <div className="flex items-center gap-1.5">
             <span className={valueColor}>{changeIcon}</span>
             <span className={`font-mono text-lg font-semibold ${valueColor}`}>
@@ -292,48 +302,51 @@ function NarrativeCardComponent({ card }: { card: NarrativeCard }) {
             </span>
           </div>
         </div>
-        <CardDescription className="text-xs uppercase tracking-wider text-muted-foreground">
+        <CardDescription className="text-xs uppercase tracking-wider text-muted-foreground ml-6">
           {card.metric} | YoY: {card.changePercent >= 0 ? "+" : ""}
-          {card.changePercent.toFixed(1)}%
+          {card.changePercent.toFixed(1)}% | YTD: {card.ytdChangePercent >= 0 ? "+" : ""}
+          {card.ytdChangePercent.toFixed(1)}%
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        <p className="text-xs leading-relaxed text-muted-foreground">{card.narrative}</p>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <div>
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
-              Top 3
-            </p>
-            <ul className="space-y-1">
-              {card.top3.map((item) => (
-                <li key={item.name} className="flex items-center justify-between text-xs">
-                  <span className="truncate text-muted-foreground">{item.name}</span>
-                  <span className="ml-2 font-mono text-emerald-400">{item.value}</span>
-                </li>
-              ))}
-              {card.top3.length === 0 && (
-                <li className="text-xs text-muted-foreground/60">No sub-units</li>
-              )}
-            </ul>
+      {expanded && (
+        <CardContent className="pt-0">
+          <p className="text-xs leading-relaxed text-muted-foreground">{card.narrative}</p>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <div>
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+                Top 3
+              </p>
+              <ul className="space-y-1">
+                {card.top3.map((item) => (
+                  <li key={item.name} className="flex items-center justify-between text-xs">
+                    <span className="truncate text-muted-foreground">{item.name}</span>
+                    <span className="ml-2 font-mono text-emerald-400">{item.value}</span>
+                  </li>
+                ))}
+                {card.top3.length === 0 && (
+                  <li className="text-xs text-muted-foreground/60">No sub-units</li>
+                )}
+              </ul>
+            </div>
+            <div>
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-red-400">
+                Bottom 3
+              </p>
+              <ul className="space-y-1">
+                {card.bottom3.map((item) => (
+                  <li key={item.name} className="flex items-center justify-between text-xs">
+                    <span className="truncate text-muted-foreground">{item.name}</span>
+                    <span className="ml-2 font-mono text-red-400">{item.value}</span>
+                  </li>
+                ))}
+                {card.bottom3.length === 0 && (
+                  <li className="text-xs text-muted-foreground/60">No sub-units</li>
+                )}
+              </ul>
+            </div>
           </div>
-          <div>
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-red-400">
-              Bottom 3
-            </p>
-            <ul className="space-y-1">
-              {card.bottom3.map((item) => (
-                <li key={item.name} className="flex items-center justify-between text-xs">
-                  <span className="truncate text-muted-foreground">{item.name}</span>
-                  <span className="ml-2 font-mono text-red-400">{item.value}</span>
-                </li>
-              ))}
-              {card.bottom3.length === 0 && (
-                <li className="text-xs text-muted-foreground/60">No sub-units</li>
-              )}
-            </ul>
-          </div>
-        </div>
-      </CardContent>
+        </CardContent>
+      )}
     </Card>
   );
 }
@@ -521,45 +534,105 @@ function KPIDataTable({
               </TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
-            {filtered.map(({ account, data, periodicVar, ytdVar }) => (
-              <TableRow key={account.id}>
-                <TableCell className="font-medium">{account.name}</TableCell>
-                <TableCell className="font-mono text-muted-foreground">
-                  {account.code}
-                </TableCell>
-                <TableCell className="text-right font-mono">
-                  {data ? data.periodic_cy_value.toLocaleString() : "-"}
-                </TableCell>
-                <TableCell className="text-right font-mono">
-                  {data ? data.periodic_ly_value.toLocaleString() : "-"}
-                </TableCell>
-                <TableCell
-                  className={`text-right font-mono ${
-                    periodicVar >= 0 ? "text-emerald-400" : "text-red-400"
-                  }`}
-                >
-                  {data ? (periodicVar >= 0 ? "+" : "") + periodicVar.toFixed(2) : "-"}
-                </TableCell>
-                <TableCell className="text-right font-mono">
-                  {data ? data.ytd_cy_value.toLocaleString() : "-"}
-                </TableCell>
-                <TableCell className="text-right font-mono">
-                  {data ? data.ytd_ly_value.toLocaleString() : "-"}
-                </TableCell>
-                <TableCell
-                  className={`text-right font-mono ${
-                    ytdVar >= 0 ? "text-emerald-400" : "text-red-400"
-                  }`}
-                >
-                  {data ? (ytdVar >= 0 ? "+" : "") + ytdVar.toFixed(2) : "-"}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
+          <KPITableBody filtered={filtered} />
         </Table>
       </CardContent>
     </Card>
+  );
+}
+
+function KPITableBody({ filtered }: { filtered: { account: Account; data: FinancialRow | undefined; periodicVar: number; ytdVar: number }[] }) {
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+
+  return (
+          <TableBody>
+            {filtered.map(({ account, data, periodicVar, ytdVar }) => {
+              const isExpanded = expandedRow === account.id;
+              const periodicPct = data && data.periodic_ly_value !== 0
+                ? ((data.periodic_cy_value - data.periodic_ly_value) / Math.abs(data.periodic_ly_value)) * 100
+                : 0;
+              const ytdPct = data && data.ytd_ly_value !== 0
+                ? ((data.ytd_cy_value - data.ytd_ly_value) / Math.abs(data.ytd_ly_value)) * 100
+                : 0;
+              return (
+                <>
+                  <TableRow
+                    key={account.id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => setExpandedRow(isExpanded ? null : account.id)}
+                  >
+                    <TableCell className="font-medium">
+                      <span className="inline-flex items-center gap-1">
+                        <ChevronRight className={`size-3 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                        {account.name}
+                      </span>
+                    </TableCell>
+                    <TableCell className="font-mono text-muted-foreground">
+                      {account.code}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {data ? data.periodic_cy_value.toLocaleString() : "-"}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {data ? data.periodic_ly_value.toLocaleString() : "-"}
+                    </TableCell>
+                    <TableCell
+                      className={`text-right font-mono ${
+                        periodicVar >= 0 ? "text-emerald-400" : "text-red-400"
+                      }`}
+                    >
+                      {data ? (periodicVar >= 0 ? "+" : "") + periodicVar.toFixed(2) : "-"}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {data ? data.ytd_cy_value.toLocaleString() : "-"}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {data ? data.ytd_ly_value.toLocaleString() : "-"}
+                    </TableCell>
+                    <TableCell
+                      className={`text-right font-mono ${
+                        ytdVar >= 0 ? "text-emerald-400" : "text-red-400"
+                      }`}
+                    >
+                      {data ? (ytdVar >= 0 ? "+" : "") + ytdVar.toFixed(2) : "-"}
+                    </TableCell>
+                  </TableRow>
+                  {isExpanded && data && (
+                    <TableRow key={`${account.id}-detail`} className="bg-muted/20">
+                      <TableCell colSpan={8} className="py-3 px-6">
+                        <div className="grid grid-cols-4 gap-4 text-xs">
+                          <div className="space-y-1">
+                            <div className="text-[10px] uppercase text-muted-foreground font-semibold">Periodic Change</div>
+                            <div className={`font-mono text-sm font-semibold ${periodicPct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                              {periodicPct >= 0 ? "+" : ""}{periodicPct.toFixed(1)}%
+                            </div>
+                            <div className="text-muted-foreground">{Math.abs(periodicPct * 10).toFixed(0)} bps {periodicPct >= 0 ? "improvement" : "decline"}</div>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="text-[10px] uppercase text-muted-foreground font-semibold">YTD Change</div>
+                            <div className={`font-mono text-sm font-semibold ${ytdPct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                              {ytdPct >= 0 ? "+" : ""}{ytdPct.toFixed(1)}%
+                            </div>
+                            <div className="text-muted-foreground">{Math.abs(ytdPct * 10).toFixed(0)} bps {ytdPct >= 0 ? "improvement" : "decline"}</div>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="text-[10px] uppercase text-muted-foreground font-semibold">CY Values</div>
+                            <div className="text-muted-foreground">Periodic: <span className="font-mono">{data.periodic_cy_value.toLocaleString()}</span></div>
+                            <div className="text-muted-foreground">YTD: <span className="font-mono">{data.ytd_cy_value.toLocaleString()}</span></div>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="text-[10px] uppercase text-muted-foreground font-semibold">LY Values</div>
+                            <div className="text-muted-foreground">Periodic: <span className="font-mono">{data.periodic_ly_value.toLocaleString()}</span></div>
+                            <div className="text-muted-foreground">YTD: <span className="font-mono">{data.ytd_ly_value.toLocaleString()}</span></div>
+                          </div>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </>
+              );
+            })}
+          </TableBody>
   );
 }
 
