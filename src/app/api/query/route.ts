@@ -547,8 +547,10 @@ async function processRealDatabricksQuery(
   if (!apiKey || !isConfigured()) return null;
 
   // Check cache first (skip for follow-ups that reuse lastResponseData)
+  // Key on query text only — context (entity/period) extracted from conversation
+  // history changes between calls even for identical queries, causing false misses
+  const cacheKey = `query:${query.toLowerCase().trim()}`;
   if (!lastResponseData) {
-    const cacheKey = `query:${query}:${context?.entity || ""}:${context?.period || ""}`;
     const cached = cacheGet<QueryResponse>(cacheKey);
     if (cached) {
       console.log("[/api/query] Cache HIT for:", query);
@@ -705,7 +707,6 @@ async function processRealDatabricksQuery(
     } as QueryResponse & { followUps: { label: string; query: string }[] };
 
     // Cache the result for future identical queries (10 min TTL)
-    const cacheKey = `query:${query}:${context?.entity || ""}:${context?.period || ""}`;
     cacheSet(cacheKey, result);
     console.log("[/api/query] Cached result for:", query);
 
