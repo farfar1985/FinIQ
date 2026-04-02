@@ -13,9 +13,31 @@
  */
 
 import { WebSocketServer, WebSocket } from "ws";
+import { readFileSync } from "fs";
+import { resolve } from "path";
+
+// Load .env from project root (voice-server runs standalone, not via Next.js)
+try {
+  const envPath = resolve(__dirname, "../../.env");
+  const envContent = readFileSync(envPath, "utf-8");
+  for (const line of envContent.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx < 0) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    const val = trimmed.slice(eqIdx + 1).trim();
+    // Always override — Claude Code and other tools may inject empty/wrong values
+    process.env[key] = val;
+  }
+  console.log("[voice] Loaded .env from project root");
+} catch {
+  console.log("[voice] No .env file found, using system env vars");
+}
 
 const VOICE_PORT = parseInt(process.env.VOICE_PORT || "3002", 10);
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+console.log("[voice] OPENAI_API_KEY present:", !!OPENAI_API_KEY, "length:", OPENAI_API_KEY.length);
 const REALTIME_URL =
   "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17";
 
@@ -349,6 +371,7 @@ function handleVoiceConnection(clientWs: WebSocket) {
 
       switch (message.type) {
         case "audio":
+        case "input_audio_buffer.append":
           if (sessionReady && openaiWs.readyState === WebSocket.OPEN) {
             openaiWs.send(
               JSON.stringify({

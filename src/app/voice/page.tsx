@@ -95,19 +95,56 @@ export default function VoicePage() {
         };
 
         source.connect(processor);
-        processor.connect(audioCtx.destination);
+        // Connect to destination is required for ScriptProcessor to fire,
+        // but we use a silent gain node to prevent mic audio playing through speakers
+        const silentGain = audioCtx.createGain();
+        silentGain.gain.value = 0;
+        processor.connect(silentGain);
+        silentGain.connect(audioCtx.destination);
+      };
+
+      // Audio playback with sequential scheduling to avoid overlapping chunks
+      let nextPlayTime = 0;
+      const playAudioChunk = (b64: string) => {
+        try {
+          const binary = atob(b64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const int16 = new Int16Array(bytes.buffer);
+          const float32 = new Float32Array(int16.length);
+          for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
+          const buffer = audioCtx.createBuffer(1, float32.length, 24000);
+          buffer.getChannelData(0).set(float32);
+          const src = audioCtx.createBufferSource();
+          src.buffer = buffer;
+          src.connect(audioCtx.destination);
+          // Schedule sequentially — each chunk plays after the previous one ends
+          const now = audioCtx.currentTime;
+          const startAt = Math.max(now, nextPlayTime);
+          src.start(startAt);
+          nextPlayTime = startAt + buffer.duration;
+        } catch {
+          // ignore decode errors
+        }
       };
 
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (msg.type === "response.audio_transcript.done" && msg.transcript) {
+          // Server remaps OpenAI event types — match both server and raw formats
+          if ((msg.type === "transcript.agent.done" || msg.type === "response.audio_transcript.done") && msg.transcript) {
             addTranscript("assistant", msg.transcript);
             setCurrentSpeaker(null);
-          } else if (msg.type === "conversation.item.input_audio_transcription.completed" && msg.transcript) {
+          } else if ((msg.type === "transcript.user" || msg.type === "conversation.item.input_audio_transcription.completed") && msg.transcript) {
             addTranscript("user", msg.transcript);
-          } else if (msg.type === "response.audio.delta") {
+          } else if (msg.type === "response.created") {
+            // New response starting — reset audio queue to avoid stale scheduling
+            nextPlayTime = 0;
+          } else if (msg.type === "audio" || msg.type === "response.audio.delta") {
             setCurrentSpeaker("assistant");
+            // Play the audio delta
+            const audioData = msg.delta || msg.audio;
+            if (audioData) playAudioChunk(audioData);
           } else if (msg.type === "input_audio_buffer.speech_started") {
             setCurrentSpeaker("user");
           } else if (msg.type === "input_audio_buffer.speech_stopped") {
