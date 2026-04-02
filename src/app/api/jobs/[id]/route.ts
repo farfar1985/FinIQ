@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { jobs, type JobRecord } from "@/app/api/jobs/route";
-// processLLMQuery removed — jobs now use real Databricks only
+import { saveJobs, type PersistedJob } from "@/lib/job-persistence";
 
 // ============================================================
 // GET /api/jobs/[id]
@@ -62,7 +62,7 @@ export async function PATCH(
 
   try {
     const body = await request.json();
-    const { status, result, error } = body;
+    const { status, result, error, priority, title, query: queryText } = body;
 
     const validStatuses: JobRecord["status"][] = ["submitted", "queued", "processing", "completed", "failed"];
     if (status && !validStatuses.includes(status)) {
@@ -70,6 +70,36 @@ export async function PATCH(
         { error: `Invalid status: ${status}. Must be one of: ${validStatuses.join(", ")}` },
         { status: 400, headers }
       );
+    }
+
+    // Editable fields — only allowed on non-processing jobs
+    if (priority || title || queryText) {
+      if (job.status === "processing") {
+        return NextResponse.json(
+          { error: "Cannot edit a job that is currently processing" },
+          { status: 400, headers }
+        );
+      }
+      const validPriorities = ["critical", "high", "medium", "low"];
+      if (priority && validPriorities.includes(priority)) {
+        job.priority = priority;
+        // Recalculate SLA
+        const SLA_TARGETS: Record<string, { minutes: number; ms: number }> = {
+          critical: { minutes: 2, ms: 2 * 60 * 1000 },
+          high: { minutes: 10, ms: 10 * 60 * 1000 },
+          medium: { minutes: 30, ms: 30 * 60 * 1000 },
+          low: { minutes: 120, ms: 2 * 60 * 60 * 1000 },
+        };
+        const sla = SLA_TARGETS[priority] || SLA_TARGETS.medium;
+        job.sla_target_minutes = sla.minutes;
+        job.sla_deadline = new Date(new Date(job.created_at).getTime() + sla.ms).toISOString();
+      }
+      if (title && typeof title === "string") {
+        job.title = title.substring(0, 200);
+      }
+      if (queryText && typeof queryText === "string") {
+        job.query = queryText.trim();
+      }
     }
 
     if (status) {
@@ -81,6 +111,9 @@ export async function PATCH(
     if (result !== undefined) job.result = result;
     if (error !== undefined) job.error = error;
     job.updated_at = new Date().toISOString();
+
+    // Persist to disk
+    try { saveJobs(jobs as unknown as Map<string, PersistedJob>); } catch { /* non-critical */ }
 
     return NextResponse.json({ job }, { headers });
   } catch {

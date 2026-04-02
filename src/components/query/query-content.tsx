@@ -81,14 +81,57 @@ const SUGGESTED_QUERIES = [
   "Show revenue trend for Mars Wrigley Division",
 ];
 
-const RECENT_QUERIES = [
-  { query: "Petcare organic growth P06", time: "2h ago" },
-  { query: "MAC Shape comparison all GBUs", time: "3h ago" },
-  { query: "Snacking budget variance", time: "5h ago" },
-  { query: "NCFO bridge Corporate", time: "1d ago" },
-  { query: "Cocoa cost impact analysis", time: "1d ago" },
-  { query: "Wrigley FX headwind P05-P06", time: "2d ago" },
-];
+// ---------------------------------------------------------------------------
+// Recent queries — persisted in localStorage
+// ---------------------------------------------------------------------------
+
+const RECENT_QUERIES_KEY = "finiq_recent_queries";
+const MAX_RECENT_QUERIES = 10;
+
+interface RecentQuery {
+  query: string;
+  timestamp: number; // Unix ms
+}
+
+function loadRecentQueries(): RecentQuery[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(RECENT_QUERIES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentQuery(query: string): RecentQuery[] {
+  if (typeof window === "undefined") return [];
+  const existing = loadRecentQueries();
+  // Remove duplicates
+  const filtered = existing.filter((q) => q.query.toLowerCase() !== query.toLowerCase());
+  // Add at the top
+  const updated = [{ query, timestamp: Date.now() }, ...filtered].slice(0, MAX_RECENT_QUERIES);
+  try {
+    localStorage.setItem(RECENT_QUERIES_KEY, JSON.stringify(updated));
+  } catch {
+    // localStorage full — silently fail
+  }
+  return updated;
+}
+
+function formatTimeAgo(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return `${Math.floor(days / 7)}w ago`;
+}
 
 // ---------------------------------------------------------------------------
 // Context extractor - pulls entity/period from conversation history
@@ -509,6 +552,70 @@ function SuggestedPromptsPanel({
 }
 
 // ---------------------------------------------------------------------------
+// Inline job submit with priority selector (Phase 8)
+// ---------------------------------------------------------------------------
+
+function JobSubmitInline({
+  query,
+  onSubmitted,
+}: {
+  query: string;
+  onSubmitted: (jobId: string) => void;
+}) {
+  const [priority, setPriority] = useState<"critical" | "high" | "medium" | "low">("medium");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, priority }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        onSubmitted(data.job?.id || "queued");
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <select
+        value={priority}
+        onChange={(e) => setPriority(e.target.value as typeof priority)}
+        className="h-8 rounded-md border border-foreground/10 bg-transparent px-2 text-xs text-foreground"
+      >
+        <option value="critical">Critical</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
+      <Button
+        size="sm"
+        variant="outline"
+        className="text-xs"
+        onClick={handleSubmit}
+        disabled={submitting}
+      >
+        {submitting ? (
+          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+        ) : (
+          <Play className="mr-1 h-3 w-3" />
+        )}
+        Submit to Job Board
+      </Button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -516,8 +623,14 @@ export function QueryContent() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [recentQueries, setRecentQueries] = useState<RecentQuery[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const dataMode = useUIStore((state) => state.dataMode);
+
+  // Load recent queries from localStorage on mount
+  useEffect(() => {
+    setRecentQueries(loadRecentQueries());
+  }, []);
 
   // FR8.11: Undo/redo for conversation history
   const [undoRedo, setUndoRedo] = useState<UndoRedoState<Message[]>>(
@@ -572,6 +685,9 @@ export function QueryContent() {
     async (overrideText?: string) => {
       const text = (overrideText ?? input).trim();
       if (!text || isLoading) return;
+
+      // Save to recent queries (localStorage)
+      setRecentQueries(saveRecentQuery(text));
 
       // Add user message
       const userMsg: Message = {
@@ -791,36 +907,20 @@ export function QueryContent() {
                         </div>
                       )}
 
-                      {/* Job Board fallback button */}
+                      {/* Job Board fallback button with priority selector */}
                       {msg.jobPrompt && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="mt-2 text-xs"
-                          onClick={async () => {
-                            try {
-                              const res = await fetch("/api/jobs", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ query: msg.jobPrompt, priority: "medium" }),
-                              });
-                              if (res.ok) {
-                                const job = await res.json();
-                                const confirmMsg: Message = {
-                                  id: `j-${Date.now()}`,
-                                  role: "assistant",
-                                  content: `Job submitted (${job.job?.id || "queued"}). You can track it on the Job Board.`,
-                                  timestamp: new Date(),
-                                };
-                                setMessages((prev) => [...prev, confirmMsg]);
-                              }
-                            } catch {
-                              // ignore
-                            }
+                        <JobSubmitInline
+                          query={msg.jobPrompt}
+                          onSubmitted={(jobId) => {
+                            const confirmMsg: Message = {
+                              id: `j-${Date.now()}`,
+                              role: "assistant",
+                              content: `Job submitted (${jobId}). You can track it on the Job Board.`,
+                              timestamp: new Date(),
+                            };
+                            setMessages((prev) => [...prev, confirmMsg]);
                           }}
-                        >
-                          <Play className="mr-1 h-3 w-3" /> Submit to Job Board
-                        </Button>
+                        />
                       )}
 
                       <p
@@ -940,9 +1040,14 @@ export function QueryContent() {
             </CardHeader>
             <CardContent>
               <div className="space-y-1">
-                {RECENT_QUERIES.map((item) => (
+                {recentQueries.length === 0 && (
+                  <p className="py-2 text-center text-xs text-muted-foreground">
+                    No recent queries yet. Ask something!
+                  </p>
+                )}
+                {recentQueries.map((item) => (
                   <button
-                    key={item.query}
+                    key={`${item.query}-${item.timestamp}`}
                     onClick={() => handleChipClick(item.query)}
                     disabled={isLoading}
                     className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted/50 disabled:opacity-50"
@@ -951,7 +1056,7 @@ export function QueryContent() {
                       {item.query}
                     </span>
                     <span className="ml-2 shrink-0 text-xs text-muted-foreground">
-                      {item.time}
+                      {formatTimeAgo(item.timestamp)}
                     </span>
                   </button>
                 ))}

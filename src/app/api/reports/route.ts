@@ -10,6 +10,7 @@ import {
   setModeOverride,
   getActiveConfig,
 } from "@/data/databricks";
+import { cacheGet, cacheSet, reportKey } from "@/lib/query-cache";
 
 function fqn(table: string): string {
   const cfg = getActiveConfig();
@@ -34,6 +35,10 @@ export async function POST(request: NextRequest) {
 
     switch (type) {
       case "entities": {
+        const rk = reportKey("entities", undefined, dateId);
+        const cached = cacheGet(rk);
+        if (cached) return NextResponse.json(cached);
+
         const rows = await executeRawSql(`
           SELECT DISTINCT Unit_Alias
           FROM ${fqn("finiq_vw_pl_unit")}
@@ -41,10 +46,12 @@ export async function POST(request: NextRequest) {
           ORDER BY Unit_Alias
           LIMIT 500
         `);
-        return NextResponse.json({
+        const result = {
           source: "databricks",
           entities: rows.map((r) => r.Unit_Alias as string),
-        });
+        };
+        cacheSet(rk, result);
+        return NextResponse.json(result);
       }
 
       case "accounts": {
@@ -66,6 +73,10 @@ export async function POST(request: NextRequest) {
         const safeUnit = (unitAlias || "Mars Incorporated (r)").replace(/'/g, "''");
         const safeDateId = dateId || 202503;
 
+        const rk = reportKey("pes", unitAlias, safeDateId);
+        const cached = cacheGet(rk);
+        if (cached) return NextResponse.json(cached);
+
         const rows = await executeRawSql(`
           SELECT RL_Alias, Periodic_CY_Value, Periodic_LY_Value, YTD_CY_Value, YTD_LY_Value
           FROM ${fqn("finiq_vw_pl_unit")}
@@ -84,17 +95,23 @@ export async function POST(request: NextRequest) {
           LIMIT 50
         `).catch(() => []);
 
-        return NextResponse.json({
+        const result = {
           source: "databricks",
           unit: unitAlias,
           dateId: safeDateId,
           plData: rows,
           ncfoData: ncfoRows,
-        });
+        };
+        cacheSet(rk, result);
+        return NextResponse.json(result);
       }
 
       case "variance": {
         const safeUnit = (unitAlias || "Mars Incorporated (r)").replace(/'/g, "''");
+
+        const rk = reportKey("variance", unitAlias, dateId);
+        const cached = cacheGet(rk);
+        if (cached) return NextResponse.json(cached);
 
         // Find the Unit_ID for this alias using full name match
         const unitRows = await executeRawSql(`
@@ -125,12 +142,14 @@ export async function POST(request: NextRequest) {
           `);
         }
 
-        return NextResponse.json({
+        const result = {
           source: "databricks",
           unit: unitAlias,
           dateId: dateId || 202503,
           varianceData: varianceRows,
-        });
+        };
+        cacheSet(rk, result);
+        return NextResponse.json(result);
       }
 
       default:

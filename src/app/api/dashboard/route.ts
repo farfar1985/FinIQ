@@ -245,7 +245,7 @@ async function fetchRealEntities(): Promise<{ id: number; name: string; level: n
 
 // In-memory cache — survives across requests, cleared on server restart
 const _cache: { data: Record<string, unknown> | null; timestamp: number } = { data: null, timestamp: 0 };
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
 // Pre-warm cache on module load (first import triggers this)
 let _warmingUp = false;

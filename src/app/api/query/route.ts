@@ -20,6 +20,7 @@ import {
 } from "@/lib/llm-query";
 import { isRealMode, isConfigured, executeRawSql, setModeOverride, type DataMode } from "@/data/databricks";
 import { SCHEMA_CONTEXT } from "@/lib/schema-context";
+import { cacheGet, cacheSet } from "@/lib/query-cache";
 import Anthropic from "@anthropic-ai/sdk";
 
 // ---------------------------------------------------------------------------
@@ -545,6 +546,16 @@ async function processRealDatabricksQuery(
   console.log("[/api/query] apiKey present:", !!apiKey, "| isConfigured:", isConfigured());
   if (!apiKey || !isConfigured()) return null;
 
+  // Check cache first (skip for follow-ups that reuse lastResponseData)
+  if (!lastResponseData) {
+    const cacheKey = `query:${query}:${context?.entity || ""}:${context?.period || ""}`;
+    const cached = cacheGet<QueryResponse>(cacheKey);
+    if (cached) {
+      console.log("[/api/query] Cache HIT for:", query);
+      return cached;
+    }
+  }
+
   // Check for follow-up (chart/table toggle) — reuse existing data
   if (lastResponseData) {
     const lower = query.toLowerCase();
@@ -573,6 +584,7 @@ async function processRealDatabricksQuery(
     const sqlResponse = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 1024,
+      temperature: 0,
       system: `${SCHEMA_CONTEXT}\n\nYou are generating SQL for a live Databricks warehouse. Return ONLY a JSON object with:\n- "sql": the SQL query string (use fully qualified table names with catalog.schema prefix: corporate_finance_analytics_prod.finsight_core_model.<table>)\n- "description": what this query answers (1 sentence)\n- "chartType": "bar" or "area" (which chart best fits)\n- "labelColumn": which SQL result column to use as chart labels/X-axis (e.g. "Unit_Alias")\n- "valueColumn": which SQL result column to use as chart values/Y-axis (must be a meaningful metric, NEVER a date or ID column)\n\nCRITICAL: Unit_Alias values are CASE-SENSITIVE Title Case. Use LOWER() for comparisons.\nExample: WHERE LOWER(Unit_Alias) LIKE LOWER('%petcare%')\n\nCommon unit mappings (use LIKE for flexibility):\n- "Mars Inc" or "Corporate" → LOWER(Unit_Alias) LIKE '%mars incorporated%'\n- "Petcare" → LOWER(Unit_Alias) LIKE '%petcare%'\n- "Snacking" → LOWER(Unit_Alias) LIKE '%snacking%'\n- "Mars Wrigley" or "Wrigley" → LOWER(Unit_Alias) LIKE '%wrigley%'\n- "Food & Nutrition" → LOWER(Unit_Alias) LIKE '%food%nutrition%'\n- For "all GBUs" or "across GBUs" → LOWER(Unit_Alias) LIKE 'gbu%'\n\nIf no specific period mentioned, use Date_ID = 202503 (latest with actuals).\nFor "trend" or "over time", query Date_ID BETWEEN 202401 AND 202513.\n\nContext: user is asking about entity "${context?.entity || "Mars Inc"}", period "${context?.period || "latest"}"\n\nReturn ONLY valid JSON, no markdown.`,
       messages: [{ role: "user", content: query }],
     });
@@ -604,17 +616,36 @@ async function processRealDatabricksQuery(
 
     // Step 3: Format response
     const columns = Object.keys(rows[0]);
+    // Detect which columns are likely percentages (column name or all values between -1 and 1)
+    const pctColumns = new Set<string>();
+    for (const col of columns) {
+      if (/(_pct|_percent|growth|margin|rate|ratio)/i.test(col)) {
+        pctColumns.add(col);
+      } else if (typeof rows[0]?.[col] === "number") {
+        const allSmall = rows.every((r) => {
+          const v = r[col];
+          return typeof v === "number" && Math.abs(v) <= 1;
+        });
+        const anyNonZero = rows.some((r) => typeof r[col] === "number" && r[col] !== 0);
+        if (allSmall && anyNonZero) pctColumns.add(col);
+      }
+    }
+
     const tableRows = rows.map((r) => {
       const formatted: Record<string, unknown> = {};
       for (const col of columns) {
         const val = r[col];
-        // Format numbers nicely
         if (typeof val === "number") {
-          formatted[col] = Math.abs(val) >= 1000000
-            ? `$${(val / 1000000).toFixed(1)}M`
-            : Math.abs(val) < 1 && val !== 0
-            ? `${(val * 100).toFixed(1)}%`
-            : val.toFixed(1);
+          if (pctColumns.has(col)) {
+            // Percentage column — multiply by 100 and show %
+            formatted[col] = `${(val * 100).toFixed(1)}%`;
+          } else if (Math.abs(val) >= 1000000) {
+            formatted[col] = `$${(val / 1000000).toFixed(1)}M`;
+          } else if (Math.abs(val) >= 1000) {
+            formatted[col] = `$${(val / 1000).toFixed(1)}K`;
+          } else {
+            formatted[col] = val.toFixed(1);
+          }
         } else {
           formatted[col] = val;
         }
@@ -622,11 +653,18 @@ async function processRealDatabricksQuery(
       return formatted;
     });
 
-    // Build chart data — use LLM's column picks, fall back to heuristic
-    const skipForChart = /^(date_id|id|row_number|rn)$/i;
+    // Build chart data — use LLM's column picks, fall back to improved heuristic
+    const skipForChart = /^(date_id|id|row_number|rn|unit_id|rl_id)$/i;
     const labelCol = (llmLabelCol && columns.includes(llmLabelCol)) ? llmLabelCol : columns[0];
+
+    // Heuristic priority for value column:
+    // 1. LLM pick (if valid)
+    // 2. _Pct / _Percent / growth columns (most meaningful for charts)
+    // 3. _Value columns
+    // 4. Any numeric column that isn't a skip column
     const valueCol =
       (llmValueCol && columns.includes(llmValueCol)) ? llmValueCol :
+      columns.find((c) => /(_pct|_percent|growth|margin)/i.test(c) && typeof rows[0][c] === "number") ||
       columns.find((c) => /_value$/i.test(c) && typeof rows[0][c] === "number") ||
       columns.find((c) => !skipForChart.test(c) && typeof rows[0][c] === "number" && c !== labelCol) ||
       columns[1];
@@ -641,6 +679,7 @@ async function processRealDatabricksQuery(
       const summaryResp = await client.messages.create({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 512,
+        temperature: 0,
         messages: [{
           role: "user",
           content: `Summarize this financial data for a business user. Question: "${query}"\n\nData (${rows.length} rows, sample):\n${JSON.stringify(rows.slice(0, 10), null, 2)}\n\nBe concise. Use specific numbers. Never say "replace" or "fragmented".`,
@@ -658,12 +697,19 @@ async function processRealDatabricksQuery(
       { label: "Export to XLSX", query: "Export this to spreadsheet" },
     ];
 
-    return {
+    const result = {
       text: summary,
       intent: "databricks",
       data: { type: "chart", chartType, chartData, columns, rows: tableRows },
       followUps,
     } as QueryResponse & { followUps: { label: string; query: string }[] };
+
+    // Cache the result for future identical queries (10 min TTL)
+    const cacheKey = `query:${query}:${context?.entity || ""}:${context?.period || ""}`;
+    cacheSet(cacheKey, result);
+    console.log("[/api/query] Cached result for:", query);
+
+    return result;
 
   } catch (err) {
     console.error("[/api/query] Real Databricks query failed:", err instanceof Error ? err.message : err);

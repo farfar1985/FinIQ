@@ -640,6 +640,7 @@ async function handlePES(
       const msg = await client.messages.create({
         model: MODEL,
         max_tokens: 1024,
+        temperature: 0,
         messages: [{
           role: "user",
           content: `You are a financial analyst for Mars, Incorporated. Generate a ${format === "www" ? "What's Working Well" : format === "wnww" ? "What's Not Working Well" : "Executive Summary"} for ${eName} based on this KPI data:\n\n${JSON.stringify(kpiResults, null, 2)}\n\nEach KPI includes a "trend" object with direction and tagline. Incorporate trend insights.\nBe concise. Use specific numbers. Never say "replace" or "fragmented".`,
@@ -1044,6 +1045,7 @@ async function handleAdhoc(
     const sqlResponse = await client.messages.create({
       model: MODEL,
       max_tokens: 512,
+      temperature: 0,
       system: `You are a SQL expert for a Mars, Incorporated financial database. ${SCHEMA_CONTEXT}\n\nThe user is asking about entity "${entityName(entities, entityId)}". Generate a query against the simulated data. Available columns in financialData: entity_id, account_code, date_id, ytd_ly_value, ytd_cy_value, periodic_ly_value, periodic_cy_value.\n\nReturn a JSON object with:\n- "filter": { "entity_id": string | null, "account_codes": string[] | null, "periods": string[] | null }\n- "aggregation": "sum" | "avg" | "latest"\n- "description": brief description of what to compute\n\nReturn ONLY valid JSON.`,
       messages: [{ role: "user", content: query }],
     });
@@ -1105,6 +1107,7 @@ async function handleAdhoc(
     const summaryResp = await client.messages.create({
       model: MODEL,
       max_tokens: 512,
+      temperature: 0,
       messages: [{
         role: "user",
         content: `Summarize this financial data for a business user. Question: "${query}"\n\nData (sample):\n${JSON.stringify(summaryData, null, 2)}\n\nTotal rows: ${filtered.length}. Be concise. Use specific numbers. Never say "replace" or "fragmented".`,

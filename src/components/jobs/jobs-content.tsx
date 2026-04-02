@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { Plus, ArrowUpDown, Clock, CheckCircle2, Cpu, Activity, X, RotateCcw, Download } from "lucide-react";
+import { Plus, ArrowUpDown, Clock, CheckCircle2, Cpu, Activity, X, RotateCcw, Download, Pencil, Check } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge, SeverityBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -322,6 +322,37 @@ export function JobsContent() {
     }
   }, []);
 
+  // ---- Edit job state & handler -----------------------------------------------
+
+  const [editingJob, setEditingJob] = useState(false);
+  const [editPriority, setEditPriority] = useState<(typeof JOB_PRIORITIES)[number]>("medium");
+  const [editTitle, setEditTitle] = useState("");
+
+  const startEditingJob = useCallback((job: JobRecord) => {
+    setEditingJob(true);
+    setEditPriority(job.priority);
+    setEditTitle(job.title);
+  }, []);
+
+  const handleSaveJobEdit = useCallback(async () => {
+    if (!selectedJob) return;
+    try {
+      const res = await fetch(`/api/jobs/${selectedJob.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priority: editPriority, title: editTitle }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedJob(data.job);
+        setEditingJob(false);
+        await fetchJobs();
+      }
+    } catch {
+      // Edit failed silently
+    }
+  }, [selectedJob, editPriority, editTitle, fetchJobs]);
+
   // ---- Duration helper ------------------------------------------------------
 
   const getJobDuration = (job: JobRecord): string => {
@@ -484,8 +515,16 @@ export function JobsContent() {
           <CardContent>
             <div className="space-y-4">
               <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-base font-semibold">{selectedJob.title}</h3>
+                <div className="flex-1 mr-3">
+                  {editingJob ? (
+                    <input
+                      className="w-full rounded-md border border-input bg-background px-2 py-1 text-base font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                    />
+                  ) : (
+                    <h3 className="text-base font-semibold">{selectedJob.title}</h3>
+                  )}
                   <p className="mt-0.5 font-mono text-xs text-muted-foreground">{selectedJob.id}</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -494,9 +533,21 @@ export function JobsContent() {
                   >
                     {selectedJob.status.charAt(0).toUpperCase() + selectedJob.status.slice(1)}
                   </span>
-                  <SeverityBadge severity={selectedJob.priority}>
-                    {selectedJob.priority.charAt(0).toUpperCase() + selectedJob.priority.slice(1)}
-                  </SeverityBadge>
+                  {editingJob ? (
+                    <select
+                      value={editPriority}
+                      onChange={(e) => setEditPriority(e.target.value as typeof editPriority)}
+                      className="h-6 rounded-md border border-input bg-background px-1 text-xs text-foreground"
+                    >
+                      {JOB_PRIORITIES.map((p) => (
+                        <option key={p} value={p} className="bg-background text-foreground">{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <SeverityBadge severity={selectedJob.priority}>
+                      {selectedJob.priority.charAt(0).toUpperCase() + selectedJob.priority.slice(1)}
+                    </SeverityBadge>
+                  )}
                   <span
                     className={`inline-flex h-5 items-center rounded-full px-2 text-xs font-medium ${typeColors[selectedJob.type] || ""}`}
                   >
@@ -607,9 +658,26 @@ export function JobsContent() {
               )}
 
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setSelectedJob(null)}>
+                <Button variant="outline" onClick={() => { setSelectedJob(null); setEditingJob(false); }}>
                   Close
                 </Button>
+                {selectedJob.status !== "processing" && !editingJob && (
+                  <Button variant="outline" onClick={() => startEditingJob(selectedJob)}>
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </Button>
+                )}
+                {editingJob && (
+                  <>
+                    <Button variant="outline" onClick={() => setEditingJob(false)}>
+                      Cancel
+                    </Button>
+                    <Button onClick={handleSaveJobEdit}>
+                      <Check className="h-4 w-4" />
+                      Save
+                    </Button>
+                  </>
+                )}
                 {selectedJob.status === "failed" && selectedJob.retries < selectedJob.max_retries && (
                   <Button variant="outline" onClick={() => handleRetryJob(selectedJob.id)}>
                     <RotateCcw className="h-4 w-4" />

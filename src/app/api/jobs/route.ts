@@ -18,6 +18,7 @@ import { broadcastEvent } from "@/lib/sse-broadcast";
 import { isConfigured, executeRawSql, setModeOverride, getActiveConfig } from "@/data/databricks";
 import { SCHEMA_CONTEXT } from "@/lib/schema-context";
 import Anthropic from "@anthropic-ai/sdk";
+import { loadJobs, saveJobs, type PersistedJob } from "@/lib/job-persistence";
 
 // ============================================================
 // Types & Constants
@@ -88,11 +89,37 @@ const globalJobs = globalThis as unknown as {
   __finiq_jobs?: Map<string, JobRecord>;
   __finiq_scheduled_jobs?: ScheduledJob[];
   __finiq_scheduler_started?: boolean;
+  __finiq_jobs_loaded?: boolean;
 };
 if (!globalJobs.__finiq_jobs) {
   globalJobs.__finiq_jobs = new Map<string, JobRecord>();
 }
 export const jobs: Map<string, JobRecord> = globalJobs.__finiq_jobs;
+
+// Load persisted jobs from disk on first import
+if (!globalJobs.__finiq_jobs_loaded) {
+  globalJobs.__finiq_jobs_loaded = true;
+  try {
+    const persisted = loadJobs();
+    for (const j of persisted) {
+      jobs.set(j.id, j as unknown as JobRecord);
+    }
+    if (persisted.length > 0) {
+      console.log(`[jobs] Loaded ${persisted.length} persisted jobs from disk`);
+    }
+  } catch (err) {
+    console.warn("[jobs] Failed to load persisted jobs:", err);
+  }
+}
+
+/** Helper to persist jobs after any mutation */
+function persistJobs() {
+  try {
+    saveJobs(jobs as unknown as Map<string, PersistedJob>);
+  } catch {
+    // Non-critical — silently fail
+  }
+}
 
 // ============================================================
 // Job Scheduling — FR5.6
@@ -292,6 +319,7 @@ async function processJob(jobId: string) {
         const sqlResponse = await client.messages.create({
           model: "claude-haiku-4-5-20251001",
           max_tokens: 1024,
+          temperature: 0,
           system: `${SCHEMA_CONTEXT}\n\nGenerate SQL for a live Databricks warehouse. Use fully qualified names: corporate_finance_analytics_prod.finsight_core_model.<table>.\nUse LOWER() for Unit_Alias comparisons. Default period: Date_ID = 202503.\nKEEP QUERIES SIMPLE: Always filter by specific Unit_Alias and Date_ID. Never scan all units or all periods at once. Use LIMIT 100.\nFor "top 5 GBUs" use: WHERE LOWER(Unit_Alias) LIKE 'gbu%' or specific GBU names.\nReturn ONLY a JSON object with: "sql" (the query), "description" (1 sentence).`,
           messages: [{ role: "user", content: job.query }],
         });
@@ -306,6 +334,7 @@ async function processJob(jobId: string) {
               const summaryResp = await client.messages.create({
                 model: "claude-haiku-4-5-20251001",
                 max_tokens: 1024,
+                temperature: 0,
                 messages: [{ role: "user", content: `Provide an executive summary for this financial query. Question: "${job.query}"\n\nData (${rows.length} rows, sample):\n${JSON.stringify(rows.slice(0, 15), null, 2)}\n\nBe thorough. Use specific numbers. Include key findings, trends, and recommendations. Never say "replace" or "fragmented".` }],
               });
               const summary = summaryResp.content[0]?.type === "text" ? summaryResp.content[0].text : parsed.description;
@@ -355,11 +384,13 @@ async function processJob(jobId: string) {
       intent: result.intent,
       generated_at: new Date().toISOString(),
     };
+    persistJobs();
     broadcastEvent("job:completed", { id: job.id, status: job.status, title: job.title });
   } catch (err) {
     job.status = "failed";
     job.updated_at = new Date().toISOString();
     job.error = err instanceof Error ? err.message : "Unknown error during processing";
+    persistJobs();
     broadcastEvent("job:failed", { id: job.id, status: job.status, error: job.error });
   } finally {
     // Free agent capacity
@@ -516,6 +547,7 @@ export async function POST(request: NextRequest) {
     // Transition to queued
     job.status = "queued";
     job.updated_at = new Date().toISOString();
+    persistJobs();
 
     // Increment agent active jobs
     agent.activeJobs++;
