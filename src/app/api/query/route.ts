@@ -572,7 +572,7 @@ async function processRealDatabricksQuery(
     const sqlResponse = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 1024,
-      system: `${SCHEMA_CONTEXT}\n\nYou are generating SQL for a live Databricks warehouse. Return ONLY a JSON object with:\n- "sql": the SQL query string (use fully qualified table names with catalog.schema prefix: corporate_finance_analytics_prod.finsight_core_model.<table>)\n- "description": what this query answers (1 sentence)\n- "chartType": "bar" or "area" (which chart best fits)\n\nCRITICAL: Unit_Alias values are CASE-SENSITIVE Title Case. Use LOWER() for comparisons.\nExample: WHERE LOWER(Unit_Alias) LIKE LOWER('%petcare%')\n\nCommon unit mappings (use LIKE for flexibility):\n- "Mars Inc" or "Corporate" → LOWER(Unit_Alias) LIKE '%mars incorporated%'\n- "Petcare" → LOWER(Unit_Alias) LIKE '%petcare%'\n- "Snacking" → LOWER(Unit_Alias) LIKE '%snacking%'\n- "Mars Wrigley" or "Wrigley" → LOWER(Unit_Alias) LIKE '%wrigley%'\n- "Food & Nutrition" → LOWER(Unit_Alias) LIKE '%food%nutrition%'\n- For "all GBUs" or "across GBUs" → LOWER(Unit_Alias) LIKE 'gbu%'\n\nIf no specific period mentioned, use Date_ID = 202503 (latest with actuals).\nFor "trend" or "over time", query Date_ID BETWEEN 202401 AND 202513.\n\nContext: user is asking about entity "${context?.entity || "Mars Inc"}", period "${context?.period || "latest"}"\n\nReturn ONLY valid JSON, no markdown.`,
+      system: `${SCHEMA_CONTEXT}\n\nYou are generating SQL for a live Databricks warehouse. Return ONLY a JSON object with:\n- "sql": the SQL query string (use fully qualified table names with catalog.schema prefix: corporate_finance_analytics_prod.finsight_core_model.<table>)\n- "description": what this query answers (1 sentence)\n- "chartType": "bar" or "area" (which chart best fits)\n- "labelColumn": which SQL result column to use as chart labels/X-axis (e.g. "Unit_Alias")\n- "valueColumn": which SQL result column to use as chart values/Y-axis (must be a meaningful metric, NEVER a date or ID column)\n\nCRITICAL: Unit_Alias values are CASE-SENSITIVE Title Case. Use LOWER() for comparisons.\nExample: WHERE LOWER(Unit_Alias) LIKE LOWER('%petcare%')\n\nCommon unit mappings (use LIKE for flexibility):\n- "Mars Inc" or "Corporate" → LOWER(Unit_Alias) LIKE '%mars incorporated%'\n- "Petcare" → LOWER(Unit_Alias) LIKE '%petcare%'\n- "Snacking" → LOWER(Unit_Alias) LIKE '%snacking%'\n- "Mars Wrigley" or "Wrigley" → LOWER(Unit_Alias) LIKE '%wrigley%'\n- "Food & Nutrition" → LOWER(Unit_Alias) LIKE '%food%nutrition%'\n- For "all GBUs" or "across GBUs" → LOWER(Unit_Alias) LIKE 'gbu%'\n\nIf no specific period mentioned, use Date_ID = 202503 (latest with actuals).\nFor "trend" or "over time", query Date_ID BETWEEN 202401 AND 202513.\n\nContext: user is asking about entity "${context?.entity || "Mars Inc"}", period "${context?.period || "latest"}"\n\nReturn ONLY valid JSON, no markdown.`,
       messages: [{ role: "user", content: query }],
     });
 
@@ -584,6 +584,8 @@ async function processRealDatabricksQuery(
     const sql = parsed.sql as string;
     const description = parsed.description as string || "Query results";
     const chartType = (parsed.chartType as "bar" | "area") || "bar";
+    const llmLabelCol = parsed.labelColumn as string | undefined;
+    const llmValueCol = parsed.valueColumn as string | undefined;
 
     if (!sql) return null;
 
@@ -619,9 +621,14 @@ async function processRealDatabricksQuery(
       return formatted;
     });
 
-    // Build chart data from first label + numeric column
-    const labelCol = columns[0];
-    const valueCol = columns.find((c) => typeof rows[0][c] === "number") || columns[1];
+    // Build chart data — use LLM's column picks, fall back to heuristic
+    const skipForChart = /^(date_id|id|row_number|rn)$/i;
+    const labelCol = (llmLabelCol && columns.includes(llmLabelCol)) ? llmLabelCol : columns[0];
+    const valueCol =
+      (llmValueCol && columns.includes(llmValueCol)) ? llmValueCol :
+      columns.find((c) => /_value$/i.test(c) && typeof rows[0][c] === "number") ||
+      columns.find((c) => !skipForChart.test(c) && typeof rows[0][c] === "number" && c !== labelCol) ||
+      columns[1];
     const chartData = rows.slice(0, 15).map((r) => ({
       label: String(r[labelCol] ?? ""),
       value: typeof r[valueCol] === "number" ? r[valueCol] as number : parseFloat(String(r[valueCol] ?? "0")),
