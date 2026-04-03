@@ -2,16 +2,31 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Mic, MicOff, Phone, PhoneOff, Volume2 } from "lucide-react";
+import {
+  BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer,
+} from "recharts";
 import { AppShell } from "@/components/app-shell";
 import { cn } from "@/lib/utils";
 
 type ConnectionState = "disconnected" | "connecting" | "connected";
+
+interface ChartDataPoint {
+  label: string;
+  value: number;
+}
+
+interface DisplayData {
+  chartConfig?: { type?: "bar" | "area"; data?: ChartDataPoint[] } | null;
+  data?: Record<string, unknown>[] | null;
+}
 
 interface Transcript {
   id: string;
   role: "user" | "assistant";
   text: string;
   timestamp: number;
+  display?: DisplayData;
 }
 
 function getVoiceWsUrl(): string {
@@ -103,8 +118,21 @@ export default function VoicePage() {
         silentGain.connect(audioCtx.destination);
       };
 
+      // Pending display data from tool calls — attached to next assistant transcript
+      let pendingDisplay: DisplayData | null = null;
+
       // Audio playback with sequential scheduling to avoid overlapping chunks
       let nextPlayTime = 0;
+      const activeSources: AudioBufferSourceNode[] = [];
+
+      const stopAllPlayback = () => {
+        for (const src of activeSources) {
+          try { src.stop(); } catch { /* already stopped */ }
+        }
+        activeSources.length = 0;
+        nextPlayTime = 0;
+      };
+
       const playAudioChunk = (b64: string) => {
         try {
           const binary = atob(b64);
@@ -123,6 +151,11 @@ export default function VoicePage() {
           const startAt = Math.max(now, nextPlayTime);
           src.start(startAt);
           nextPlayTime = startAt + buffer.duration;
+          activeSources.push(src);
+          src.onended = () => {
+            const idx = activeSources.indexOf(src);
+            if (idx >= 0) activeSources.splice(idx, 1);
+          };
         } catch {
           // ignore decode errors
         }
@@ -133,10 +166,48 @@ export default function VoicePage() {
           const msg = JSON.parse(event.data);
           // Server remaps OpenAI event types — match both server and raw formats
           if ((msg.type === "transcript.agent.done" || msg.type === "response.audio_transcript.done") && msg.transcript) {
-            addTranscript("assistant", msg.transcript);
+            // Attach any pending chart/data from tool calls
+            const display = pendingDisplay;
+            pendingDisplay = null;
+            setTranscripts((prev) => [
+              ...prev,
+              {
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                role: "assistant" as const,
+                text: msg.transcript,
+                timestamp: Date.now(),
+                display: display || undefined,
+              },
+            ]);
             setCurrentSpeaker(null);
           } else if ((msg.type === "transcript.user" || msg.type === "conversation.item.input_audio_transcription.completed") && msg.transcript) {
             addTranscript("user", msg.transcript);
+          } else if (msg.type === "data.display") {
+            // Tool call returned data — store for attachment to next transcript
+            pendingDisplay = {
+              chartConfig: msg.chartConfig || null,
+              data: msg.data || null,
+            };
+            // Also try to build chart from query response shape
+            if (!msg.chartConfig && msg.data && Array.isArray(msg.data)) {
+              const rows = msg.data as Record<string, unknown>[];
+              if (rows.length > 0) {
+                const keys = Object.keys(rows[0]);
+                const labelKey = keys.find((k) => /alias|name|entity|unit|account|label/i.test(k)) || keys[0];
+                const valueKey = keys.find((k) => /value|cy|growth|periodic/i.test(k) && k !== labelKey) || keys[1];
+                if (labelKey && valueKey) {
+                  pendingDisplay.chartConfig = {
+                    type: "bar",
+                    data: rows.map((r) => ({
+                      label: String(r[labelKey] ?? ""),
+                      value: Number(r[valueKey]) || 0,
+                    })),
+                  };
+                }
+              }
+            }
+          } else if (msg.type === "function.calling") {
+            addTranscript("assistant", `Querying: ${msg.name}...`);
           } else if (msg.type === "response.created") {
             // New response starting — reset audio queue to avoid stale scheduling
             nextPlayTime = 0;
@@ -145,9 +216,11 @@ export default function VoicePage() {
             // Play the audio delta
             const audioData = msg.delta || msg.audio;
             if (audioData) playAudioChunk(audioData);
-          } else if (msg.type === "input_audio_buffer.speech_started") {
+          } else if (msg.type === "input_audio_buffer.speech_started" || msg.type === "speech.started") {
+            // User started talking — stop any assistant audio playing
+            stopAllPlayback();
             setCurrentSpeaker("user");
-          } else if (msg.type === "input_audio_buffer.speech_stopped") {
+          } else if (msg.type === "input_audio_buffer.speech_stopped" || msg.type === "speech.stopped") {
             setCurrentSpeaker(null);
           }
         } catch {
@@ -229,6 +302,30 @@ export default function VoicePage() {
                 )}
               >
                 {t.text}
+                {/* Inline chart from tool call data */}
+                {t.display?.chartConfig?.data && t.display.chartConfig.data.length > 0 && (
+                  <div className="mt-2 h-[180px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      {t.display.chartConfig.type === "area" ? (
+                        <AreaChart data={t.display.chartConfig.data} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                          <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#888" }} />
+                          <YAxis tick={{ fontSize: 9, fill: "#888" }} />
+                          <Tooltip contentStyle={{ backgroundColor: "oklch(0.16 0.005 250)", border: "1px solid oklch(0.25 0.005 250)", borderRadius: "8px", fontSize: "11px" }} />
+                          <Area type="monotone" dataKey="value" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.15} strokeWidth={2} />
+                        </AreaChart>
+                      ) : (
+                        <BarChart data={t.display.chartConfig.data} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                          <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#888" }} />
+                          <YAxis tick={{ fontSize: 9, fill: "#888" }} />
+                          <Tooltip contentStyle={{ backgroundColor: "oklch(0.16 0.005 250)", border: "1px solid oklch(0.25 0.005 250)", borderRadius: "8px", fontSize: "11px" }} />
+                          <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      )}
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
             ))
           )}

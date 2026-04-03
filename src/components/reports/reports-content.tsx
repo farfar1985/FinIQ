@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useCallback, useEffect } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import {
   FileText,
   TrendingUp,
@@ -555,9 +555,8 @@ function KPITableBody({ filtered }: { filtered: { account: Account; data: Financ
                 ? ((data.ytd_cy_value - data.ytd_ly_value) / Math.abs(data.ytd_ly_value)) * 100
                 : 0;
               return (
-                <>
+                <React.Fragment key={account.id}>
                   <TableRow
-                    key={account.id}
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => setExpandedRow(isExpanded ? null : account.id)}
                   >
@@ -629,7 +628,7 @@ function KPITableBody({ filtered }: { filtered: { account: Account; data: Financ
                       </TableCell>
                     </TableRow>
                   )}
-                </>
+                </React.Fragment>
               );
             })}
           </TableBody>
