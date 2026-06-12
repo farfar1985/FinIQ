@@ -1,0 +1,4149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Amira platform architecture — how the system is built and operated.">
+<meta name="color-scheme" content="light dark">
+<title>Amira — Platform Architecture</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  /* Light palette — warm off-white paper */
+  --bg: #FAF8F3;
+  --bg-alt: #F4EFE3;
+  --surface: #FFFFFF;
+  --surface-2: #F2EDE2;
+  --border: #E2DBC9;
+  --border-strong: #C9C0AB;
+  --text: #1A1612;
+  --text-muted: #5E574B;
+  --text-subtle: #8A8276;
+  --accent: #0F5560;
+  --accent-hover: #0A3D45;
+  --accent-soft: rgba(15, 85, 96, 0.07);
+  --accent-line: rgba(15, 85, 96, 0.22);
+  --code-bg: rgba(15, 85, 96, 0.06);
+  --code-text: #2D2A24;
+  --code-block-bg: #F4EFE3;
+  --shadow-sm: 0 1px 2px rgba(26, 22, 18, 0.04);
+  --shadow-md: 0 4px 16px rgba(26, 22, 18, 0.06);
+  --shadow-lg: 0 10px 40px rgba(26, 22, 18, 0.10);
+
+  /* Typography */
+  --font-display: 'Inter Tight', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'Source Serif 4', 'Charter', 'Iowan Old Style', Georgia, serif;
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Menlo', 'Consolas', monospace;
+
+  /* Sizing */
+  --content-max: 760px;
+  --content-wide-max: 1140px;
+  --sidebar-w: 320px;
+
+  /* Spacing scale */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 64px;
+  --s-9: 96px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14110D;
+    --bg-alt: #1A1814;
+    --surface: #1A1814;
+    --surface-2: #211E18;
+    --border: #2E2A21;
+    --border-strong: #423D31;
+    --text: #ECE6D9;
+    --text-muted: #A39B8C;
+    --text-subtle: #756E62;
+    --accent: #6BC4D0;
+    --accent-hover: #87D5E0;
+    --accent-soft: rgba(107, 196, 208, 0.10);
+    --accent-line: rgba(107, 196, 208, 0.28);
+    --code-bg: rgba(107, 196, 208, 0.10);
+    --code-text: #ECE6D9;
+    --code-block-bg: #1F1C16;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.5);
+  }
+}
+
+* { box-sizing: border-box; }
+*::selection { background: var(--accent-soft); color: var(--text); }
+
+html { scroll-behavior: smooth; }
+
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 17px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'kern', 'liga', 'calt';
+}
+
+body {
+  min-height: 100vh;
+  background-image:
+    radial-gradient(at 12% 8%, var(--accent-soft) 0%, transparent 35%),
+    radial-gradient(at 88% 92%, var(--accent-soft) 0%, transparent 40%);
+  background-attachment: fixed;
+}
+
+/* Scroll progress bar */
+.progress {
+  position: fixed;
+  top: 0; left: 0;
+  height: 2px;
+  width: 0;
+  background: var(--accent);
+  z-index: 200;
+  transition: width 0.05s linear;
+  pointer-events: none;
+}
+
+/* ================== Layout ================== */
+@media (min-width: 1024px) {
+  body {
+    display: grid;
+    grid-template-columns: var(--sidebar-w) 1fr;
+  }
+  .topbar { display: none; }
+  .sidebar-overlay { display: none; }
+  .sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-right: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .content {
+    padding: var(--s-9) var(--s-8) var(--s-8);
+    max-width: 1140px;
+    width: 100%;
+  }
+}
+
+@media (max-width: 1023px) {
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    padding: var(--s-3) var(--s-4);
+    background: rgba(250, 248, 243, 0.92);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: saturate(180%) blur(10px);
+    -webkit-backdrop-filter: saturate(180%) blur(10px);
+  }
+  @media (prefers-color-scheme: dark) {
+    .topbar { background: rgba(20, 17, 13, 0.92); }
+  }
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    z-index: 100;
+    width: 88%;
+    max-width: 360px;
+    height: 100vh;
+    overflow-y: auto;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+    transform: translateX(-100%);
+    transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .sidebar.open {
+    transform: translateX(0);
+    box-shadow: var(--shadow-lg);
+  }
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 17, 13, 0.50);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.32s, visibility 0s 0.32s;
+    z-index: 90;
+    backdrop-filter: blur(2px);
+  }
+  .sidebar-overlay.open {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.32s, visibility 0s 0s;
+  }
+  .content {
+    padding: var(--s-6) var(--s-4) var(--s-9);
+  }
+}
+
+/* ================== Topbar (mobile) ================== */
+.menu-toggle {
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0;
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.menu-toggle:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.menu-toggle span {
+  display: block;
+  width: 16px;
+  height: 1.5px;
+  background: var(--text);
+}
+.topbar-title {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.topbar-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px; height: 22px;
+  background: var(--text);
+  color: var(--bg);
+  border-radius: 5px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+
+/* ================== Sidebar / TOC ================== */
+.sidebar-inner {
+  padding: var(--s-7) var(--s-6);
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-2);
+  margin-bottom: var(--s-7);
+  padding-bottom: var(--s-5);
+  border-bottom: 1px solid var(--border);
+}
+.brand-mark {
+  width: 32px; height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--text);
+  color: var(--bg);
+  border-radius: 7px;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  margin-bottom: var(--s-2);
+}
+.brand-name {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+.brand-tag {
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--text-subtle);
+}
+
+.toc {
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  flex: 1;
+}
+.toc-label {
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--text-subtle);
+  margin-bottom: var(--s-3);
+}
+.toc ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.toc-h2 {
+  margin: 0;
+}
+.toc-h2 > a {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  padding: 7px var(--s-3) 7px var(--s-3);
+  margin-left: -1px;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  border-left: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  border-radius: 0 4px 4px 0;
+}
+.toc-h2 > a:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.toc-h2.active > a {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  font-weight: 600;
+}
+.toc-num {
+  display: inline-block;
+  min-width: 28px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-subtle);
+  font-weight: 500;
+  flex-shrink: 0;
+  text-align: right;
+  padding-right: 2px;
+}
+.toc-h2.active .toc-num {
+  color: var(--accent);
+}
+.toc-text {
+  flex: 1;
+}
+
+.toc-h2 > ul {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.toc-h2.active > ul,
+.toc-h2.expanded > ul {
+  max-height: 700px;
+}
+.toc-h3 a {
+  display: block;
+  padding: 5px 0 5px var(--s-7);
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 12.5px;
+  border-left: 1px solid var(--border);
+  margin-left: var(--s-3);
+  transition: color 0.15s, border-color 0.15s;
+  letter-spacing: -0.003em;
+}
+.toc-h3 a:hover {
+  color: var(--accent);
+}
+.toc-h3.active > a {
+  color: var(--accent);
+  border-left-color: var(--accent);
+}
+
+.sidebar-footer {
+  margin-top: var(--s-7);
+  padding-top: var(--s-5);
+  border-top: 1px solid var(--border);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--text-subtle);
+  letter-spacing: 0.02em;
+  line-height: 1.5;
+}
+
+/* ================== Content / Prose ================== */
+.content {
+  margin: 0 auto;
+}
+
+.prose {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  font-family: var(--font-body);
+  font-variation-settings: 'opsz' 22;
+}
+
+/* h1 — page title */
+.prose h1 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(36px, 5.5vw, 56px);
+  line-height: 1.04;
+  letter-spacing: -0.028em;
+  color: var(--text);
+  margin: 0 0 var(--s-5);
+}
+
+/* The lead blockquote at the top */
+.prose > blockquote:first-of-type {
+  font-family: var(--font-body);
+  font-style: normal;
+  font-size: 19.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  border-left: 2px solid var(--accent-line);
+  padding: 4px var(--s-4) 4px var(--s-5);
+  margin: 0 0 var(--s-9);
+  background: transparent;
+  font-variation-settings: 'opsz' 20;
+}
+.prose > blockquote:first-of-type p {
+  margin: 0 0 var(--s-3);
+}
+.prose > blockquote:first-of-type p:last-child {
+  margin-bottom: 0;
+}
+
+/* Section h2 */
+.prose h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(26px, 3vw, 34px);
+  line-height: 1.15;
+  letter-spacing: -0.022em;
+  color: var(--text);
+  margin: var(--s-9) 0 var(--s-5);
+  padding-top: var(--s-6);
+  position: relative;
+  scroll-margin-top: 24px;
+}
+.prose h2::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 56px;
+  height: 1px;
+  background: var(--accent);
+}
+
+/* h3 */
+.prose h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 22px;
+  line-height: 1.25;
+  letter-spacing: -0.018em;
+  color: var(--text);
+  margin: var(--s-7) 0 var(--s-4);
+  scroll-margin-top: 24px;
+}
+
+/* h4 */
+.prose h4 {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--text);
+  margin: var(--s-6) 0 var(--s-3);
+}
+
+/* h5 */
+.prose h5 {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.005em;
+  color: var(--text);
+  margin: var(--s-5) 0 var(--s-2);
+}
+
+.prose p {
+  margin: 0 0 var(--s-4);
+}
+.prose ul, .prose ol {
+  margin: 0 0 var(--s-4);
+  padding-left: var(--s-5);
+}
+.prose li {
+  margin-bottom: var(--s-2);
+}
+.prose li > p { margin-bottom: var(--s-2); }
+.prose ul > li::marker {
+  color: var(--accent);
+}
+.prose ol > li::marker {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+
+.prose a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--accent-line);
+  transition: text-decoration-color 0.15s;
+}
+.prose a:hover {
+  text-decoration-color: var(--accent);
+}
+
+.prose strong {
+  font-weight: 600;
+  color: var(--text);
+}
+.prose em {
+  font-style: italic;
+}
+
+.prose hr {
+  border: 0;
+  height: 1px;
+  background: var(--border);
+  margin: var(--s-7) 0;
+  max-width: 220px;
+  margin-left: 0;
+}
+
+/* Inline code */
+.prose code:not(pre code) {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  padding: 2px 6px;
+  background: var(--code-bg);
+  color: var(--code-text);
+  border-radius: 4px;
+  font-weight: 400;
+  font-feature-settings: 'liga' 0;
+}
+
+/* Code block */
+.prose pre {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  line-height: 1.65;
+  background: var(--code-block-bg);
+  border: 1px solid var(--border);
+  padding: var(--s-4) var(--s-5);
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: var(--s-5) 0;
+}
+.prose pre code {
+  background: transparent;
+  padding: 0;
+  border: 0;
+  white-space: pre;
+  font-size: 13.5px;
+}
+
+/* Body blockquote */
+.prose blockquote {
+  border-left: 2px solid var(--accent-line);
+  padding: 2px var(--s-4) 2px var(--s-5);
+  margin: var(--s-5) 0;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 16.5px;
+}
+
+/* ================== Tables ================== */
+.table-scroll {
+  overflow-x: auto;
+  margin: var(--s-5) 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  line-height: 1.5;
+  margin: 0;
+}
+.prose th {
+  text-align: left;
+  font-weight: 600;
+  padding: var(--s-3) var(--s-4);
+  border-bottom: 1.5px solid var(--text);
+  color: var(--text);
+  font-family: var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-size: 11px;
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+.prose td {
+  padding: var(--s-3) var(--s-4);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  vertical-align: top;
+}
+.prose tr:last-child td { border-bottom: 0; }
+.prose tbody tr:hover td {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.prose td code {
+  font-size: 12.5px;
+  white-space: normal;
+}
+.prose td strong {
+  color: var(--text);
+}
+
+/* ================== Images ================== */
+.prose img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: var(--s-5) auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: zoom-in;
+  box-shadow: var(--shadow-md);
+  transition: box-shadow 0.25s, transform 0.25s;
+}
+.prose img:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+}
+
+/* ================== Mermaid ================== */
+.mermaid-container {
+  margin: var(--s-5) 0 var(--s-6);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+  position: relative;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.2s;
+}
+.mermaid-container:hover {
+  box-shadow: var(--shadow-md);
+}
+.mermaid-container::before {
+  content: 'Diagram';
+  position: absolute;
+  top: var(--s-3);
+  left: var(--s-4);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  z-index: 1;
+  pointer-events: none;
+}
+.mermaid-container::after {
+  content: 'click to zoom ↗';
+  position: absolute;
+  top: var(--s-3);
+  right: var(--s-4);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--text-subtle);
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.mermaid-container:hover::after {
+  opacity: 1;
+}
+.mermaid {
+  padding: var(--s-7) var(--s-5) var(--s-5);
+  text-align: center;
+  overflow-x: auto;
+  cursor: zoom-in;
+  font-family: var(--font-ui);
+  min-height: 60px;
+}
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ================== Lightbox ================== */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(20, 17, 13, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-5);
+  cursor: zoom-out;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: fadein 0.18s ease;
+}
+.lightbox[hidden] { display: none; }
+@keyframes fadein {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.lightbox-content {
+  width: 96vw;
+  height: 92vh;
+  overflow: hidden;
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 0;
+  cursor: default;
+  position: relative;
+  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.6);
+  overscroll-behavior: contain;
+  touch-action: none; /* we handle gestures ourselves */
+}
+.lightbox-content.is-grab { cursor: grab; }
+.lightbox-content.is-grabbing,
+.lightbox-content.is-grabbing > .lightbox-stage,
+.lightbox-content.is-grabbing > .lightbox-stage * { cursor: grabbing !important; }
+.lightbox-content > .lightbox-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* width / height set programmatically to SVG natural size */
+  transform-origin: 0 0;
+  /* transform: translate() scale() set programmatically */
+  will-change: transform;
+}
+.lightbox-content > img {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  margin: auto;
+  max-width: calc(100% - 32px);
+  max-height: calc(100% - 32px);
+  height: auto;
+  width: auto;
+  display: block;
+}
+.lightbox-content .lightbox-stage svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none; /* drag goes to stage / lightboxContent */
+}
+.lightbox-toolbar {
+  position: absolute;
+  top: var(--s-3);
+  left: var(--s-3);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text);
+}
+.lightbox-zoom-label {
+  min-width: 44px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--text-subtle);
+}
+.lightbox-btn {
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-ui);
+  line-height: 1;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.lightbox-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.lightbox-close {
+  position: absolute;
+  top: var(--s-3);
+  right: var(--s-3);
+  width: 36px;
+  height: 36px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-ui);
+  line-height: 1;
+  z-index: 2;
+  transition: border-color 0.15s, background 0.15s;
+}
+.lightbox-close:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+@media (max-width: 720px) {
+  .lightbox-toolbar { font-size: 11px; padding: 3px 6px; }
+  .lightbox-btn { width: 28px; height: 28px; font-size: 14px; }
+  .lightbox-zoom-label { min-width: 38px; }
+}
+
+/* ================== Footer ================== */
+.footer {
+  max-width: var(--content-max);
+  margin: var(--s-9) auto 0;
+  padding-top: var(--s-5);
+  border-top: 1px solid var(--border);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--text-subtle);
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+.footer span { letter-spacing: 0.02em; }
+
+/* ================== Loading / Reveal ================== */
+.loading {
+  text-align: center;
+  color: var(--text-subtle);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  padding: var(--s-9) 0;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.9; }
+}
+
+.reveal {
+  animation: reveal 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes reveal {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ================== Wide diagrams on big screens ================== */
+@media (min-width: 1280px) {
+  .prose .table-scroll,
+  .prose .mermaid-container {
+    max-width: 100%;
+  }
+}
+
+/* ================== Print ================== */
+@media print {
+  .topbar, .sidebar, .sidebar-overlay, .progress, .lightbox { display: none !important; }
+  body { display: block; background: white; color: black; font-size: 11pt; }
+  body { background-image: none; }
+  .content { padding: 0; max-width: 100%; }
+  .prose { max-width: 100%; }
+  .prose h2 { page-break-before: always; }
+  .prose h2:first-of-type { page-break-before: auto; }
+  .mermaid-container,
+  .prose img,
+  .prose table,
+  .prose pre { page-break-inside: avoid; }
+  .prose a { color: black; text-decoration: underline; }
+  .mermaid-container::before, .mermaid-container::after { display: none; }
+}
+
+:target { scroll-margin-top: 24px; }
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<header class="topbar">
+  <button class="menu-toggle" id="menuToggle" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <span class="topbar-title"><span class="topbar-mark">A</span>Amira Architecture</span>
+</header>
+
+<aside class="sidebar" id="sidebar" aria-label="Documentation navigation">
+  <div class="sidebar-inner">
+    <div class="brand">
+      <div class="brand-mark">A</div>
+      <div class="brand-name">Amira</div>
+      <div class="brand-tag">Platform Architecture</div>
+    </div>
+    <div class="toc-label">Contents</div>
+    <nav class="toc" id="toc" aria-label="Table of contents">
+      <ul id="tocList"></ul>
+    </nav>
+    <div class="sidebar-footer">
+      Single document — diagrams render client-side. Internet required for fonts and diagram engine.
+    </div>
+  </div>
+</aside>
+
+<div class="sidebar-overlay" id="sidebarOverlay" aria-hidden="true"></div>
+
+<main class="content">
+  <article id="article" class="prose">
+    <p class="loading">Rendering document…</p>
+  </article>
+  <footer class="footer">
+    <span>Amira Platform · Architecture overview</span>
+    <span id="docMeta"></span>
+  </footer>
+</main>
+
+<div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Expanded view">
+  <div class="lightbox-toolbar" id="lightboxToolbar">
+    <button class="lightbox-btn" id="lightboxZoomOut" aria-label="Zoom out" title="Zoom out (−)">−</button>
+    <span class="lightbox-zoom-label" id="lightboxZoomLabel">100%</span>
+    <button class="lightbox-btn" id="lightboxZoomIn" aria-label="Zoom in" title="Zoom in (+)">+</button>
+    <button class="lightbox-btn" id="lightboxZoomFit" aria-label="Fit to screen" title="Fit to screen (0)">⤢</button>
+  </div>
+  <button class="lightbox-close" id="lightboxClose" aria-label="Close">×</button>
+  <div class="lightbox-content" id="lightboxContent"></div>
+</div>
+
+<!-- HERO-SVG-TEMPLATES -->
+<template id="svg-tpl-amira-overview"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1680 1040" width="100%" style="max-width:1680px;display:block;margin:auto" role="img" aria-label="Amira platform architecture overview">
+<rect width="1680" height="1040" fill="#fbfaf7"/>
+
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6"
+          markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+  </marker>
+  <filter id="cardShadow" x="-10%" y="-10%" width="120%" height="130%">
+    <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.06"/>
+  </filter>
+  <pattern id="diag" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <line x1="0" y1="0" x2="0" y2="6" stroke="#94a3b8" stroke-width="0.5" opacity="0.15"/>
+  </pattern>
+</defs>
+
+<text x="60" y="56" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="700" fill="#9a3412" text-anchor="start" letter-spacing="0.22em">AMIRA</text>
+<text x="60" y="92" font-family="'Fraunces', Georgia, serif" font-size="32" font-weight="600" fill="#1a1f2e" text-anchor="start">Platform Architecture & Infrastructure</text>
+<text x="60" y="116" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start">What runs in our cloud, what we depend on, and how it connects.</text>
+<text x="1620" y="56" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10" font-weight="700" fill="#94a3b8" text-anchor="end" letter-spacing="0.18em">EXECUTIVE OVERVIEW</text>
+<text x="1620" y="76" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11" font-weight="400" fill="#94a3b8" text-anchor="end">v1 · QDT-hosted Amira</text>
+<rect x="60" y="170" width="200" height="760" rx="14" ry="14" fill="#fff7ed" stroke="#fdba74" stroke-width="2" stroke-dasharray="0"/>
+<text x="78" y="194" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10" font-weight="700" fill="#9a3412" text-anchor="start" letter-spacing="0.14em">ACCESS</text>
+<text x="78" y="214" font-family="'Fraunces', Georgia, serif" font-size="18" font-weight="700" fill="#9a3412" text-anchor="start">Users</text>
+<text x="78" y="232" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">Who interacts with Amira</text>
+<rect x="76" y="260" width="168" height="78" rx="10" ry="10" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
+<g transform="translate(90,276)" stroke="#ea580c" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="6" r="3"/><path d="M3 17c0-3 3-5 6-5s6 2 6 5"/></g>
+<text x="120" y="284" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Business users</text>
+<text x="120" y="302" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">PMs, analysts, ops teams</text>
+<text x="120" y="316" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">at customer organizations</text>
+<text x="120" y="330" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">(via SSO)</text>
+<rect x="76" y="358" width="168" height="78" rx="10" ry="10" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
+<g transform="translate(90,374)" stroke="#ea580c" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2 L15 4 V9 C15 13 12 16 9 17 C6 16 3 13 3 9 V4 Z"/></g>
+<text x="120" y="382" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Approvers</text>
+<text x="120" y="400" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Authorized signers for</text>
+<text x="120" y="414" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">production deployments</text>
+<text x="120" y="428" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">(e-signature workflow)</text>
+<rect x="76" y="456" width="168" height="78" rx="10" ry="10" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
+<g transform="translate(90,472)" stroke="#ea580c" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="12" height="9" rx="2"/><circle cx="7" cy="10" r="1"/><circle cx="11" cy="10" r="1"/><line x1="9" y1="3" x2="9" y2="6"/><circle cx="9" cy="2.5" r="0.8" fill="#ea580c"/></g>
+<text x="120" y="480" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">QDT operators</text>
+<text x="120" y="498" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Platform admins, support,</text>
+<text x="120" y="512" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">on-call engineers</text>
+<rect x="76" y="570" width="168" height="110" rx="10" ry="10" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
+<g transform="translate(90,586)" stroke="#ea580c" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="14" height="12" rx="1.5"/><line x1="2" y1="7" x2="16" y2="7"/><circle cx="4" cy="5" r="0.6" fill="#ea580c"/><circle cx="6" cy="5" r="0.6" fill="#ea580c"/></g>
+<text x="120" y="594" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Generated apps</text>
+<text x="120" y="612" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Each customer's deployed</text>
+<text x="120" y="626" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">app gets its own URL:</text>
+<text x="120" y="640" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">  appname.apps.amira.qdt.ai</text>
+<text x="120" y="654" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start"></text>
+<text x="120" y="668" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Used by their end-users</text>
+<rect x="290" y="170" width="970" height="760" rx="14" ry="14" fill="#eff6ff" stroke="#60a5fa" stroke-width="2" stroke-dasharray="0"/>
+<text x="308" y="194" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10" font-weight="700" fill="#1e40af" text-anchor="start" letter-spacing="0.14em">OUR CLOUD</text>
+<text x="308" y="214" font-family="'Fraunces', Georgia, serif" font-size="18" font-weight="700" fill="#1e40af" text-anchor="start">QDT Azure Subscription</text>
+<text x="308" y="232" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">Everything QDT runs and pays for in Microsoft Azure</text>
+<rect x="310" y="260" width="930" height="90" rx="8" fill="#ffffff" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="3,3"/>
+<text x="326" y="282" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="9.5" font-weight="700" fill="#3b82f6" text-anchor="start" letter-spacing="0.16em">NETWORK & ENTRY</text>
+<rect x="326" y="292" width="270" height="50" rx="10" ry="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+<g transform="translate(340,308)" stroke="#3b82f6" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="7"/><line x1="2" y1="9" x2="16" y2="9"/><path d="M9 2 C5 5 5 13 9 16 M9 2 C13 5 13 13 9 16"/></g>
+<text x="370" y="316" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Virtual Network + DNS</text>
+<text x="370" y="334" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">amira.qdt.ai · *.apps.amira.qdt.ai</text>
+<rect x="610" y="292" width="270" height="50" rx="10" ry="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+<g transform="translate(624,308)" stroke="#3b82f6" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="9" rx="1.5"/><line x1="5" y1="6" x2="5" y2="3"/><line x1="13" y1="6" x2="13" y2="3"/><circle cx="5" cy="3" r="1"/><circle cx="13" cy="3" r="1"/></g>
+<text x="654" y="316" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Ingress gateway</text>
+<text x="654" y="334" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">TLS termination · per-app routing</text>
+<rect x="894" y="292" width="270" height="50" rx="10" ry="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+<g transform="translate(908,308)" stroke="#3b82f6" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2 L15 4 V9 C15 13 12 16 9 17 C6 16 3 13 3 9 V4 Z"/></g>
+<text x="938" y="316" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Identity & SSO</text>
+<text x="938" y="334" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Federated to customer IdPs</text>
+<rect x="310" y="370" width="930" height="250" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="3,3"/>
+<text x="326" y="392" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="9.5" font-weight="700" fill="#16a34a" text-anchor="start" letter-spacing="0.16em">COMPUTE — TWO KUBERNETES CLUSTERS</text>
+<rect x="326" y="408" width="441.0" height="194" rx="8" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+<text x="342" y="432" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="700" fill="#15803d" text-anchor="start">Platform cluster</text>
+<text x="342" y="450" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11" font-weight="400" fill="#475569" text-anchor="start">Always-on services that run the product</text>
+<circle cx="348" cy="478" r="3" fill="#16a34a"/>
+<text x="358" y="481" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="600" fill="#1a1f2e" text-anchor="start">Web app & API</text>
+<text x="358" y="494" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10.5" font-weight="400" fill="#475569" text-anchor="start">What users see and call</text>
+<circle cx="348" cy="510" r="3" fill="#16a34a"/>
+<text x="358" y="513" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="600" fill="#1a1f2e" text-anchor="start">AI agents</text>
+<text x="358" y="526" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10.5" font-weight="400" fill="#475569" text-anchor="start">Spec · Build · Deploy · Companion</text>
+<circle cx="348" cy="542" r="3" fill="#16a34a"/>
+<text x="358" y="545" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="600" fill="#1a1f2e" text-anchor="start">Workflow engine</text>
+<text x="358" y="558" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10.5" font-weight="400" fill="#475569" text-anchor="start">Orchestrates multi-step jobs</text>
+<circle cx="348" cy="574" r="3" fill="#16a34a"/>
+<text x="358" y="577" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="600" fill="#1a1f2e" text-anchor="start">Audit & monitoring</text>
+<text x="358" y="590" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10.5" font-weight="400" fill="#475569" text-anchor="start">Logs, metrics, traces, governance</text>
+<rect x="783.0" y="408" width="441.0" height="194" rx="8" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+<text x="799.0" y="432" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="700" fill="#15803d" text-anchor="start">Workloads cluster</text>
+<text x="799.0" y="450" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11" font-weight="400" fill="#475569" text-anchor="start">Sandboxed customer code (isolated)</text>
+<circle cx="805.0" cy="478" r="3" fill="#16a34a"/>
+<text x="815.0" y="481" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="600" fill="#1a1f2e" text-anchor="start">Build sandboxes</text>
+<text x="815.0" y="494" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10.5" font-weight="400" fill="#475569" text-anchor="start">Compile + test customer apps safely</text>
+<circle cx="805.0" cy="510" r="3" fill="#16a34a"/>
+<text x="815.0" y="513" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="600" fill="#1a1f2e" text-anchor="start">Preview environments</text>
+<text x="815.0" y="526" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10.5" font-weight="400" fill="#475569" text-anchor="start">Per-PR live previews</text>
+<circle cx="805.0" cy="542" r="3" fill="#16a34a"/>
+<text x="815.0" y="545" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="600" fill="#1a1f2e" text-anchor="start">Deployed apps</text>
+<text x="815.0" y="558" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10.5" font-weight="400" fill="#475569" text-anchor="start">Customer-facing production apps</text>
+<circle cx="805.0" cy="574" r="3" fill="#16a34a"/>
+<text x="815.0" y="577" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="600" fill="#1a1f2e" text-anchor="start">Companion agents</text>
+<text x="815.0" y="590" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10.5" font-weight="400" fill="#475569" text-anchor="start">Per-app AI assistants</text>
+<rect x="310" y="640" width="930" height="270" rx="8" fill="#ffffff" stroke="#d97706" stroke-width="1.5" stroke-dasharray="3,3"/>
+<text x="326" y="662" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="9.5" font-weight="700" fill="#d97706" text-anchor="start" letter-spacing="0.16em">DATA, ARTIFACTS & SECRETS</text>
+<rect x="326.0" y="678" width="166.8" height="110" rx="10" ry="10" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+<g transform="translate(340.0,694)" stroke="#d97706" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="9" cy="3.5" rx="6" ry="2"/><path d="M3 3.5v11c0 1.1 2.7 2 6 2s6-0.9 6-2V3.5"/><path d="M3 8.5c0 1.1 2.7 2 6 2s6-0.9 6-2"/></g>
+<text x="370.0" y="702" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Database</text>
+<text x="370.0" y="720" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Operational data:</text>
+<text x="370.0" y="734" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">users, projects,</text>
+<text x="370.0" y="748" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">specs, audit log</text>
+<rect x="508.8" y="678" width="166.8" height="110" rx="10" ry="10" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+<g transform="translate(522.8,694)" stroke="#d97706" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h12l-1.5 12H4.5z"/><line x1="3" y1="8" x2="15" y2="8"/></g>
+<text x="552.8" y="702" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Object storage</text>
+<text x="552.8" y="720" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Spec docs, build</text>
+<text x="552.8" y="734" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">outputs, reports,</text>
+<text x="552.8" y="748" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">attachments</text>
+<rect x="691.6" y="678" width="166.8" height="110" rx="10" ry="10" fill="#fde68a" stroke="#b45309" stroke-width="1.5"/>
+<g transform="translate(705.6,694)" stroke="#b45309" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h7l4 4v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M11 2v4h4"/></g>
+<text x="735.6" y="702" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Compliance archive</text>
+<text x="735.6" y="720" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">7-year immutable</text>
+<text x="735.6" y="734" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">audit trail (WORM)</text>
+<rect x="874.4000000000001" y="678" width="166.8" height="110" rx="10" ry="10" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+<g transform="translate(888.4000000000001,694)" stroke="#d97706" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="14" height="3" rx="0.5"/><rect x="2" y="8" width="14" height="3" rx="0.5"/><rect x="2" y="13" width="14" height="3" rx="0.5"/></g>
+<text x="918.4000000000001" y="702" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Container registry</text>
+<text x="918.4000000000001" y="720" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Built images for</text>
+<text x="918.4000000000001" y="734" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">platform & customer</text>
+<text x="918.4000000000001" y="748" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">apps</text>
+<rect x="1057.2" y="678" width="166.8" height="110" rx="10" ry="10" fill="#fee2e2" stroke="#dc2626" stroke-width="1.5"/>
+<g transform="translate(1071.2,694)" stroke="#dc2626" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="9" r="3"/><line x1="9" y1="9" x2="16" y2="9"/><line x1="13" y1="9" x2="13" y2="12"/><line x1="16" y1="9" x2="16" y2="12"/></g>
+<text x="1101.2" y="702" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Key Vault</text>
+<text x="1101.2" y="720" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">API keys, signing</text>
+<text x="1101.2" y="734" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">keys, TLS certs,</text>
+<text x="1101.2" y="748" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">customer creds</text>
+<text x="326" y="805" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10" font-weight="700" fill="#94a3b8" text-anchor="start" letter-spacing="0.12em">Operational mode</text>
+<text x="326" y="827" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="700" fill="#d97706" text-anchor="start">•</text>
+<text x="342" y="827" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">Single-region today, geo-redundant backups for the database.</text>
+<text x="326" y="845" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="700" fill="#d97706" text-anchor="start">•</text>
+<text x="342" y="845" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">Compliance archive is locked — no one (including QDT) can delete entries.</text>
+<text x="326" y="863" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="700" fill="#d97706" text-anchor="start">•</text>
+<text x="342" y="863" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">Secrets never leave Key Vault; services pull at runtime.</text>
+<rect x="1290" y="170" width="330" height="760" rx="14" ry="14" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2" stroke-dasharray="0"/>
+<text x="1308" y="194" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10" font-weight="700" fill="#5b21b6" text-anchor="start" letter-spacing="0.14em">DEPENDENCIES</text>
+<text x="1308" y="214" font-family="'Fraunces', Georgia, serif" font-size="18" font-weight="700" fill="#5b21b6" text-anchor="start">External services</text>
+<text x="1308" y="232" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">Third-party SaaS we depend on</text>
+<text x="1306" y="266" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="9.5" font-weight="700" fill="#5b21b6" text-anchor="start" letter-spacing="0.14em">AI INFERENCE</text>
+<rect x="1306" y="274" width="298" height="64" rx="10" ry="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+<g transform="translate(1320,290)" stroke="#7c3aed" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="12" height="9" rx="2"/><circle cx="7" cy="10" r="1"/><circle cx="11" cy="10" r="1"/><line x1="9" y1="3" x2="9" y2="6"/><circle cx="9" cy="2.5" r="0.8" fill="#7c3aed"/></g>
+<text x="1350" y="298" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Anthropic API</text>
+<text x="1350" y="316" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Powers all 4 AI agents.</text>
+<text x="1350" y="330" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Replaceable per-deployment.</text>
+<rect x="1544" y="282" width="50" height="16" rx="8" fill="#7c3aed" opacity="0.18"/>
+<text x="1569.0" y="293" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="9.5" font-weight="600" fill="#7c3aed" text-anchor="middle" letter-spacing="0.06em">DEFAULT</text>
+<text x="1306" y="366" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="9.5" font-weight="700" fill="#5b21b6" text-anchor="start" letter-spacing="0.14em">IDENTITY & SSO</text>
+<rect x="1306" y="374" width="298" height="60" rx="10" ry="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+<g transform="translate(1320,390)" stroke="#7c3aed" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2 L15 4 V9 C15 13 12 16 9 17 C6 16 3 13 3 9 V4 Z"/></g>
+<text x="1350" y="398" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Hosted IdP (Auth0 / WorkOS)</text>
+<text x="1350" y="416" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Federates to each customer's</text>
+<text x="1350" y="430" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">own identity provider.</text>
+<text x="1306" y="460" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="9.5" font-weight="700" fill="#5b21b6" text-anchor="start" letter-spacing="0.14em">CODE & PACKAGES</text>
+<rect x="1306" y="468" width="298" height="56" rx="10" ry="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+<g transform="translate(1320,484)" stroke="#7c3aed" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="4" r="1.5"/><circle cx="5" cy="14" r="1.5"/><circle cx="13" cy="9" r="1.5"/><line x1="5" y1="6" x2="5" y2="12"/><path d="M5 9c0-2 3-4 6-4"/></g>
+<text x="1350" y="492" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">GitHub</text>
+<text x="1350" y="510" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Per-app Git repos</text>
+<text x="1350" y="524" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">(QDT-managed org).</text>
+<rect x="1306" y="534" width="298" height="56" rx="10" ry="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+<g transform="translate(1320,550)" stroke="#7c3aed" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="14" height="3" rx="0.5"/><rect x="2" y="8" width="14" height="3" rx="0.5"/><rect x="2" y="13" width="14" height="3" rx="0.5"/></g>
+<text x="1350" y="558" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">JFrog Artifactory</text>
+<text x="1350" y="576" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Vetted mirror for npm, PyPI,</text>
+<text x="1350" y="590" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">container base images.</text>
+<text x="1306" y="612" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="9.5" font-weight="700" fill="#5b21b6" text-anchor="start" letter-spacing="0.14em">TRUST & PROVENANCE</text>
+<rect x="1306" y="620" width="298" height="56" rx="10" ry="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+<g transform="translate(1320,636)" stroke="#7c3aed" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2 L15 4 V9 C15 13 12 16 9 17 C6 16 3 13 3 9 V4 Z"/></g>
+<text x="1350" y="644" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Sigstore</text>
+<text x="1350" y="662" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Public signing/verification</text>
+<text x="1350" y="676" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">for build provenance.</text>
+<rect x="1306" y="686" width="298" height="56" rx="10" ry="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+<g transform="translate(1320,702)" stroke="#7c3aed" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="9" r="3"/><line x1="9" y1="9" x2="16" y2="9"/><line x1="13" y1="9" x2="13" y2="12"/><line x1="16" y1="9" x2="16" y2="12"/></g>
+<text x="1350" y="710" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Let's Encrypt</text>
+<text x="1350" y="728" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">TLS certificates for</text>
+<text x="1350" y="742" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">platform and app domains.</text>
+<text x="1306" y="764" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="9.5" font-weight="700" fill="#5b21b6" text-anchor="start" letter-spacing="0.14em">DOMAIN</text>
+<rect x="1306" y="772" width="298" height="56" rx="10" ry="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+<g transform="translate(1320,788)" stroke="#7c3aed" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="7"/><line x1="2" y1="9" x2="16" y2="9"/><path d="M9 2 C5 5 5 13 9 16 M9 2 C13 5 13 13 9 16"/></g>
+<text x="1350" y="796" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Namecheap</text>
+<text x="1350" y="814" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Registrar for qdt.ai.</text>
+<text x="1306" y="850" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="9.5" font-weight="700" fill="#5b21b6" text-anchor="start" letter-spacing="0.14em">CUSTOMER SYSTEMS</text>
+<rect x="1306" y="858" width="298" height="64" rx="10" ry="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+<g transform="translate(1320,874)" stroke="#7c3aed" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4l-4 4a3 3 0 0 0 4 4l1-1"/><path d="M11 14l4-4a3 3 0 0 0-4-4l-1 1"/><line x1="7" y1="11" x2="11" y2="7"/></g>
+<text x="1350" y="882" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="14" font-weight="600" fill="#1a1f2e" text-anchor="start">Customer data sources</text>
+<text x="1350" y="900" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Snowflake, Databricks, etc.</text>
+<text x="1350" y="914" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">Accessed via skills, with</text>
+<text x="1350" y="928" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start">OBO authorization.</text>
+<path d="M 260 300 L 326 320" stroke="#64748b" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+<rect x="257.2" y="294.0" width="71.6" height="14" rx="7" fill="#fbfaf7" stroke="#64748b" stroke-width="1" opacity="0.95"/>
+<text x="293.0" y="304.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10" font-weight="500" fill="#64748b" text-anchor="middle">HTTPS + SSO</text>
+<path d="M 260 400 L 326 320" stroke="#64748b" stroke-width="1.6" fill="none" stroke-dasharray="6,4" marker-end="url(#arrow)"/>
+<path d="M 260 495 L 326 320" stroke="#64748b" stroke-width="1.6" fill="none" stroke-dasharray="6,4" marker-end="url(#arrow)"/>
+<path d="M 580 342 Q 298 450, 298 625 L 260 625" stroke="#64748b" stroke-width="1.6" fill="none" stroke-dasharray="6,4" marker-end="url(#arrow)"/>
+<rect x="220" y="520" width="62" height="16" rx="8" fill="#fbfaf7" stroke="#64748b" stroke-width="1" opacity="0.95"/>
+<text x="251" y="531" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10" font-weight="500" fill="#64748b" text-anchor="middle">serves apps</text>
+<path d="M 546.5 602 L 409.4 678" stroke="#64748b" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+<path d="M 1003.5 602 L 592.2 678" stroke="#64748b" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+<path d="M 1224.0 498 L 1290 304" stroke="#64748b" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+<rect x="1226.8" y="385.0" width="60.4" height="14" rx="7" fill="#fbfaf7" stroke="#64748b" stroke-width="1" opacity="0.95"/>
+<text x="1257.0" y="395.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10" font-weight="500" fill="#64748b" text-anchor="middle">LLM calls</text>
+<path d="M 1224.0 538 L 1290 404" stroke="#64748b" stroke-width="1.6" fill="none" stroke-dasharray="6,4" marker-end="url(#arrow)"/>
+<rect x="1238.0" y="455.0" width="38.0" height="14" rx="7" fill="#fbfaf7" stroke="#64748b" stroke-width="1" opacity="0.95"/>
+<text x="1257.0" y="465.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10" font-weight="500" fill="#64748b" text-anchor="middle">login</text>
+<path d="M 1224.0 578 L 1290 496" stroke="#64748b" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+<rect x="1240.8" y="521.0" width="32.4" height="14" rx="7" fill="#fbfaf7" stroke="#64748b" stroke-width="1" opacity="0.95"/>
+<text x="1257.0" y="531.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10" font-weight="500" fill="#64748b" text-anchor="middle">code</text>
+<path d="M 1224.0 618 L 1290 562" stroke="#64748b" stroke-width="1.6" fill="none" stroke-dasharray="6,4" marker-end="url(#arrow)"/>
+<rect x="1229.6" y="574.0" width="54.8" height="14" rx="7" fill="#fbfaf7" stroke="#64748b" stroke-width="1" opacity="0.95"/>
+<text x="1257.0" y="584.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10" font-weight="500" fill="#64748b" text-anchor="middle">packages</text>
+<path d="M 1224.0 572 L 1290 886" stroke="#64748b" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+<rect x="1221.2" y="713.0" width="71.6" height="14" rx="7" fill="#fbfaf7" stroke="#64748b" stroke-width="1" opacity="0.95"/>
+<text x="1257.0" y="723.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10" font-weight="500" fill="#64748b" text-anchor="middle">data access</text>
+<text x="60" y="970" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10" font-weight="700" fill="#94a3b8" text-anchor="start" letter-spacing="0.16em">LEGEND</text>
+<rect x="60" y="978" width="14" height="14" rx="3" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+<text x="82" y="989" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">Compute (services)</text>
+<rect x="230" y="978" width="14" height="14" rx="3" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+<text x="252" y="989" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">Data & artifacts</text>
+<rect x="386" y="978" width="14" height="14" rx="3" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+<text x="408" y="989" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">Network & access</text>
+<rect x="542" y="978" width="14" height="14" rx="3" fill="#fee2e2" stroke="#dc2626" stroke-width="1.5"/>
+<text x="564" y="989" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">Secrets & security</text>
+<rect x="712" y="978" width="14" height="14" rx="3" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="734" y="989" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">External SaaS</text>
+<rect x="847" y="978" width="14" height="14" rx="3" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
+<text x="869" y="989" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">User-facing</text>
+<text x="1300" y="970" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10" font-weight="700" fill="#94a3b8" text-anchor="start" letter-spacing="0.16em">ARROWS</text>
+<line x1="1300" y1="988" x2="1328" y2="988" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+<text x="1336" y="992" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">Primary data / request flow</text>
+<line x1="1500" y1="988" x2="1528" y2="988" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="6,4" marker-end="url(#arrow)"/>
+<text x="1536" y="992" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">Supporting / occasional</text>
+<text x="840.0" y="1022" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="11" font-weight="400" fill="#94a3b8" text-anchor="middle">Two cloud zones (compute · data) · seven external dependencies · everything routed through TLS+SSO</text>
+</svg>
+</template>
+<!-- /HERO-SVG-TEMPLATES -->
+<script id="md-source" type="text/markdown">
+# Amira — Platform Architecture
+
+> A present-tense description of how the Amira platform is built and
+> operated. Choices that are not yet finalised are clearly labelled
+> "(default; revisit if constraints change)."
+>
+> Scope: QDT's hosted Amira at `amira.qdt.ai` running in QDT's Azure
+> subscription. The customer-environment redeployment model is
+> described in §13 as a configuration of this same platform.
+
+---
+
+## 0. Visual overview
+
+A reader who only skims diagrams should still get the whole picture.
+The diagrams below are the high-level views; §1–§14 are the prose
+contract underneath.
+
+### 0.1 Whole architecture (single-picture view)
+
+![Amira platform architecture overview — users, our cloud, and external dependencies](./amira-overview.svg)
+
+The picture above is the executive view: who depends on Amira,
+what runs in our cloud, and what external services we connect to.
+The diagram below is the same picture in technical form — every
+box is exploded into more detail in §0.2–§0.5 and the prose
+sections that follow.
+
+```mermaid
+flowchart LR
+  Users["Users<br/>QDT staff +<br/>customer org users"]
+
+  subgraph Plat["amira-platform cluster (control plane)"]
+    UIAPI["Platform UI + API<br/>(Next.js + FastAPI)"]
+    Agents0["Spec / Build / Deploy /<br/>Companion Agents<br/>(Claude Agent SDK + DBOS)"]
+    State0[("PostgreSQL + pgvector<br/>(application · workflow ·<br/>outbox · audit ledger)")]
+    Audit0["WORM-anchored<br/>audit chain<br/>(hourly Merkle anchor)"]
+    Cat0["Skill Catalog<br/>(MCP + Amira manifest)"]
+    OPA0["OPA policy engine"]
+    Obs0["Grafana / Loki / Tempo / Mimir"]
+  end
+
+  subgraph Wk0["amira-workloads cluster (data plane)"]
+    Sand0["Sandbox pods<br/>Build · Preview · Import · Dry-run<br/>(Kata-Firecracker)"]
+    Apps0["Deployed customer apps<br/>+ companion MCP servers<br/>(Kata-Firecracker)"]
+    Argo0["Argo Rollouts<br/>+ Buildkit"]
+  end
+
+  subgraph Ext0["External services"]
+    LLM0["Anthropic API<br/>(or Bedrock / Vertex / Foundry)"]
+    Mirror0["JFrog Artifactory<br/>npm + PyPI mirror"]
+    GH0["GitHub<br/>per-app repos"]
+    DS0["Customer data sources<br/>(Snowflake · Databricks · etc.)"]
+    IdP0["Identity providers<br/>(customer IdPs · Auth0/WorkOS)"]
+    Blob0[("Azure Blob Storage<br/>+ Compliance-Mode WORM")]
+    KV0[("Azure Key Vault")]
+    ACR0[("Azure Container Registry")]
+  end
+
+  Users --> UIAPI
+  Users -->|sign-in| IdP0
+  IdP0 --> UIAPI
+  UIAPI --> Agents0
+  Agents0 -->|model calls| LLM0
+  Agents0 --> Cat0
+  Agents0 --> OPA0
+  Agents0 --> State0
+  Agents0 -->|file-ops API| Sand0
+  Agents0 -->|helm + kubectl| Argo0
+  Agents0 -->|two-way sync| GH0
+  Agents0 -->|OBO| DS0
+  Argo0 --> Apps0
+  Argo0 --> ACR0
+  Sand0 --> Mirror0
+  Apps0 --> Mirror0
+  Apps0 -->|OBO| DS0
+  State0 --> Audit0
+  Audit0 --> Blob0
+  Cat0 --> KV0
+  Apps0 --> KV0
+  Sand0 --> KV0
+  Plat --> Obs0
+  Wk0 --> Obs0
+```
+
+The control plane (`amira-platform`) holds all durable state and
+runs the agents. The data plane (`amira-workloads`) runs everything
+that executes generated code: build sandboxes, previews, deployed
+customer apps, companion MCP servers — all on hardware-isolated
+Kata-Firecracker microVMs. The platform's DBOS workflow drives the
+data plane through Helm + Argo Rollouts over a peered VNet.
+
+### 0.2 Azure resource inventory (procurement view)
+
+What gets provisioned in QDT's Azure subscription, plus the external
+services the platform depends on. This is the "what do I order"
+view — every box maps to a Terraform resource or a SaaS account.
+
+```mermaid
+flowchart TB
+  subgraph Sub["QDT Azure Subscription"]
+    direction TB
+    subgraph RGNet["Resource Group: amira-network"]
+      VNet["Azure VNet<br/>+ peering<br/>+ subnets per cluster"]
+      DNSZone["Azure DNS zone<br/>(or NS-delegated from Namecheap)<br/>amira.qdt.ai · *.apps.amira.qdt.ai"]
+    end
+    subgraph RGCtl["Resource Group: amira-platform"]
+      AKS1["AKS cluster: amira-platform<br/>node pools:<br/>- system (3× B-series)<br/>- platform-svc (D-series)<br/>- runtime (D-series, larger)<br/>- observability (D-series)"]
+      PG[("Azure DB for PostgreSQL<br/>Flexible Server<br/>+ pgvector<br/>geo-redundant backup")]
+      KV["Azure Key Vault<br/>(skill secrets · service creds ·<br/>signing keys · TLS)"]
+      ACR[("Azure Container Registry<br/>platform + customer-app images")]
+    end
+    subgraph RGWk["Resource Group: amira-workloads"]
+      AKS2["AKS cluster: amira-workloads<br/>Pod Sandboxing ON<br/>node pools:<br/>- system (3× B-series)<br/>- sandbox (Ds-v5 nested-virt)<br/>- workload (Ds-v5 nested-virt)<br/>- buildkit (D-series, burstable)"]
+    end
+    subgraph RGStore["Resource Group: amira-storage"]
+      Blob[("Azure Blob Storage account<br/>containers:<br/>specs · artifacts · cas ·<br/>lockfiles · signatures · skill-bundles")]
+      BlobWORM[("Azure Blob Storage account<br/>Compliance-Mode container:<br/>audit-anchors<br/>(7yr immutable, locked policy)")]
+    end
+  end
+
+  subgraph SaaS["External services (SaaS / managed accounts)"]
+    Namecheap["Namecheap<br/>(domain registrar — qdt.ai)"]
+    GitHub["GitHub<br/>QDT-managed Git org<br/>(per-app repos)"]
+    Artifactory["JFrog Artifactory<br/>npm + PyPI + container mirror"]
+    Anthropic["Anthropic API<br/>(default LLM provider)"]
+    IdP["Hosted IdP<br/>(Auth0 or WorkOS)<br/>OIDC + SAML + Token Exchange"]
+    Sigstore["Sigstore<br/>(public PKI; verification only)"]
+    LE["Let's Encrypt<br/>(public ACME; cert issuance)"]
+  end
+
+  AKS1 --- VNet
+  AKS2 --- VNet
+  AKS1 -. "peered" .- AKS2
+  DNSZone -. "records via external-dns" .- AKS1
+  DNSZone -. "records via external-dns" .- AKS2
+  Namecheap -. "NS delegate" .- DNSZone
+```
+
+#### Provisioning notes
+
+- Both AKS clusters use **nested-virt-capable VM SKUs**
+  (`Standard_D*s_v5` / `Standard_E*s_v5` family) for any node pool
+  hosting Kata-Firecracker pods (per RUNTIME-3, DEPLOY-2). The
+  `system` node pools can use cheaper SKUs.
+- The **Compliance-Mode** Blob container lives in its own storage
+  account so its locked retention policy is independent of the
+  general-purpose Blob account (per AUDIT-1).
+- **Postgres** is single-region with point-in-time restore in v1; an
+  HA replica is operational tuning (per RUNTIME-1 follow-up).
+- **Authoritative DNS** in the diagram shows Azure DNS as the working
+  assumption (cleaner DNS-01 wildcard issuance than Namecheap's
+  registrar-only DNS); the Namecheap-stays-authoritative alternative
+  is operational, not architectural.
+
+### 0.3 Layered logical architecture
+
+Top-down stack of logical layers — each box is a class of component,
+not a single pod. The dominant request flow is a top-down arrow; the
+data plane underneath everything is shared.
+
+```mermaid
+flowchart TB
+  subgraph L1["Presentation"]
+    UI["Next.js Platform UI<br/>(Home · Spec · Canvas · Skills · Projects · Approve · Audit · Settings)"]
+    Drawer["Ask Amira drawer · /chat"]
+  end
+
+  subgraph L2["API + streaming"]
+    PlatAPI["Platform API (FastAPI)"]
+    SSE["SSE streaming endpoint"]
+  end
+
+  subgraph L3["Agent runtime"]
+    Spec["Spec Agent"]
+    Build["Build Agent"]
+    Deploy["Deploy Agent"]
+    CompDrv["Companion drivers"]
+    Class["Per-instruction classifier<br/>(edit · binding · OOS)"]
+    Lint["Reviewer Agent (linter)"]
+    AdaptLLM["LLM adapter<br/>(env-toggle: Anthropic / Bedrock / Vertex / Foundry)"]
+  end
+
+  subgraph L4["Skill + policy + identity"]
+    SkillCat["Skill Catalog + MCP Registry"]
+    OPA["OPA<br/>(retrieval + deploy gates + write-action gating)"]
+    PIdP["Platform IdP<br/>(OIDC · SAML · OBO via RFC 8693)"]
+  end
+
+  subgraph L5["Workflow + audit"]
+    DBOSe["DBOS workflow engine<br/>(Spec · Build · Deploy · Companion · Compliance probes)"]
+    Outboxes["Per-service audit outboxes"]
+    AuditCons["Audit Consumer<br/>(SKIP LOCKED, single writer)"]
+    Ledger["Hash-chained audit ledger"]
+    Anchor["Hourly WORM anchor"]
+  end
+
+  subgraph L6["Data plane"]
+    PG2[("PostgreSQL + pgvector")]
+    Blob2[("Azure Blob<br/>(specs · artifacts · cas · lockfiles · WORM anchors)")]
+    KV2[("Azure Key Vault")]
+  end
+
+  subgraph L7["Workload plane (amira-workloads cluster)"]
+    Sand["Sandbox pods<br/>(build · preview · import · skill dry-run)<br/>Kata-Firecracker"]
+    DApps["Deployed customer apps<br/>org-{orgId}-app-{appId}-{env}"]
+    CompMCP["Companion-agent MCP servers"]
+    Argo["Argo Rollouts"]
+    Buildkit["Buildkit"]
+  end
+
+  subgraph L8["External"]
+    Anth["Anthropic API"]
+    GH2["GitHub"]
+    Mirror["Artifactory"]
+    DS["Customer data sources<br/>(Snowflake · Databricks · OpenAPI · etc.)"]
+    CustIdP["Customer IdPs<br/>(Mars Entra ID · Okta · etc.)"]
+  end
+
+  UI --> PlatAPI
+  Drawer --> PlatAPI
+  PlatAPI --> SSE
+  PlatAPI --> L3
+  L3 -->|model calls| AdaptLLM
+  AdaptLLM --> Anth
+  L3 --> SkillCat
+  L3 --> OPA
+  L3 --> PIdP
+  PIdP <-->|federation| CustIdP
+  L3 --> DBOSe
+  L3 --> Outboxes
+  L3 -->|file-ops API| Sand
+  L3 -->|helm + kubectl| Argo
+  L3 -->|two-way sync| GH2
+  Outboxes --> AuditCons
+  AuditCons --> Ledger
+  Ledger --> Anchor
+  Anchor --> Blob2
+  Argo --> DApps
+  Argo --> Buildkit
+  Buildkit --> Mirror
+  Sand --> Mirror
+  DApps --> Mirror
+  DApps --> CompMCP
+  L4 --> L6
+  L5 --> L6
+  L3 -->|OBO| DS
+  CompMCP -->|OBO| DS
+```
+
+#### How to read this
+
+- Every user request enters at L1, threads down through L2 → L3,
+  consults L4 (catalog / policy / identity), persists durable state
+  through L5 into L6, and (for build / deploy / runtime) drives L7.
+- L8 is everything outside the platform's blast radius: model
+  inference, package mirror, customer data, customer IdP.
+- Tenant isolation lives at L4 + L6 (RLS keyed on `org_id`,
+  immutable session attributes set at connection open per PERSIST-5)
+  and at L7 (namespace-per-org-per-app + NetworkPolicy default-deny
+  per DEPLOY-2).
+
+### 0.4 Network and ingress topology
+
+How a request actually travels — DNS, ingress, namespaces, egress.
+
+```mermaid
+flowchart TB
+  Browser["User browser<br/>amira.qdt.ai"]
+  AppClient["End user / API client<br/>*.apps.amira.qdt.ai<br/>(or custom domain)"]
+  ExtAPI["External API consumer<br/>(audience-RBAC, per-app token)"]
+
+  DNS["Authoritative DNS<br/>amira.qdt.ai · *.apps.amira.qdt.ai<br/>(records auto-managed by external-dns)"]
+
+  subgraph Plat["AKS amira-platform — VNet subnet A"]
+    Ing1["nginx ingress<br/>amira.qdt.ai<br/>cert: Let's Encrypt (HTTP-01)"]
+    NSPlat["Namespace: platform-system<br/>(Platform API · Agent runtimes · Skill Catalog · OPA · IdP integration)"]
+    NSData["Namespace: platform-data<br/>(Audit Consumer · WORM Anchor · DBOS workers · external-secrets)"]
+    NSObs["Namespace: observability<br/>(Grafana · Loki · Tempo · Mimir · OTel collector)"]
+  end
+
+  subgraph Wk["AKS amira-workloads — VNet subnet B"]
+    Ing2["nginx ingress<br/>*.apps.amira.qdt.ai<br/>cert: wildcard (DNS-01) + per-domain (HTTP-01)"]
+    NSSand["Namespaces: sandbox-{sessionId}<br/>(short-lived; Kata-Firecracker pods)<br/>NetworkPolicy: default-deny<br/>allow: Artifactory · KV · ACR · platform API"]
+    NSApp["Namespaces: org-{orgId}-app-{appId}-{env}<br/>(Kata-Firecracker pods)<br/>NetworkPolicy: default-deny<br/>+ spec-derived egress allowlist"]
+    NSArgo["Namespace: argo-rollouts"]
+    NSBK["Namespace: image-build (Buildkit)"]
+    NSWkSys["Namespace: sandbox-system<br/>(agent-sandbox CRD controller · warm-pool managers)"]
+  end
+
+  Browser -->|HTTPS / SSE| DNS --> Ing1
+  AppClient --> DNS
+  AppClient --> Ing2
+  ExtAPI --> Ing2
+  Ing1 --> NSPlat
+  Ing2 --> NSSand
+  Ing2 --> NSApp
+
+  NSPlat -. "VNet peering: kubectl + helm" .- NSWkSys
+  NSPlat -. "VNet peering" .- NSArgo
+  NSPlat -. "OBO call (VNet peering)" .- NSApp
+  NSPlat -. "file-ops API (VNet peering)" .- NSSand
+
+  NSSand -->|allowlist| Mirror["JFrog Artifactory"]
+  NSApp -->|spec-derived allowlist| Mirror
+  NSApp -->|spec-derived allowlist| Customer["Customer data sources"]
+  NSPlat --> External1["Anthropic API · GitHub"]
+  NSApp --> KV3[("Key Vault<br/>(via external-secrets-operator)")]
+  NSSand --> KV3
+  NSPlat --> KV3
+```
+
+#### Traffic terminations
+
+- `amira.qdt.ai` (UI, API, SSE) terminates at the platform cluster's
+  nginx ingress.
+- `<appslug>-<orgslug>.apps.amira.qdt.ai` (preview + deployed apps,
+  per BUILD-2) terminates at the workloads cluster's nginx ingress;
+  one wildcard cert covers all (DNS-01).
+- Custom domains for deployed apps terminate at the same ingress
+  with per-domain certs (HTTP-01).
+- `.well-known/openapi.json` for each deployed app is served by the
+  same app pod (per API-GATEWAY-1).
+
+#### Egress posture
+
+- Public-registry hostnames (npmjs.org, pypi.org) are blocked at the
+  cluster egress; all installs route through Artifactory.
+- Each deployed app's NetworkPolicy allowlist is rendered from its
+  spec's resolved skill set (per CROSS-4 layer 4) — only declared
+  hostnames are reachable.
+
+### 0.5 Per-component internals
+
+Four small diagrams for the heaviest components — the parts a reader
+needs to picture inside the box, not just outside it.
+
+#### 0.5.1 Agent runtime (single agent session)
+
+```mermaid
+flowchart LR
+  Req["User instruction<br/>(via Platform API)"] --> Class2["Classifier model<br/>(edit / binding / OOS)<br/>parallelized with ctx assembly"]
+  Req --> CtxAssm["Context assembly<br/>(spec · file tree · skill catalog ·<br/>cached blocks)"]
+  Class2 --> Loop
+  CtxAssm --> Loop
+  subgraph Loop["Claude Agent SDK tool-use loop"]
+    direction TB
+    Step["Step:<br/>model call → emit search-replace blocks"]
+    Apply["File-ops apply<br/>(strict-match str.replace<br/>retry on no-match)"]
+    Tool["MCP tool call<br/>(skill server)"]
+    Compact["5-stage compaction<br/>(budget · snip · microcompact ·<br/>collapse · auto-compact)"]
+    Step --> Apply
+    Step --> Tool
+    Step --> Compact
+  end
+  Apply -->|write+fsync+rename| SandFS["Sandbox pod filesystem<br/>(Kata-Firecracker)"]
+  SandFS --> HMR2["Framework HMR<br/>(Turbopack / uvicorn-hmr)"]
+  Tool -->|OBO token| Skill2["Skill MCP server"]
+  Loop --> Ckpt["DBOS step checkpoint<br/>→ PostgreSQL"]
+  Loop --> SSE2["SSE narration<br/>→ user browser"]
+  Loop --> OBox4["Audit outbox row<br/>(causedBy = parent step)"]
+```
+
+#### 0.5.2 Audit pipeline (write path)
+
+```mermaid
+flowchart LR
+  SvcA["Service A<br/>(e.g., Spec runtime)"] -->|"same TX"| OBoxA[("a_outbox")]
+  SvcB["Service B<br/>(e.g., Build runtime)"] -->|"same TX"| OBoxB[("b_outbox")]
+  SvcC["Service C<br/>(e.g., Approval)"] -->|"same TX"| OBoxC[("c_outbox")]
+  OBoxA -->|poll| Cons2["Audit Consumer<br/>SELECT FOR UPDATE<br/>SKIP LOCKED"]
+  OBoxB -->|poll| Cons2
+  OBoxC -->|poll| Cons2
+  Cons2 --> Validate["Per-kind validator<br/>(presence rules:<br/>userId / agentId / serviceId)"]
+  Validate --> Hash2["Hash row<br/>row_hash = H(prev_hash ‖ payload)"]
+  Hash2 --> AuditL[("audit_ledger<br/>monthly partitions<br/>idx (orgId, projectSeq)<br/>idx causedBy")]
+  AuditL -->|hourly tip| AnchorJob["WORM Anchor Job<br/>(DBOS scheduled)"]
+  AnchorJob -->|Merkle root| WORM[("Azure Blob<br/>Immutable Compliance Mode<br/>7yr locked")]
+  AnchorJob -->|"anchor digest<br/>→ next chain row input"| AuditL
+```
+
+#### 0.5.3 Sandbox CRD (build / preview session)
+
+```mermaid
+flowchart LR
+  Session["Build / Spec / Preview /<br/>Repo-import session start"] --> Claim2["SandboxClaim CR<br/>(agent-sandbox CRD)"]
+  Claim2 --> Pool2["SandboxWarmPool<br/>(pre-baked Next.js + FastAPI<br/>pods, sub-1s cold-start)"]
+  Pool2 --> Pod2["Sandbox pod<br/>RuntimeClass: Kata-Firecracker<br/>(KVM microVM, per-pod kernel)<br/>NetworkPolicy: default-deny + allowlist"]
+  Pod2 --> FOPI["File-ops API endpoint<br/>(write · replace · delete · read)"]
+  AgentLoop["Build Agent loop"] -->|"write+fsync+atomic rename"| FOPI
+  FOPI --> FS2["Pod filesystem"]
+  FS2 --> Watch["Framework file watcher<br/>(Turbopack · uvicorn-hmr)"]
+  Watch --> HMR3["HMR rebuild + reload"]
+  Pod2 --> PreviewSvc["Preview Service<br/>{appslug}-{orgslug}.apps.amira.qdt.ai"]
+  Pod2 -->|"npm/pip install"| Mirror2["JFrog Artifactory<br/>+ Socket + Trivy + cosign"]
+  Pod2 -->|"two-way sync"| GH3["GitHub repo<br/>(branch=spec-version, tag=build)"]
+```
+
+#### 0.5.4 Deploy pipeline (Build → Production)
+
+```mermaid
+flowchart TB
+  Hand["Build → Deploy hand-off envelope<br/>(specHash · approvalId · lockHash · buildN)"] --> DBOSdep["Deploy DBOS workflow"]
+  DBOSdep --> Render["Render Helm values<br/>(image tag · hostname · NetPol · ResourceQuota ·<br/>skill-binding ConfigMaps · secret refs)"]
+  DBOSdep --> BK2["Buildkit pod<br/>(deps via Artifactory:<br/>Socket + Trivy + cosign on every install)"]
+  BK2 --> ACR2[("Azure Container Registry")]
+  Render --> HelmCmd["helm upgrade --install<br/>→ amira-workloads K8s API"]
+  HelmCmd --> RolloutCR["Rollout CR<br/>(BlueGreen)"]
+  RolloutCR --> Argo2["Argo Rollouts controller"]
+  Argo2 --> Preview2["Preview ReplicaSet<br/>(new version, no traffic yet)"]
+  Preview2 --> Analysis2["prePromotionAnalysis"]
+  Analysis2 --> ACR3["AC-runner<br/>(spec ACs as smoke tests<br/>per DEPLOY-6)"]
+  Analysis2 --> K6r["k6 NFR probes<br/>(latency / error budget)"]
+  Analysis2 --> OPAd["OPA Rego deploy gates<br/>(Trivy CVE · dep-policy · compliance score<br/>per DEPLOY-4)"]
+  ACR3 --> Decide{"All gates<br/>pass?"}
+  K6r --> Decide
+  OPAd --> Decide
+  Decide -->|yes| Flip2["Service selector flip<br/>(traffic on new ReplicaSet)"]
+  Decide -->|no| Abort2["Abort + AC-tagged audit<br/>kind=deploy-aborted, failingAcId"]
+  Flip2 --> Mint2["Companion-agent synthesis<br/>(SKILL.md + MCP server<br/>opt-in per AGENT-1)"]
+  Mint2 --> Pin["Skill Catalog:<br/>companion_agent_version row<br/>+ active-pointer flip"]
+  Pin --> AuditOK["Audit:<br/>deploy-promoted +<br/>companion-registered"]
+  Abort2 --> AuditFail["Audit:<br/>deploy-aborted"]
+```
+
+---
+
+## 1. System overview
+
+Amira is a multi-tenant SaaS platform that turns a natural-language
+specification into a running enterprise application, governed at every
+hand-off by an immutable audit trail. Users (organized into orgs and
+business-unit workspaces) interact with three pipeline agents — Spec,
+Build, and Deployment — to converge a spec, generate code, and ship a
+preview or a production deployment. Every deployed app can optionally
+be promoted to a **companion agent** that other users invoke via Ask
+Amira, inheriting the source app's permissions and audit boundary.
+
+The platform runs on two AKS clusters in QDT's Azure subscription.
+`amira-platform` holds the control plane: the platform UI, the agent
+runtimes (Spec / Build / Deploy / Companion drivers), the durable
+workflow engine, the Postgres family that owns all tabular state +
+vector embeddings + audit ledger, the skill catalog, the identity
+layer, and the Grafana observability stack. `amira-workloads` runs
+two classes of pods on Kata-Firecracker microVMs: short-lived sandbox
+pods (build, preview, repo-import, skill dry-run) and long-lived
+deployed-customer-app pods, both governed by the upstream Kubernetes
+`agent-sandbox` CRD. The two clusters are connected via Azure VNet
+peering; the platform's DBOS workflow drives the workloads cluster's
+Argo Rollouts controller through its Kubernetes API. nginx ingress
+terminates `amira.qdt.ai` on the platform cluster and
+`*.apps.amira.qdt.ai` on the workloads cluster, with TLS via
+cert-manager + Let's Encrypt.
+
+State sits in three substrates: PostgreSQL (Azure Database for
+PostgreSQL Flexible Server, with pgvector) is the system of record
+for all relational state, vector embeddings, durable workflow
+checkpoints, the per-service audit outboxes, and the hash-chained
+audit ledger; Azure Blob Storage (S3-compatible interface) holds
+spec exports, build artifacts, signatures, content-addressable build
+inputs, and the WORM-mode immutable Merkle anchors that seal the
+audit chain hourly; Azure Key Vault holds skill secrets and platform
+credentials, surfaced to pods through the external-secrets-operator
+sidecar pattern.
+
+Identity propagates user-to-downstream via OAuth 2.0 OBO (RFC 8693
+Token Exchange) with a cumulative `act` claim; every agent has its
+own service identity and obtains downstream tokens by exchanging the
+calling user's token, never by impersonating with a service-account
+credential. Skills are MCP servers with an Amira manifest overlay
+(role-gating, source-tier, secret refs, `sideEffect`-per-tool); the
+Build Agent resolves them at compile time into a `build-plan.lock`
+that is the audit-evidence handle for every build. Sandboxes are
+hardware-isolated by Kata-Firecracker; deployed apps run on the same
+microVM class with NetworkPolicy default-deny + spec-derived egress
+allowlists.
+
+```mermaid
+flowchart TB
+  subgraph Browser["User Browser"]
+    UI["Next.js platform UI<br/>+ Ask Amira drawer"]
+  end
+
+  subgraph PlatformCluster["AKS: amira-platform"]
+    Ingress1["nginx ingress<br/>amira.qdt.ai"]
+    PlatformAPI["Platform API + UI server"]
+    AgentRT["Agent Runtimes<br/>Spec · Build · Deploy · Companion<br/>(Claude Agent SDK in DBOS workflows)"]
+    DBOS["DBOS Workflow Engine"]
+    SkillCat["Skill Catalog +<br/>MCP Registry"]
+    IdP["Platform IdP<br/>(OIDC / SAML federation)"]
+    OPA["OPA Policy Engine<br/>(retrieval + deploy gates)"]
+    Grafana["Grafana / Loki / Tempo / Mimir"]
+    PG[("PostgreSQL<br/>+ pgvector<br/>app · workflow · audit · outbox")]
+    KV[("Azure Key Vault")]
+    Blob[("Azure Blob Storage<br/>+ Immutable Compliance Mode")]
+    AuditConsumer["Audit Consumer<br/>(SKIP LOCKED poller)"]
+    Anchor["Hourly WORM<br/>Anchor Job"]
+  end
+
+  subgraph WorkloadCluster["AKS: amira-workloads"]
+    Ingress2["nginx ingress<br/>*.apps.amira.qdt.ai"]
+    AgentSandboxCRD["agent-sandbox CRD<br/>+ Kata-Firecracker"]
+    Sandboxes["Sandbox pods<br/>(build · preview · import · dry-run)"]
+    DeployedApps["Deployed app pods<br/>org-{orgId}-app-{appId}-{env}"]
+    CompanionMCP["Companion-agent<br/>MCP servers"]
+    ArgoRollouts["Argo Rollouts Controller"]
+    Buildkit["Buildkit pod<br/>(image build)"]
+  end
+
+  subgraph External["External"]
+    LLM["Anthropic API<br/>(env-toggle: Bedrock / Vertex / Foundry)"]
+    GitHub["GitHub<br/>(per-app repo)"]
+    ACR["Azure Container Registry"]
+    Artifactory["JFrog Artifactory<br/>(npm + PyPI mirror)"]
+    CustomerDS["Customer data sources<br/>(Snowflake / Databricks / etc.)"]
+  end
+
+  UI -->|HTTPS / SSE| Ingress1
+  Ingress1 --> PlatformAPI
+  PlatformAPI --> AgentRT
+  AgentRT --> DBOS
+  AgentRT -->|tool-use| SkillCat
+  AgentRT -->|model calls| LLM
+  AgentRT -->|file-ops API| Sandboxes
+  AgentRT -->|OBO token| OPA
+  PlatformAPI --> IdP
+  PlatformAPI --> PG
+  DBOS --> PG
+  AgentRT --> PG
+  SkillCat --> PG
+  AuditConsumer --> PG
+  Anchor --> Blob
+  AuditConsumer --> Anchor
+  AgentRT -->|OBO| CustomerDS
+  AgentRT -->|"chart push + helm upgrade"| ArgoRollouts
+  ArgoRollouts --> DeployedApps
+  AgentRT -->|push image| Buildkit
+  Buildkit --> ACR
+  ArgoRollouts --> ACR
+  Sandboxes -->|npm/pip install| Artifactory
+  DeployedApps -->|npm/pip install| Artifactory
+  DeployedApps --> CompanionMCP
+  CompanionMCP -->|OBO| CustomerDS
+  Sandboxes -->|HMR| Ingress2
+  DeployedApps -->|HTTPS| Ingress2
+  AgentRT -->|two-way sync| GitHub
+  AgentRT -->|secrets read| KV
+  Sandboxes -->|secrets read| KV
+  DeployedApps -->|secrets read| KV
+  AgentRT --> Grafana
+  ArgoRollouts --> Grafana
+  CompanionMCP --> AgentRT
+```
+
+---
+
+## 2. Component inventory
+
+### 2.1 User-facing surfaces
+
+#### Platform UI (`amira.qdt.ai`)
+
+- **Responsibility** — Renders the Home portal, Specifications
+  workspace, Canvas, Skills marketplace, Projects/Artifacts views,
+  Settings, Ask Amira (full page + drawer), Project Governance,
+  Approval surface, Audit Log. Ships as a Next.js (App Router)
+  application that calls the Platform API for state.
+- **Technology** — Next.js + TypeScript + Tailwind. (default; matches
+  the same stack the platform generates for customer apps, per
+  BUILD-1.)
+- **Data ownership** — None. Pure consumer of Platform API + SSE
+  streams.
+- **Dependencies** — Platform API, Platform IdP (OIDC redirect
+  flow), Streaming endpoint (SSE).
+
+#### Streaming endpoint (Server-Sent Events)
+
+- **Responsibility** — One SSE connection per active Build/Spec
+  session. Streams structured narration events (`instruction-received`,
+  `binding-resolved`, `file-written`, `compliance-re-evaluated`,
+  `hot-reload-applied`) from the agent runtime to the user's browser.
+- **Technology** — SSE over HTTP, terminated at nginx ingress on
+  `amira-platform` (per STREAM-1).
+- **Data ownership** — None; it tails events from the agent runtime's
+  in-process queue and from Postgres (LISTEN/NOTIFY on outbox tables
+  for durable resumption).
+- **Dependencies** — Agent runtimes; Postgres LISTEN/NOTIFY for
+  resume-after-disconnect.
+
+### 2.2 Control-plane services (in `amira-platform`)
+
+#### Platform API
+
+- **Responsibility** — REST + SSE surface for the UI; entry point
+  for all user requests. Authenticates the request via session
+  cookie, resolves `(orgId, userId, role)`, sets immutable session
+  attributes on Postgres connections, dispatches to the agent
+  runtime, the skill catalog, or direct Postgres reads.
+- **Technology** — FastAPI (default; revisit if constraints change —
+  the platform team is fluent in FastAPI; the Claude Agent SDK has
+  first-class Python support; DBOS's natural shape is Python-decorated
+  functions).
+- **Data ownership** — None directly; orchestrates calls into agent
+  runtimes and Postgres.
+- **Dependencies** — Platform IdP, Postgres, Agent Runtimes, Skill
+  Catalog, OPA, Grafana (OpenTelemetry export).
+
+#### Agent runtimes (Spec / Build / Deploy / Companion drivers)
+
+- **Responsibility** — Run the Claude Agent SDK's tool-use loop
+  inside a DBOS-checkpointed workflow for each agent session. The
+  Spec runtime drives spec elicitation, the Build runtime drives
+  code edits via the file-ops API into the session's sandbox pod,
+  the Deploy runtime drives the helm-render → image-build → Argo
+  Rollouts → smoke-test pipeline, and Companion runtimes serve
+  Ask-Amira invocations of deployed apps' synthesized MCP servers.
+- **Technology** — Claude Agent SDK (per RUNTIME-1, RUNTIME-2,
+  RUNTIME-6) on top of DBOS workflows checkpointing into Postgres
+  (per RUNTIME-1). Process model: long-lived Python worker pods
+  pulling work from DBOS queues.
+- **Data ownership** — Owns each session's transient working state;
+  durable state lives in DBOS workflow tables in Postgres.
+- **Dependencies** — Postgres (DBOS state), LLM provider via the
+  adapter (default Anthropic API; env-toggle to Bedrock / Vertex /
+  Foundry per LLM-6), Skill Catalog, MCP servers (skill backends),
+  `agent-sandbox` CRD in workloads cluster, OPA, Azure Key Vault
+  via external-secrets-operator, Audit Outbox tables.
+
+#### DBOS workflow engine
+
+- **Responsibility** — Durable execution of every Spec / Build /
+  Deploy / Companion-register session and every continuous-compliance
+  probe (per RUNTIME-1, ORCH-2, COMPLY-1). Step-checkpoints model
+  calls, file-ops, MCP tool calls into Postgres so a worker crash
+  resumes the session at the last checkpoint with replay-correctness.
+- **Technology** — DBOS Python (per RUNTIME-1) — Postgres-resident
+  workflow engine; library, not a separate cluster.
+- **Data ownership** — DBOS-managed Postgres tables for workflow
+  state (event history, queues, schedule).
+- **Dependencies** — Postgres only.
+
+#### Skill Catalog + MCP Registry
+
+- **Responsibility** — Stores every skill's MCP manifest + Amira
+  overlay (role-gating, source-tier, secret refs, `sideEffect`-
+  per-tool, signing key id, lifecycle state); resolves the per-build
+  catalog into the `build-plan.lock`; gates community-tier promotions
+  through the curation pipeline (per SKILL-1, SKILL-3, SKILL-5,
+  SKILL-2). Also hosts companion-agent MCP-manifest entries (tier:
+  `deployment-proprietary`).
+- **Technology** — In-process service inside Platform API (default;
+  revisit if it needs to scale independently). Manifests live in
+  Postgres; signed bundles and SBOMs in Azure Blob Storage.
+- **Data ownership** — `skill`, `skill_version`, `skill_role_grant`,
+  `skill_secret_binding`, `companion_agent_version`, plus `build_plan`
+  and `build_plan_skill_binding` rows.
+- **Dependencies** — Postgres, Azure Blob Storage, the
+  curation-pipeline scanners (Socket + Snyk + custom prompt-injection
+  scanner + Kata-Firecracker dry-run), Azure Key Vault for skill
+  signing keys per tier (per SKILL-3).
+
+#### Platform IdP (and identity layer)
+
+- **Responsibility** — Authenticates platform users; federates from
+  customer org IdPs (OIDC / SAML / OAuth 2.0); issues tokens that the
+  agent runtime exchanges for downstream OBO tokens; is the OAuth 2.0
+  authorization server for the RFC 8693 token-exchange endpoint.
+- **Technology** — Hosted IdP that speaks OIDC / SAML / OAuth 2.0
+  with Token Exchange (RFC 8693). Concrete pick: open follow-up listed
+  under the LLM-6 / IdP cluster (default working assumption: a
+  managed IdP that supports federation + custom OIDC client
+  registration + Token Exchange — Auth0 and WorkOS are the two
+  realistic candidates given Token-Vault / OBO support; final pick
+  is operations posture, not architecture).
+- **Data ownership** — User identity records; federation
+  configurations per org; token-exchange grants. Mirrored into
+  Postgres for the platform's `user`, `org_membership`, and
+  `org_idp_federation` tables.
+- **Dependencies** — Postgres (cached identity), customer IdPs at
+  federation time.
+
+#### OPA policy engine
+
+- **Responsibility** — Evaluates retrieval-plane authorization
+  (chunks before LLM context, per PERSIST-5), deploy-gate threshold
+  policies on CVE / dependency-policy / compliance-score outputs
+  (per DEPLOY-4), and write-action gating against the spec capability
+  graph (per AGENT-GUARD-1). Single OPA stack across both surfaces
+  per PERSIST-5 follow-up.
+- **Technology** — Self-hosted OPA, Rego policies (per PERSIST-5
+  follow-up).
+- **Data ownership** — Policy bundles versioned per platform release;
+  hot-reloaded.
+- **Dependencies** — Postgres for policy-input data lookups
+  (workspace memberships, role grants); none external.
+
+#### Audit Consumer
+
+- **Responsibility** — Polls every service's outbox table with
+  `SELECT FOR UPDATE SKIP LOCKED` (per ORCH-1), validates payloads
+  against the per-kind validator registry, computes the next
+  hash-chain row, and inserts into the audit ledger with the
+  `(orgId, projectSeq)` carried through from the outbox row.
+- **Technology** — Single-process Python service. v1 ships one
+  consumer (per ORCH-1); migration to per-partition consumers is
+  flagged with a sustained-throughput trigger.
+- **Data ownership** — `audit_ledger` table; per-project audit
+  sequence (`audit_seq_<projectId>` Postgres sequences).
+- **Dependencies** — Postgres only.
+
+#### WORM Anchor Job
+
+- **Responsibility** — Hourly job that reads the audit chain tip,
+  computes the Merkle root, writes it to Azure Blob Immutable
+  Compliance Mode in QDT's subscription, and records the anchor
+  digest as the next ledger row's hash input (per AUDIT-1).
+- **Technology** — DBOS-scheduled workflow (default; revisit if
+  constraints change).
+- **Data ownership** — Anchor blobs (Compliance-Mode locked, 7-year
+  retention) and `audit_anchor` table rows.
+- **Dependencies** — Postgres, Azure Blob Storage.
+
+#### Grafana / Loki / Tempo / Mimir stack
+
+- **Responsibility** — Self-hosted observability for both clusters.
+  Loki ingests platform + workloads logs; Tempo holds OpenTelemetry
+  traces (including the redacted LLM-context trace store per OBS-3 +
+  CROSS-6); Mimir holds metrics. Per-route SLIs computed from spans
+  per OBS-2.
+- **Technology** — Grafana stack self-hosted in `amira-platform`
+  (per OBS-3). Azure Monitor / Application Insights / Log Analytics
+  rejected on cloud-portability grounds.
+- **Data ownership** — Trace and log retention policies (audit-bound
+  views over LLM-context-redacted spans; retention separate from the
+  7-year audit-ledger window).
+- **Dependencies** — OpenTelemetry collector running as a DaemonSet
+  in both clusters.
+
+#### Reviewer Agent (linter)
+
+- **Responsibility** — Runs the spec-side linter that scans free-text
+  spec sections for vendor SDK imports, hostnames, and known
+  function names (per CROSS-4 layer 2), surfacing structured
+  warnings in the Spec UI (per CROSS-4 follow-up). Also evaluates
+  the spec convergence rubric (per SPEC-1).
+- **Technology** — Library inside the Spec Agent runtime; not a
+  separate service.
+- **Data ownership** — Linter pattern library (versioned with platform
+  releases).
+- **Dependencies** — Spec Agent runtime, Spec capability graph
+  (per SPEC-DECOMP-1).
+
+### 2.3 Storage
+
+#### PostgreSQL (Azure Database for PostgreSQL Flexible Server, pgvector)
+
+- **Responsibility** — System of record for all relational state +
+  vector embeddings + DBOS workflow state + per-service audit
+  outboxes + the audit ledger itself (per PERSIST-1, PERSIST-1
+  follow-ups, AUDIT-1).
+- **Technology** — Azure Database for PostgreSQL Flexible Server
+  (per PERSIST-1 follow-ups). Self-hosted in-cluster Postgres
+  operator rejected.
+- **Data ownership** — All platform tabular state (see §4).
+- **Dependencies** — None upstream; consumed by every control-plane
+  service. Connection-pooling via PgBouncer / Supavisor sidecars
+  open per RUNTIME-1 follow-up.
+
+#### Azure Blob Storage
+
+- **Responsibility** — S3-compatible object storage for spec exports,
+  build artifacts, signatures, content-addressable build inputs (CAS
+  keyed by `(spec_hash, skill_versions, build_inputs)` per BUILD-4),
+  build-plan.lock blobs (per SKILL-2), and the WORM-mode immutable
+  Merkle anchors (per AUDIT-1).
+- **Technology** — Azure Blob Storage in QDT's subscription, accessed
+  through an S3-compatible interface (per BUILD-4 follow-ups,
+  PERSIST-1 follow-ups). MinIO self-hosted rejected. The Compliance
+  Mode container is a separate locked-policy container in the same
+  subscription.
+- **Data ownership** — Spec / build / artifact / audit-anchor blobs.
+- **Dependencies** — Postgres holds pointers (content hashes) into
+  Blob.
+
+#### Azure Key Vault
+
+- **Responsibility** — Holds skill secrets (three modes per SKILL-4:
+  `shared-platform`, `per-deployment`, `per-user-OAuth`), platform
+  service credentials, signing keys per skill tier (per SKILL-3),
+  TLS material managed by cert-manager. Entra-ID-integrated for
+  OBO-flow secret access (per SKILL-4 follow-up).
+- **Technology** — Azure Key Vault (per SKILL-4 follow-up). HashiCorp
+  Vault rejected.
+- **Data ownership** — All non-data secret material.
+- **Dependencies** — Surfaced into pods via `external-secrets-operator`
+  (default; revisit if constraints change). Pods never read Key Vault
+  directly.
+
+#### Azure Container Registry (ACR)
+
+- **Responsibility** — Stores images Buildkit pushes for deployed
+  customer apps and platform images.
+- **Technology** — ACR in QDT's subscription (per 00-context.md and
+  DEPLOY-3).
+- **Data ownership** — Image manifests + layers.
+- **Dependencies** — Buildkit (push); Argo Rollouts / Helm (pull).
+
+#### JFrog Artifactory (npm + PyPI + container mirror)
+
+- **Responsibility** — Sole install source for every `npm install`
+  and `pip install` issued by build sandboxes, preview pods, and
+  deployed-app pods. Sigstore-compatible. Three-layer policy:
+  mirror, plus behavioural / CVE / provenance scan, plus a
+  per-deployment allowlist (per BUILD-6, BUILD-6 follow-ups).
+- **Technology** — JFrog Artifactory (per BUILD-6 follow-ups). Public
+  registries refused at the cluster egress boundary.
+- **Data ownership** — Mirrored package versions + provenance
+  metadata (Sigstore attestations).
+- **Dependencies** — Socket (behavioural scan), Trivy (CVE scan),
+  and Sigstore cosign (provenance verification) called on every
+  install (per BUILD-6 follow-ups).
+
+### 2.4 Workload-cluster components (in `amira-workloads`)
+
+#### `agent-sandbox` CRD + `SandboxWarmPool`
+
+- **Responsibility** — Provisions short-lived, hardware-isolated
+  sandbox pods for Build sessions, Preview sessions, Repo-import
+  pipelines, and Skill curation dry-runs. Warm pools keep
+  cold-start under one second (per RUNTIME-3, BUILD-2).
+- **Technology** — Upstream Kubernetes `agent-sandbox` CRD (SIG-Apps
+  ratified, March 2026). Kata-Firecracker `RuntimeClass` for every
+  sandbox pod. AKS Pod Sandboxing enabled at cluster provisioning.
+- **Data ownership** — Pod-local ephemeral storage only; no durable
+  state.
+- **Dependencies** — Kubernetes API, Artifactory mirror, Azure Key
+  Vault (via external-secrets-operator), Platform API (file-ops API
+  endpoint), GitHub (per-app repo two-way sync), HMR-aware framework
+  containers (Next.js + FastAPI default per BUILD-1, BUILD-3).
+
+#### Argo Rollouts controller
+
+- **Responsibility** — Reconciles every `Rollout` CR for deployed
+  customer apps. BlueGreen with `prePromotionAnalysis` runs the
+  AC-runner + k6 NFR probes; abort-on-failure attributes back to
+  the failing AC in audit (per DEPLOY-3, DEPLOY-5, DEPLOY-6).
+- **Technology** — Argo Rollouts (per DEPLOY-3, 00-context.md). Argo
+  CD intentionally not adopted in v1 (per DEPLOY-3 — DBOS workflow
+  and audit ledger are the single source of truth for deployment
+  state).
+- **Data ownership** — `Rollout` CR state; `AnalysisRun` history
+  (Kubernetes API state).
+- **Dependencies** — `amira-workloads` Kubernetes API, ACR (image
+  pull), platform DBOS (drives the chart push and reads run state).
+
+#### Buildkit pod
+
+- **Responsibility** — Builds container images for deployed apps.
+  Pulls dependencies through Artifactory; pushes images to ACR.
+- **Technology** — Open-source Buildkit on AKS (per DEPLOY-3). ACR
+  Tasks rejected on cloud-portability grounds; off-cluster Buildkit-
+  as-a-Service rejected (no need for an external dep on the deploy
+  hot path).
+- **Data ownership** — Layer cache (ephemeral / configurable on a
+  Persistent Volume).
+- **Dependencies** — Artifactory, ACR.
+
+#### Companion-agent MCP servers
+
+- **Responsibility** — Each deployed app that opted in to companion-
+  agent provisioning at deploy time runs an MCP server alongside its
+  app pod. The server exposes the deploy-time-resolved Build Plan
+  tools, branded by the app's spec FRs (tool descriptions) and ACs
+  (smoke tests). Calls land here from the platform Companion runtime
+  on behalf of an Ask-Amira user; downstream queries run under the
+  caller's OBO token (per AGENT-1, AGENT-2).
+- **Technology** — Synthesized SKILL.md + MCP server, generated at
+  deploy step from the Build Plan (per AGENT-1 follow-ups). One
+  companion-agent version per build (locked one-to-one).
+- **Data ownership** — None; downstream calls hit customer data
+  sources or skill-backed MCP servers.
+- **Dependencies** — Skill Catalog (manifest entry), Azure Key Vault
+  (skill secrets), Platform IdP (OBO exchange), customer data
+  sources, Audit Outbox tables.
+
+#### Deployed customer apps
+
+- **Responsibility** — Run customer applications (Next.js + FastAPI
+  by default) provisioned per `org-<orgId>-app-<appId>-<env>`
+  namespace.
+- **Technology** — Per-stack Helm chart (initial:
+  `amira-app-nextjs-fastapi`); Kata-Firecracker pods; per-namespace
+  NetworkPolicy default-deny + spec-derived egress allowlist (per
+  CROSS-4 layer 4).
+- **Data ownership** — Customer-app-owned tables in per-app database
+  (provisioning model is open; per PERSIST-1 follow-up).
+- **Dependencies** — Skills (MCP servers, customer warehouses),
+  Artifactory, ACR, Azure Key Vault.
+
+### 2.5 External integrations
+
+| Integration | Purpose | Sourced via |
+| --- | --- | --- |
+| Anthropic API (default) | LLM inference for all four agents | LLM adapter (per LLM-6); env-toggle to Bedrock / Vertex / Foundry |
+| GitHub | Per-app Git repo, two-way sync of generated code | BUILD-4 follow-ups |
+| Customer data sources (Snowflake, Databricks, etc.) | Skill-backed access; OBO-evaluated query authorization | Skills layer + retrieval-plane OPA |
+| Customer IdP (per org, e.g., Mars Entra ID, Okta) | Federated SSO for customer users | Platform IdP federation |
+| Sigstore | Provenance verification for skill bundles + dependency installs | SKILL-3, BUILD-6 |
+| Notifications (email, in-app, optional voice) | Approval / governance fan-out | Per 12 in §1b — channel substrate is open follow-up |
+
+---
+
+## 3. Data flow diagrams
+
+### 3.1 Specification iteration
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as User
+  participant UI as Platform UI
+  participant API as Platform API
+  participant Spec as Spec Agent (DBOS)
+  participant LLM as LLM (via adapter)
+  participant SC as Skill Catalog
+  participant Lint as Reviewer Agent
+  participant PG as Postgres
+  participant Out as Audit Outbox
+  participant AC as Audit Consumer
+  participant App as Authorized Approver
+  participant ESign as E-signature surface
+
+  U->>UI: chat / decision-point selection
+  UI->>API: POST /spec/{id}/turn (instruction)
+  API->>Spec: enqueue DBOS step
+  Spec->>LLM: classifier (edit / binding-or-schema / out-of-scope)
+  Spec->>LLM: spec-elicitation prompt + cached spec ctx
+  LLM-->>Spec: prose + DSL emit (capability graph delta)
+  Spec->>SC: resolve referenced skills against catalog
+  Spec->>Lint: lint narrative for vendor-SDK leakage
+  Lint-->>Spec: warnings (structured)
+  Spec->>PG: write spec_version (state=iterating)
+  Spec->>Out: append audit event (kind=spec-edit)
+  Spec-->>API: SSE narration events
+  API-->>UI: SSE: turn complete + warnings + readiness
+  Out->>AC: SKIP LOCKED poll
+  AC->>PG: insert hash-chained audit row
+
+  Note over U,UI: User clicks "Route for e-signature"
+  U->>UI: lock spec
+  UI->>API: POST /spec/{id}/lock
+  API->>PG: spec_version state → approval-requested
+  API->>PG: lookup ProjectGovernance.authorized-approver
+  API->>App: notification fan-out (email / in-app / voice)
+  App->>ESign: open /approve/{id}
+  ESign->>API: GET spec doc + capability graph
+  App->>ESign: e-signature
+  ESign->>API: POST /approve/{id}/sign
+  API->>PG: approval row written, spec_version → approved
+  API->>Out: audit (kind=approval-signed, causedBy=spec-edit)
+  Note over PG: Locked spec hash + signed approval ID<br/>are the inputs to the build hand-off envelope (RUNTIME-7)
+```
+
+### 3.2 Build
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant API as Platform API
+  participant Build as Build Agent (DBOS)
+  participant SC as Skill Catalog
+  participant Sandbox as Sandbox pod (Kata)
+  participant LLM as LLM (via adapter)
+  participant FileOps as File-Ops API
+  participant HMR as Framework HMR
+  participant CompMx as Compliance Matrix evaluator
+  participant Blob as Azure Blob (CAS + lockfile)
+  participant Out as Audit Outbox
+  participant Git as GitHub repo
+
+  API->>Build: build-handoff envelope<br/>(spec hash, approval id, lockfile hash)
+  Build->>SC: compile-time resolve (spec, role) -> build-plan.lock
+  Build->>Blob: PUT lockfile (content-hashed)
+  Build->>Out: audit (kind=build-plan-resolved, lockHash, buildId)
+  Build->>Sandbox: claim warm-pool slot
+  Sandbox-->>Build: ready (<1s)
+  loop per instruction (chat or scaffold)
+    Build->>LLM: classifier route
+    Build->>LLM: code-edit prompt + file ctx
+    LLM-->>Build: search-replace blocks
+    Build->>FileOps: apply (strict-match)
+    FileOps->>Sandbox: write -> fsync -> rename
+    Sandbox->>HMR: file-watcher trigger
+    HMR-->>Sandbox: rebuild + reload
+    Build->>CompMx: re-eval per-FR coverage
+    CompMx-->>Build: updated rows + readiness
+    Build-->>API: SSE (file-written, compliance-re-evaluated)
+    Build->>Out: audit (kind=file-edit, kind=compliance-re-evaluated)
+  end
+  Build->>Git: push branch (spec-version) + tag (build-N)
+  Build->>Blob: store CAS payload (spec_hash, skills, inputs)
+  Note over Build: Preview is the running sandbox<br/>at {appslug}-{orgslug}.apps.amira.qdt.ai
+```
+
+### 3.3 Deploy
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant API as Platform API
+  participant Deploy as Deploy Agent (DBOS)
+  participant BK as Buildkit
+  participant ACR as Azure Container Registry
+  participant Helm as Helm
+  participant Argo as Argo Rollouts
+  participant App as Deployed app pod (BlueGreen preview)
+  participant ACRun as AC-runner + k6
+  participant SC as Skill Catalog (companion mint)
+  participant Comp as Companion MCP server
+  participant Out as Audit Outbox
+  participant Reg as Companion-agent registry entry
+
+  API->>Deploy: deploy-handoff (spec hash, build N, env)
+  Deploy->>BK: build image (lockfile-pinned deps via Artifactory)
+  BK->>ACR: push image
+  Deploy->>Helm: render values (image, hostname, NetPol, secrets)
+  Helm->>Argo: helm upgrade --install (Rollout CR)
+  Argo->>App: bring up new ReplicaSet (preview side)
+  App->>App: HMR-style readiness probe pass
+  Argo->>ACRun: prePromotionAnalysis run<br/>(AC-tagged tests + k6 NFRs)
+  ACRun-->>Argo: pass / fail (per-AC attribution)
+  alt Pass
+    Argo->>App: flip Service selector to new ReplicaSet
+    Deploy->>SC: synthesize SKILL.md + MCP server
+    SC->>Comp: deploy companion MCP pod (opt-in)
+    SC->>Reg: write companion_agent_version row<br/>(tier=deployment-proprietary, paired with build)
+    Deploy->>Out: audit (kind=deploy-promoted, kind=companion-registered)
+  else Fail
+    Argo->>App: abort, keep previous active
+    Deploy->>Out: audit (kind=deploy-aborted, failingAcId)
+  end
+```
+
+### 3.4 Companion agent invocation (Ask Amira)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as Ask-Amira user
+  participant UI as Platform UI (drawer / /chat)
+  participant API as Platform API
+  participant CompRT as Companion runtime (DBOS)
+  participant IdP as Platform IdP
+  participant Comp as Companion MCP server (in workloads cluster)
+  participant Skill as Skill MCP server
+  participant DS as Customer data source
+  participant OPA as OPA (retrieval plane)
+  participant Out as Audit Outbox
+
+  U->>UI: prompt + selected agent
+  UI->>API: POST /chat (orgId, agentRef)
+  API->>CompRT: enqueue session
+  CompRT->>IdP: token-exchange<br/>(user token → downstream OBO,<br/>act = +companionAgent)
+  IdP-->>CompRT: OBO token (sub=user, act-chain)
+  CompRT->>Comp: tool call with OBO token
+  Comp->>Comp: enforce min(source_app_perms ∩ caller_perms ∩ user_perms)
+  Comp->>Skill: tool call (OBO token)
+  Skill->>OPA: authorize chunks (sub=user)
+  OPA-->>Skill: redacted chunk set
+  Skill->>DS: query (user OBO, immutable session attrs set)
+  DS-->>Skill: rows (RLS-applied)
+  Skill-->>Comp: result
+  Comp-->>CompRT: tool result
+  CompRT->>Out: audit (kind=companion-tool-call,<br/>userId, agentId=companion, serviceId=app,<br/>causedBy=parent-turn)
+  CompRT-->>API: SSE: streaming response
+  API-->>UI: streaming tokens to user
+  Note over Out: Per-service outbox + central consumer (ORCH-1)<br/>writes hash-chained ledger rows
+```
+
+---
+
+## 4. Persistence layer
+
+The platform operates one Postgres family, one S3-compatible object
+store, and one secret store. Three operational substrates total — by
+design, to keep the operations surface minimal (per RUNTIME-1,
+PERSIST-1).
+
+### 4.1 PostgreSQL (Azure Database for PostgreSQL Flexible Server)
+
+Holds tabular state, vector embeddings, durable workflow state, audit
+outboxes, and the audit ledger itself. Single instance for v1; logical
+separation by table; PgBouncer / Supavisor sized for the workflow +
+application + audit triple-workload (specifics open per RUNTIME-1
+follow-up).
+
+| Table family | What it holds | Retention | Consistency |
+| --- | --- | --- | --- |
+| `org`, `org_membership`, `user`, `org_idp_federation`, `role`, `role_grant` | Identity + tenancy graph | Lifetime of org + 90 days post-deletion (default) | Strong; RLS keyed by `org_id` |
+| `workspace` (BU), `workspace_membership` | Sub-tenant grouping inside an org | Same as org | Strong; RLS keyed by `org_id` (BU enforced via `workspace_id` predicate) |
+| `project`, `project_governance`, `project_collaborator` | Project records, governance role assignments, exposure scope | Lifetime of project + archival window | Strong; RLS |
+| `spec_version`, `spec_capability_graph`, `decision_point`, `gap`, `kb_attachment`, `spec_skill_reference` | Living spec doc, structured capability graph (per SPEC-DECOMP-1), knowledge base | Lifetime of project; immutable per version | Strong |
+| `approval_request`, `approval_signature` | Approval routing + e-signature records | 7 years (audit-bound) | Append-only |
+| `build`, `build_plan`, `build_plan_skill_binding`, `build_artifact_pointer` | Per-build state; pointers into Blob CAS | Lifetime of project | Append-only per build |
+| `compliance_matrix_row`, `compliance_evidence`, `compliance_score_history` | Per-FR compliance evidence + scores | Lifetime of project | Mutable (continuous re-eval per COMPLY-1) with history |
+| `deploy_run`, `deploy_smoke_result`, `deploy_companion_pin` | Deploy lifecycle + AC-tagged smoke results + paired companion-agent version pin (per DEPLOY-5) | Lifetime of project | Append-only |
+| `skill`, `skill_version`, `skill_role_grant`, `skill_secret_binding`, `skill_signature`, `skill_lifecycle` | Skill catalog + tier-signed manifests | Lifetime of skill (immutable per version per SKILL-5) | Append-only per version |
+| `companion_agent_version`, `companion_agent_active_pointer` | Companion-agent registry; active-pointer per source app | Lifetime of source app | Append-only versions; pointer flip is the rollback primitive |
+| `kb_doc`, `kb_chunk` (with `pgvector`), `kb_promotion` | Knowledge-base attachments; embeddings; per-KB-promotion scope (private / team / org per KB-PROMOTION-1) | Lifetime of project | Mutable |
+| DBOS workflow tables (managed) | Workflow event histories, queues, schedules | Per workflow lifetime + tunable retention | Strong (DBOS guarantees) |
+| Per-service `_outbox` tables | Audit events pending consumption (per ORCH-1) | Until consumed (TTL on consumed rows) | Append-only |
+| `audit_ledger` (monthly partitions) | Hash-chained ledger; one row per audit event with `(orgId, projectSeq)` index | 7 years (regulatory) | Append-only with hash-chain integrity |
+| `audit_anchor` | Hourly Merkle anchor records (digest, blob URI) | 7 years | Append-only |
+| `llm_call`, `llm_call_metering` | OpenTelemetry-derived per-call metering rows (per LLM-4); aggregated views over | 13 months (default; revisit if billing posture changes) | Append-only |
+| `audit_kind_validator` | Per-kind presence-rule registry (per AUDIT-2) | Lifetime of platform | Strong |
+
+**Tenancy isolation** — Postgres RLS enforces row visibility keyed
+by `org_id`. Snowflake-style immutable session attributes (per
+PERSIST-5) are set on every connection at session open; generated SQL
+or tool calls inside the session cannot rewrite them. Workspace (BU)
+isolation is a second predicate (`workspace_id`) inside the same RLS
+mechanism.
+
+**Backup story** — Azure Database for PostgreSQL Flexible Server
+manages backups; geo-redundant backup with 35-day point-in-time
+restore is the default working assumption (default; revisit if
+constraints change). The audit-ledger immutability story does not
+depend on Postgres backup — it is owned by the WORM anchor in
+Azure Blob Compliance Mode (§4.3, §10).
+
+### 4.2 Vector embeddings (pgvector inside the same Postgres)
+
+Per PERSIST-1, pgvector is the only vector backend. Embeddings live
+on the same Postgres instance — `kb_chunk.embedding`,
+`spec_capability_graph.embedding` (where useful for retrieval),
+companion-agent context indexes. Pinecone / Weaviate / LanceDB /
+Chroma are out of scope.
+
+### 4.3 Object storage (Azure Blob, S3-compatible interface)
+
+| Container | What it holds | Retention | Consistency |
+| --- | --- | --- | --- |
+| `specs` | Spec exports (PRD / SOW / cost / risk PDFs per 2.5) | Lifetime of spec version | Read-after-write |
+| `artifacts` | Built deployable bundles, source bundles, deploy reports | Lifetime of project + archival window | Read-after-write |
+| `cas` | Content-addressable build inputs keyed by `(spec_hash, skill_versions, build_inputs)` (per BUILD-4) | Lifetime of project (cache-evictable on TTL where the row is no longer referenced from a live `build` row) | Read-after-write |
+| `lockfiles` | `build-plan.lock` blobs (per SKILL-2) | Lifetime of project | Read-after-write |
+| `signatures` | E-signature blob payloads (full signed envelope, audit-cross-referenced) | 7 years | Read-after-write |
+| `audit-anchors` (Compliance Mode) | Hourly Merkle anchors (per AUDIT-1, PERSIST-2 + AUDIT-1) | 7 years, locked policy | WORM (immutable; cannot be modified by Microsoft, by QDT operators, or anyone) |
+| `skill-bundles` | Signed MCP-server bundles + SBOM attestations per skill version | Lifetime of skill version (immutable per SKILL-5) | Read-after-write |
+
+Code never binds to provider-specific SDKs; everything goes through
+the S3-compatible interface (per PERSIST-1) so re-pointing to MinIO
+or another provider is a configuration change.
+
+### 4.4 Generated codebase storage
+
+Two layers, both required (per BUILD-4, BUILD-4 follow-ups):
+
+- **User-facing layer:** per-project Git repository at GitHub under
+  a single QDT-managed Git org (per BUILD-4 follow-ups). One repo per
+  app. Branch = spec version; tag = build number. The Build Agent's
+  file-ops API writes to the sandbox pod and commits + pushes through
+  a two-way sync.
+- **Internal layer:** content-addressable storage in Blob (`cas`
+  container) keyed by the build-input triple. Reproducibility is a
+  contract, not best-effort: rebuilding `(spec_hash, skill_versions,
+  build_inputs)` retrieves the same artifact bytes.
+
+Time-travel UI in Canvas is Phase 2 (per BUILD-4 follow-ups).
+
+### 4.5 Secrets
+
+Azure Key Vault holds all secret material — skill secrets in three
+modes (`shared-platform`, `per-deployment`, `per-user-OAuth` per
+SKILL-4), platform service credentials, and tier-signing keys
+(QDT release key, deployment-admin keys, community-publisher keys
+per SKILL-3). Pods read secrets via the external-secrets-operator
+sidecar pattern (per 00-context.md "Secrets" + SKILL-4); no pod
+embeds secret values in image, code, or environment files at build
+time. Secrets never reach LLM context (per LLM-5).
+
+---
+
+## 5. Identity, auth, and authorization
+
+### 5.1 Sign-in and session
+
+Platform users authenticate against the Platform IdP at
+`amira.qdt.ai`. The IdP federates from each org's customer IdP
+(OIDC / SAML / OAuth 2.0) at org-onboarding time; users sign in
+through their company SSO and land in their org's workspace
+(per IDA-2, MTEN-1). Just-in-time user provisioning creates the
+`user` + `org_membership` rows on first login.
+
+Sessions are issued as secure, HttpOnly cookies bound to the IdP-issued
+ID token + refresh token. Step-up MFA is required for sensitive
+actions: deploy, e-signature, secret-binding configuration (per IDA-5).
+PATs are a strict subset of user capabilities — they cannot sign
+approvals, read skill secrets, or trigger writes against external
+systems (per IDA-5).
+
+### 5.2 Authorization at request time
+
+Every request reaches the Platform API with a session-resolved
+identity (`orgId`, `userId`, `roles`). The Platform API:
+
+1. Sets immutable session attributes on the Postgres connection
+   (`SET LOCAL app.org_id = …`, `app.user_id = …`, plus a no-rewrite
+   guard per PERSIST-5).
+2. Enforces tenancy via Postgres RLS keyed on `org_id`, with a
+   second `workspace_id` predicate for BU scope (per IDA-2).
+3. Calls OPA at the retrieval plane for policy decisions on data
+   chunks before they reach LLM context (per PERSIST-5 follow-up).
+
+`access = (tenant_match) ∧ (role_grant)` — these are independent
+dimensions (per IDA-2). Single composite enums are rejected.
+
+### 5.3 Identity propagation to downstream systems (OBO)
+
+Every platform agent (Spec, Build, Deploy, Companion) holds its own
+service identity registered with the Platform IdP. Downstream calls
+against user-permissioned data — customer warehouses, skill MCP
+servers, the platform's own Postgres for user-context queries — go
+through OAuth 2.0 OBO via RFC 8693 Token Exchange. The user's
+session token is exchanged for a downstream token whose `sub` is
+the user and whose `act` claim is the agent (cumulative for
+multi-hop delegation, capped at six elements per AUDIT-2). Service-
+account-with-tenant-cookie is permanently rejected (per IDA-3).
+
+For long-running agent jobs that outlive the originating session,
+the platform uses the IdP's refresh-token flow (per IDA-3 follow-up).
+On refresh failure the workflow checkpoints and pauses; the user
+gets a re-auth notification; on re-auth the workflow resumes from
+the last checkpoint with a fresh OBO token. Capability-token-
+fallback and background-service-identity are rejected.
+
+### 5.4 Skill resolution via OBO
+
+When the agent invokes a skill MCP server, the runtime obtains an
+OBO token for the call. Inside the skill server:
+
+- **`shared-platform`** secrets are resolved from Key Vault by the
+  vault sidecar — one secret value for all callers (per SKILL-4).
+- **`per-deployment`** secrets are resolved per org, keyed by the
+  caller's `org_id` (deployment admins set the value at install
+  time).
+- **`per-user-OAuth`** secrets require the calling user to have
+  completed the skill's OAuth flow; the user's stored skill-token
+  is fetched via the vault sidecar. First-call UX: if the user
+  hasn't authorized, the agent surfaces a "connect {skill}" step
+  inline.
+
+Audit attribution is the three-field actor model: `userId`,
+`agentId`, `serviceId`, with `causedBy` UUID pointing to the upstream
+audit row (per IDA-3, AUDIT-2). Companion-agent calls record the
+source app's `agentId` and the calling user's `userId`, with the
+`act` chain reflecting the end-to-end delegation (per AGENT-2).
+
+### 5.5 Customer-environment IdP federation
+
+When Amira is redeployed into a customer environment (§13), the
+customer's IdP becomes the Platform IdP for that deployment. The
+customer's directory drives users + roles directly; federation is
+not needed because there is only one IdP. The agent service
+identities and OBO flow are reconfigured against the customer IdP.
+Any IdP that speaks OIDC / SAML / OAuth 2.0 + Token Exchange is
+supported — Mars's Entra ID is the reference case, with Microsoft
+Entra Agent ID as the standardized OBO-for-agents pattern (per
+00-context.md "Identity and authorization").
+
+---
+
+## 6. Agent runtime
+
+### 6.1 SDK and execution model
+
+Every agent (Spec, Build, Deploy, Companion driver) runs the
+**Claude Agent SDK** as the inner tool-use loop, embedded inside a
+**DBOS workflow** that checkpoints into the platform Postgres (per
+RUNTIME-1, AGENT-TOPO-1). Workflows are decorated Python functions;
+model calls, tool calls, and MCP-server calls are step-checkpointed
+so a worker crash resumes at the last successful step with replay-
+correctness. Stateless request/response is rejected for sessions that
+routinely span many minutes and many tool calls.
+
+Day-one topology is single-agent ReAct loop with tools (per
+AGENT-TOPO-1). A verifier sub-agent (compliance re-eval running async
+alongside the main loop) is added when the Compliance Matrix re-eval
+starves the main loop's context budget — measurable trigger,
+data-driven introduction, not day-one. Replit-style
+manager/editor/verifier triads are deferred until single-agent error
+rate is unacceptable.
+
+### 6.2 Per-instruction routing
+
+A small classifier model runs upfront on every chat instruction,
+parallelized with context assembly so latency is hidden. Output is
+a discrete intent label (`edit` / `binding-or-schema` / `out-of-scope`)
+that dispatches to the specialized sub-agent path (per RUNTIME-4).
+Misclassifications surface as out-of-scope blocks or wrong-tool
+retries; both are observable and audit-emitting.
+
+### 6.3 Code-edit modality (Build Agent)
+
+Model emits search-replace blocks (or unified diff with elision); a
+deterministic apply function does `str.replace(search, replace)`
+against the file's current contents in-process and fails fast on
+no-match or ambiguous-match (per RUNTIME-2). On failure the model
+gets a structured error and re-emits with the current file contents
+in context. Apply-failure rate is an SLI; retries emit structured
+audit events. The file-ops API is the single seam the apply backend
+lives behind — future swap-out (e.g., to self-hosted Morph) is a
+single-point change. Aider's published 26% → 59% improvement from
+emit/apply separation is the on-record reason this shape is locked.
+
+### 6.4 Context and compaction
+
+Long Build Agent sessions use the Claude Agent SDK's default 5-stage
+compaction pipeline (budget reduction → snip → microcompact → context
+collapse → auto-compact) for v1 (per RUNTIME-6). Custom per-stage
+budgets are introduced only if dogfood telemetry shows the SDK
+defaults wedge for QDT's edit patterns. Naive truncation and
+summary-then-resume are rejected.
+
+### 6.5 Streaming and resumability
+
+Server-Sent Events from `amira-platform` to the user's browser, one
+connection per session (per STREAM-1). Narration events follow a
+structured event schema: `instruction-received`, `binding-resolved`,
+`file-written`, `compliance-re-evaluated`, `hot-reload-applied`. User
+pause / resume / cancel use separate REST endpoints. WebSocket
+multiplexer and event-sourced read model are rejected as v1
+over-scope. The DBOS workflow + Postgres LISTEN/NOTIFY on outbox
+tables enables disconnected-then-reconnected clients to resume
+streaming.
+
+### 6.6 Tool calling
+
+Every tool the agent invokes is an MCP tool (per SKILL-1). The agent
+runtime resolves tools at compile time through the Build Plan
+lockfile (Build / Deploy paths) or at session start through the
+calling org's catalog view (Spec / Companion paths). At runtime the
+runtime layer:
+
+1. Re-validates the calling identity's role intersects the bound
+   role; mismatch fails closed (per SKILL-2).
+2. Looks up the per-tool `sideEffect` annotation. `read` tools
+   execute without confirmation; `write` and `external-write` tools
+   prompt the inline-confirm UX (per AGENT-3, AGENT-3 follow-up).
+3. Acquires an OBO token for the call (per AGENT-2 follow-up —
+   always-runtime token-exchange per call; sealed capability tokens
+   rejected).
+4. Calls the MCP server.
+5. Writes a per-call audit event to the runtime's outbox (kind tied
+   to the tool's side effect).
+
+### 6.7 MCP integration
+
+MCP is the wire format for all skills (per SKILL-1). The Skill
+Catalog stores manifests (MCP standard fields + Amira overlay:
+`role-gating`, `source-tier`, `secret-refs`, `app-agent-provenance`,
+`lifecycle-state`, `sideEffect`-per-tool, `signing-key-id`,
+`manifest-schema-version`). Non-MCP sources (proprietary internal
+APIs, Anthropic Skills, raw OpenAPI) wrap behind QDT-maintained MCP
+adapters. Non-immutable-publish MCP servers are wrapped: QDT pins
+a content-hash version per fetch and re-publishes under a stable
+Amira-managed version (per SKILL-1 follow-ups).
+
+The Build Agent code-gen stage reads the resolved MCP endpoint from
+the lockfile, never from a runtime registry lookup. Drift between
+build-time and runtime endpoints is detectable as a content-hash
+mismatch on the lockfile.
+
+### 6.8 Cost-and-concurrency posture
+
+Per-org concurrency limits (one Build Agent session per user at a
+time within an org; org-level concurrent-user limit configurable per
+subscription tier) + dynamic model-tier selection inside the agent
+runtime: Haiku-class for classification / compliance scans /
+out-of-scope checks, top-class for code-edit + spec elicitation
+(per COST-CONC-1). Per-org BYOK (per LLM-6) is the release valve
+when an org wants to lift platform-imposed limits using its own
+credentials.
+
+LLM caching is hierarchical via Anthropic's `cache_control` blocks
+(per LLM-CACHE-1): system prompt + tool catalog cached per session
+(long TTL); spec doc cached per spec version (invalidated on lock);
+file-tree snapshot cached per build (invalidated on lockfile change);
+tool-call results cached per `(skill-id, version, args)` tuple. The
+env-var-toggle adapter preserves identical `cache_control` semantics
+when migrating to Bedrock / Vertex / Foundry.
+
+### 6.9 Guardrails
+
+Layered defense-in-depth (per AGENT-GUARD-1):
+
+1. Per-tool `sideEffect` annotation (deterministic primary classifier;
+   manifest-validator rejects unannotated tools at the catalog gate
+   per AGENT-3 follow-up).
+2. OPA gates write actions against the spec's capability graph
+   (per SPEC-DECOMP-1).
+3. Runtime egress NetworkPolicy allowlist blocks calls to undeclared
+   hostnames (per CROSS-4 layer 4).
+4. Inline LLM-judge confirmation for `external-write` actions.
+5. Kata-Firecracker per-pod isolation bounds blast radius.
+
+### 6.10 Out-of-scope detection
+
+Layered (per ORCH-4): capability-membership check against the spec's
+capability graph (deterministic) → LLM judge with a structured rubric
+for ambiguous cases the graph can't resolve. All decisions emit audit
+events distinguishing first-pass blocks from second-pass blocks. The
+spec capability graph is populated by the Spec Agent at finalization
+(per ORCH-4 follow-up).
+
+---
+
+## 7. Build & preview infrastructure
+
+### 7.1 Sandbox primitive
+
+Every Build, Spec, Preview, and Repo-import session runs as one pod
+managed by the upstream Kubernetes `agent-sandbox` CRD on the
+`amira-workloads` cluster, with `SandboxWarmPool` for sub-second
+cold-starts (per RUNTIME-3, BUILD-2). The `RuntimeClass` is
+**Kata-Firecracker**: hardware-isolated microVMs with KVM-backed
+per-pod kernel + network namespace isolation. AKS Pod Sandboxing is
+enabled at cluster provisioning; node pools come from nested-virt-
+capable VM SKUs (`Standard_D*s_v5` / `Standard_E*s_v5` family).
+External Sandboxes-as-a-Service (Vercel Sandbox, E2B, Modal,
+StackBlitz WebContainers) and container-only kernel-shared isolation
+are both rejected (per RUNTIME-3).
+
+### 7.2 Warm pools and stack templates
+
+Each warm pool prebuilds a sandbox image per supported stack. v1
+ships one pool: Next.js (App Router) + FastAPI (per BUILD-1).
+Adding a stack costs one Helm chart + warm-pool template +
+file-ops adapter + dependency-policy bundle + AC-runner adapter
+(estimated ~1 dev-month at v1 maturity per BUILD-1). Pool sizing
+is operational tuning (per RUNTIME-3 follow-ups, BUILD-2 follow-ups).
+
+### 7.3 File-ops API and HMR
+
+The Build Agent never touches the sandbox filesystem directly; all
+mutations go through the file-ops API endpoint exposed by each
+sandbox pod. The API performs atomic write-then-fsync-then-rename
+operations (per BUILD-3); the framework's file watcher picks up the
+rename and triggers HMR — Turbopack for Next.js, `uvicorn-hmr` for
+FastAPI. When a change can't be HMR'd in place (large refactor,
+dependency install, schema change), the dev server restarts and the
+UI surfaces a `rebuilding (full restart)` state distinct from in-place
+HMR.
+
+The platform does not own the bundler. The framework's dev server
+rebuilds and notifies; the file-ops API is the agent's only contract.
+
+### 7.4 Preview hostnames
+
+Hostname pattern: `<appslug>-<orgslug>.apps.amira.qdt.ai`
+(per BUILD-2). One wildcard cert covers the namespace; nginx
+ingress in `amira-workloads` terminates the connection and routes
+to the sandbox pod's preview Service.
+
+Warm-pool readiness is surfaced to the UI as a "preview ready"
+state when the slot is allocated and the dev server reports ready;
+the user does not see an opaque spinner (per BUILD-2).
+
+### 7.5 Terminal / console
+
+The Console / build log UI subscribes to a structured-event stream
+emitted by the Build Agent (instruction received, binding resolved,
+file written, compliance re-evaluated, hot-reload latency, apply
+errors). Events are streamed over SSE (per STREAM-1) and persisted
+to Loki for retrospective view; audit-relevant events also flow
+to the audit ledger via the agent's outbox.
+
+### 7.6 Lifecycle and cleanup
+
+Sandbox pods are claimed from the warm pool on session start,
+returned to the pool on session end (or torn down if customized
+beyond reset), and time out after a configurable inactivity window
+(default; revisit if constraints change). The CRD owns the lifecycle.
+Build-session checkpoints and Git two-way sync preserve user work
+across pod recycles.
+
+### 7.7 Repo-import pipeline (reverse engineering)
+
+Repo imports run inside the same `agent-sandbox` CRD pod class
+(Kata-Firecracker per RUNTIME-3, REVENG-1). The pipeline does
+AST-walk + framework-detection heuristics + LLM inference of
+FRs/NFRs/ACs with provenance back to source files. Sandboxed-
+execution probes (running the imported app) are rejected — slow
+plus side-effect risk. CodeQL / Semgrep are over-scope for v1.
+Imported non-Next/FastAPI stacks are host-only per BUILD-1 — the
+platform can run them and serve them under the same hostname
+pattern, but the Build Agent's full editing capability (HMR-driven
+iteration, AC-driven smoke tests, compliance probes) is degraded
+until that stack is added to v1's supported set.
+
+---
+
+## 8. Deployment infrastructure
+
+### 8.1 Deploy orchestration engine
+
+DBOS for the platform-side workflow + **Helm + Argo Rollouts** for
+the K8s deploy step itself (per DEPLOY-3). Argo CD is intentionally
+not adopted in v1 — the DBOS workflow + audit ledger is the single
+source of truth for what got deployed; adding GitOps reconciliation
+would create a second source of truth.
+
+### 8.2 Per-stack Helm charts
+
+QDT owns one Helm chart per supported stack. v1 ships
+`amira-app-nextjs-fastapi` (per BUILD-1). Each chart templates the
+customer app's `Rollout` CR, `Service`, `Ingress`, `NetworkPolicy`
+(default-deny + spec-derived egress allowlist per CROSS-4), and
+`ResourceQuota`. Charts are versioned and live alongside the platform
+code; chart upgrades flow through the platform release process.
+
+Per-app deploys are Helm releases in `org-<orgId>-app-<appId>-<env>`
+namespaces. Helm release history backs the v1.0 forward-only rollback
+posture (`helm rollback <release> <revision>`).
+
+### 8.3 Image build
+
+Buildkit pod inside `amira-workloads`. Pulls dependencies through
+JFrog Artifactory (the only sanctioned source per BUILD-6). Pushes
+to ACR. Each install is scanned by Socket (behavioural malware),
+Trivy (CVE), and Sigstore cosign (provenance verification) per
+BUILD-6 follow-ups. ACR Tasks rejected (cloud-portability);
+off-cluster Buildkit-as-a-Service rejected (no need for an external
+dep on the deploy hot path).
+
+### 8.4 Argo Rollouts BlueGreen with AC-tagged smoke tests
+
+Argo Rollouts BlueGreen brings up the new ReplicaSet, runs
+`prePromotionAnalysis`, and either flips the Service selector
+(success) or aborts and keeps the previous active (failure). The
+`prePromotionAnalysis` AnalysisTemplate runs:
+
+- The **AC-runner** — a custom Python runner (per DEPLOY-3) that
+  consumes the spec's AC DSL (per SPEC-DECOMP-1) and executes each
+  AC as a smoke test against the new ReplicaSet. As an example, a
+  FinIQ spec's `period-end recon ±$0.5M` AC becomes a deploy-gate
+  smoke test of the same shape (per DEPLOY-6).
+- **k6** for spec-NFR latency probes (per DEPLOY-6, OBS-2).
+- **OPA Rego deploy-gate policies** (per DEPLOY-4) consuming
+  scanner outputs (Trivy CVE scan, dependency-policy bundle results
+  from BUILD-6) and the latest compliance-score from the Compliance
+  Matrix. Failures block traffic flip and emit AC-tagged audit
+  events with the failing rule.
+
+When an AC changes, the smoke test is regenerated from the new AC
+by default and an audit event `ac-changed-test-regenerated` is
+emitted (per DEPLOY-6 follow-up). Manual override is available via
+PR with audit trail.
+
+### 8.5 Domain provisioning
+
+- **Default app domains:** wildcard `*.apps.amira.qdt.ai`. One
+  wildcard cert in `amira-workloads`'s nginx ingress, issued by
+  cert-manager + Let's Encrypt via DNS-01 (per 00-context.md).
+  external-dns watches Ingress objects and creates the corresponding
+  DNS records.
+- **Custom domains for deployed apps:** opt-in per app. Per-domain
+  Ingress, per-domain cert via HTTP-01.
+- **Hostname pattern (per BUILD-2):** `<appslug>-<orgslug>.apps.amira.qdt.ai`
+  — sub-domain per app scoped to org.
+
+### 8.6 TLS
+
+cert-manager with ClusterIssuer; Let's Encrypt as the default
+issuer (production), with a staging issuer available for non-prod
+(per 00-context.md). Wildcard cert via DNS-01; per-app custom
+domain certs via HTTP-01.
+
+### 8.7 Companion agent registration
+
+After the Service-selector flip succeeds, the deploy DBOS workflow
+synthesizes the SKILL.md + MCP server from the resolved Build Plan
+tools, the spec's FRs (as natural-language tool descriptions), and
+the spec's ACs (as smoke tests), and publishes a
+`companion_agent_version` row in the Skill Catalog at tier
+`deployment-proprietary` (per AGENT-1, SKILL-3, AGENT-1 follow-ups).
+The companion-agent version is locked one-to-one with the build
+version. The `companion_agent_active_pointer` for the source app
+flips atomically with the deployed-app traffic switch.
+
+Companion-agent provisioning is opt-in at deploy (per AGENT-1). The
+deploy modal carries a "register companion agent" toggle with a
+sensible default per project type. Synthesis happens at the deploy
+step (manifest reflects deploy-environment bindings, not build-time
+bindings, per AGENT-1 follow-ups). Authoring affordance is pure auto
+for v1; explicit prompt customization is Phase 2.
+
+### 8.8 Rollback model
+
+v1.0 ships forward-only via `helm rollback <release> <revision>` —
+the rollback UI surface in Canvas / Projects is "redeploy previous
+build," not "atomic rollback" (per DEPLOY-5). v1.5 adds Argo
+Rollouts BlueGreen rollback with the paired companion-agent
+version-pin flip atomicity: the Skill Catalog stores both old and
+new agent versions, and rollback flips the active pointer atomically
+with the app's Service selector flip. Canary-with-progressive-traffic
+is rejected for v1.x (BlueGreen suits AC-driven smoke tests better).
+
+### 8.9 External API exposure (per app)
+
+Thin sidecar (v1) per API-GATEWAY-1. Per-app API tokens issued
+through Project Governance; spec-derived OpenAPI manifest at
+`https://<appslug>-<orgslug>.apps.amira.qdt.ai/.well-known/openapi.json`;
+every external call lands in the audit ledger tagged `external-api`;
+audience-RBAC reuses the spec's role surface. No quotas UI, no
+developer portal, no mTLS, no monetization in v1. Full API management
+(Kong / Apigee parity) is Phase 2.
+
+---
+
+## 9. Event/orchestration architecture
+
+### 9.1 Eventing backbone
+
+Postgres outbox + idempotency-keyed consumer (per ORCH-1):
+
+- Each platform service (agent runtimes, Skill Catalog, Approval
+  service, Deploy workflow, etc.) owns an `<service>_outbox` table
+  next to its business tables. Business writes and outbox writes
+  commit in the **same Postgres transaction** (atomicity).
+- One global Audit Consumer in v1 polls every outbox via
+  `SELECT FOR UPDATE SKIP LOCKED`. Consumer outage delays audit
+  visibility but never blocks business writes.
+- Per-project monotonic sequence numbers are allocated from a
+  Postgres sequence per project (`audit_seq_<projectId>`) at
+  outbox-row insert. Audit ledger rows carry `(orgId, project_seq)`
+  as a unique index for fast intra-project forensic queries.
+- Cross-table commit-order is **not** preserved at the relay;
+  cross-event ordering uses the `causedBy` causation DAG (per
+  AUDIT-2), not WAL order.
+
+WAL-tailing, multi-domain consumers, and UUID-only-no-sequence are
+rejected for v1 with explicit migration triggers documented (per
+ORCH-1: WAL-tail when sustained chain-write throughput exceeds ~1k
+events/sec for a rolling 24h window; per-project chain sharding
+when sustained throughput approaches the ~5k events/sec single-
+writer ceiling). Cross-region fanout (Kafka / NATS JetStream) is
+deferred until cross-region demand is real.
+
+### 9.2 Three-agent pipeline orchestration (Spec → Build → Deploy → Companion)
+
+Per-phase DBOS workflows with handoff via durable signal (per ORCH-2).
+Each phase is its own DBOS workflow; the handoff envelope binds the
+phases together durably.
+
+```mermaid
+flowchart LR
+  Spec["Spec Workflow<br/>(DBOS)"] -->|"envelope:<br/>(specHash, approvalId)"| Build["Build Workflow<br/>(DBOS)"]
+  Build -->|"envelope:<br/>(specHash, approvalId, lockHash, buildN)"| Deploy["Deploy Workflow<br/>(DBOS)"]
+  Deploy -->|"envelope:<br/>(buildN, env, deployId)"| CompReg["Companion-Register Workflow<br/>(DBOS, opt-in)"]
+  CompComply["Continuous Compliance<br/>(DBOS scheduled)"] -. "observes" .-> Build
+  CompComply -. "observes" .-> Deploy
+  Spec --o Out1["audit: spec-edit /<br/>spec-locked / approval-signed"]
+  Build --o Out2["audit: build-handoff /<br/>build-plan-resolved /<br/>file-edit /<br/>compliance-re-evaluated"]
+  Deploy --o Out3["audit: deploy-promoted /<br/>deploy-aborted /<br/>ac-changed-test-regenerated"]
+  CompReg --o Out4["audit: companion-registered"]
+  Out1 --> Outbox["per-service outboxes"]
+  Out2 --> Outbox
+  Out3 --> Outbox
+  Out4 --> Outbox
+  Outbox -->|SKIP LOCKED poll| Cons["Audit Consumer"]
+  Cons --> Ledger["audit_ledger<br/>(hash chain)"]
+  Ledger -->|hourly| Anchor["WORM Anchor<br/>Azure Blob Compliance Mode"]
+```
+
+Single-megaworkflow-spans-project-lifecycle is rejected; per-phase
+fits DBOS's natural shape and gives each phase its own retry /
+error-handling story (per ORCH-2).
+
+### 9.3 Hand-off envelopes (per RUNTIME-7)
+
+Hand-off envelopes are the only way one phase invokes the next.
+Each carries the locked inputs the next phase needs and is recorded
+as an audit event:
+
+| Hand-off | Envelope contents | Audit kind |
+| --- | --- | --- |
+| Spec → Build | frozen spec hash, signed approval ID, resolved `build-plan.lock` content hash | `build-handoff` |
+| Build → Deploy | frozen spec hash, signed approval ID, build N, lockfile hash, image digest | `deploy-handoff` |
+| Deploy → Companion-register | build N, env, deployment ID, opt-in flag | `companion-handoff` |
+
+The Build Agent reads only from the Spec → Build envelope; references
+outside it are rejected. Bare-database-state-machine and approval-ID-
+only hand-offs are rejected because they don't bind the resolved
+build plan to the approval (per RUNTIME-7).
+
+### 9.4 Continuous compliance probing
+
+Hybrid event-triggered + scheduled (per COMPLY-1). Probes run on
+event signals (skill version change, data-source schema change,
+deploy completion) for fast feedback, with a 6h scheduled timer as
+backstop. Probes are AC-tagged k6 jobs running against deployed
+apps. Failures recompute the compliance score and emit audit events.
+
+### 9.5 KB promotion lifecycle
+
+User-initiated promotion with three scope levels: private → team →
+org-wide (per KB-PROMOTION-1). Org admins can demote or remove.
+Cross-org promotion rejected.
+
+### 9.6 Fork lineage
+
+A forked project carries a `forkedFromProjectId` lineage edge for
+audit traversal. Spec content + governance role assignments are
+inherited; build / deploy / approvals / KB reset (per
+FORK-LINEAGE-1).
+
+---
+
+## 10. Observability and audit
+
+### 10.1 Logging, tracing, metrics
+
+Self-hosted Grafana stack in `amira-platform` (per OBS-3): Loki for
+logs, Tempo for traces, Mimir for metrics. OpenTelemetry collector
+runs as a DaemonSet in both clusters and forwards to the stack.
+Azure Monitor / Application Insights / Log Analytics are rejected
+on cloud-portability grounds.
+
+LLM-call telemetry is OpenTelemetry middleware emitting spans tagged
+with `(orgId, userId, projectId, agentRole, callType, model,
+cached-read, cache-write, uncached, latency, status)` (per LLM-4).
+Spans land in Tempo; aggregations build per-org / per-project /
+per-agent / per-call-type cost + latency views (also surfaced in
+billing / Settings UI).
+
+### 10.2 Trace store, redaction, and audit-bound view
+
+Tool-call results land in Tempo with content redaction tags applied
+to PII / RLS-marked rows before LLM context (per CROSS-6 follow-up,
+LLM-5). The LLM sees the redacted view; the trace store retains
+the full content but engineers see only the redacted view by default.
+Audit-bound roles can request the un-redacted view; the request
+itself is an audit event. The trace store's retention is separate
+from the 7-year audit-ledger window (default; revisit if constraints
+change).
+
+### 10.3 Per-route SLIs and NFR compliance
+
+Live per-route SLIs computed from OpenTelemetry spans (P50 / P95
+first-token, dashboard load, voice end-to-end, errors per 1k) per
+LLM-4 schema (per OBS-2). k6 scheduled probes every 6h (per
+COMPLY-1) for AC-tagged compliance NFR checks against deployed apps.
+Breaches trigger alerts and emit audit events.
+
+### 10.4 Audit ledger and immutability
+
+**Substrate** — Hash-chained Postgres ledger + Azure Blob Immutable
+Compliance Mode as the WORM Merkle anchor (per AUDIT-1, PERSIST-2 +
+AUDIT-1).
+
+- Each ledger row stores `prev_hash + row_hash`. The chain is
+  intrinsically serial — one writer, regardless of how many
+  consumers feed it.
+- Hourly job reads the chain tip, computes the Merkle root, writes
+  it to Azure Blob Immutable Compliance Mode in QDT's subscription.
+  The anchor digest is recorded as the next ledger row's hash input.
+- 7-year retention is enforced by Azure Blob's locked policy;
+  retention can be extended but not shortened.
+- The immutability cannot be overridden by Microsoft support, by
+  QDT operators, or by anyone (per AUDIT-1).
+- An external regulator audit is satisfied by handing over the
+  ledger export + the anchor blob set; chain integrity is verifiable
+  end-to-end. SEC 17a-4(f) / FINRA 4511(c) / CFTC 1.31(c)
+  defensible.
+
+EventStoreDB and distributed-ledger products are rejected as
+operational overhead with no compliance benefit. MinIO self-hosted
+is rejected. Public anchor publication is not a v1 feature; revisit
+only if a regulator or customer specifically asks (per PERSIST-2 +
+AUDIT-1).
+
+### 10.5 Audit attribution
+
+Three-field actor (`userId`, `agentId`, `serviceId`, any nullable
+per kind with per-kind validator) + `causedBy` UUID pointer +
+`(orgId, projectSeq)` for intra-project ordering (per AUDIT-2).
+Causation DAG stored as parent-pointer chain in Postgres (UUID
+column, indexed); traversal via recursive CTE. No separate graph
+database. Wire format between services is RFC 8693 `act`-chain,
+capped at 6 elements.
+
+Audit kinds are an extensible schema. The platform ships with a
+representative seed set of kinds (e.g., `spec-edit`, `approval-signed`,
+`build-plan-resolved`, `deploy-promoted`); the schema itself is
+open-ended, with a per-kind validator registry that operators extend
+as new event types appear. The seed set is a starting point, not a
+ceiling.
+
+### 10.6 Correlation: a single user action threading through every component
+
+When a user fires "lock spec for e-signature" in Canvas:
+
+1. Platform API receives the request with session identity → emits
+   audit `userId=user, agentId=null, serviceId=platform-api,
+   kind=spec-lock-requested, causedBy=null`.
+2. Spec Agent runtime exchanges the user's token via OBO → emits
+   audit `userId=user, agentId=spec, serviceId=spec-runtime,
+   kind=spec-locked, causedBy=spec-lock-requested`.
+3. Approval routing notifies the authorized approver → emits audit
+   `agentId=null, serviceId=approval-router,
+   kind=approval-routed, causedBy=spec-locked`.
+4. Approver e-signs → audit `userId=approver, serviceId=approval-ui,
+   kind=approval-signed, causedBy=approval-routed`.
+5. Build Agent receives hand-off envelope → audit `agentId=build,
+   kind=build-handoff, causedBy=approval-signed`.
+6. … and so on through `build-plan-resolved`, `file-edit`,
+   `deploy-handoff`, etc.
+
+Recursive-CTE traversal of the `causedBy` DAG retrieves the entire
+thread. Per-project monotonic `projectSeq` orders events deterministically
+within a project. The `act`-chain on the wire format carries the
+delegation chain through external systems.
+
+---
+
+## 11. Kubernetes topology
+
+### 11.1 Two-cluster split
+
+Two AKS clusters in QDT's Azure subscription (per DEPLOY-2 / DEPLOY-1):
+
+#### `amira-platform` cluster
+
+- **Runs:** Platform API + UI server, Agent runtime worker pods,
+  DBOS scheduler / queue runner, Skill Catalog service, Platform IdP
+  client, OPA, Audit Consumer, WORM Anchor scheduled job, Grafana /
+  Loki / Tempo / Mimir, OpenTelemetry collector DaemonSet,
+  external-secrets-operator, cert-manager, external-dns, nginx
+  ingress.
+- **Termination:** `amira.qdt.ai` (platform UI, API, SSE).
+
+#### `amira-workloads` cluster
+
+- **Runs:** `agent-sandbox` CRD controller + warm pools, Argo
+  Rollouts controller, Buildkit pod, deployed customer-app pods,
+  companion-agent MCP-server pods, OpenTelemetry collector DaemonSet,
+  external-secrets-operator, cert-manager, external-dns, nginx
+  ingress.
+- **Termination:** `*.apps.amira.qdt.ai` (deployed apps + previews).
+
+The two clusters are connected via Azure VNet peering. The platform
+cluster's DBOS workflow drives the workloads cluster's Argo Rollouts
+and `agent-sandbox` resources through the workloads cluster's
+Kubernetes API over the peered network.
+
+### 11.2 Namespaces
+
+#### In `amira-platform`
+
+- `platform-system` — control-plane services, OPA, IdP integration.
+- `platform-data` — Audit Consumer, WORM Anchor job, DBOS workers,
+  external-secrets-operator.
+- `observability` — Grafana / Loki / Tempo / Mimir.
+- `ingress-system` — nginx ingress controller, cert-manager,
+  external-dns.
+
+#### In `amira-workloads`
+
+- `sandbox-system` — `agent-sandbox` CRD controller, warm-pool
+  managers.
+- `sandbox-<sessionId>` — short-lived sandbox-pod namespaces
+  created per Build / Preview / Repo-import / Skill-dry-run session.
+- `org-<orgId>-app-<appId>-<env>` (env ∈ `{dev, uat, prod}`) —
+  one namespace per app per environment for deployed apps and their
+  companion-agent MCP servers.
+- `argo-rollouts` — Argo Rollouts controller.
+- `image-build` — Buildkit pod.
+- `ingress-system` — nginx ingress, cert-manager, external-dns.
+
+### 11.3 Per-namespace controls (workloads cluster)
+
+Every `sandbox-*` and `org-*-app-*-<env>` namespace runs:
+
+- **`NetworkPolicy` default-deny** plus explicit egress allows for:
+  Artifactory, ACR (image pull), Azure Key Vault (via
+  external-secrets-operator), the Postgres + LLM-adapter endpoints
+  (only for control-plane-marked services), and the spec-derived
+  egress allowlist (per CROSS-4 layer 4 — for deployed apps).
+- **Pod Security Standards `restricted` profile.**
+- **`ResourceQuota`** sized per app's tier and per environment.
+- **`RuntimeClass`** = Kata-Firecracker for every pod.
+- **External-secrets-operator sidecar** for Key Vault-backed
+  secret resolution.
+
+### 11.4 Tenant isolation enforcement
+
+Tenant isolation enforces in two planes:
+
+- **Data plane:** Postgres RLS keyed by `org_id` + Snowflake-style
+  immutable session attributes set on every connection (per
+  PERSIST-5).
+- **Network plane:** namespace-per-org-per-app + NetworkPolicy
+  default-deny in `amira-workloads` (per DEPLOY-2).
+
+Cross-environment data leakage is therefore blocked twice (per
+DEPLOY-2). For BU boundaries, the same RLS engine adds a
+`workspace_id` predicate; for per-customer (when the dedicated
+customer-installed deployment tier ships) the boundary is the
+deployment itself, not a code path inside one platform.
+
+### 11.5 Per-pod resource profile sketches
+
+(default; revisit once dogfood telemetry exists)
+
+| Pod class | vCPU | Memory | Notes |
+| --- | --- | --- | --- |
+| Platform API | 2 | 4 GB | Multiple replicas behind Service |
+| Agent runtime worker | 4 | 8 GB | Long-running; per-session memory dominated by Claude Agent SDK context cache |
+| DBOS worker | 2 | 4 GB | Stateless poll/exec |
+| Skill Catalog | 2 | 4 GB | Read-mostly |
+| Audit Consumer | 1 | 2 GB | Single-writer; backpressure-tolerant |
+| Sandbox (Next.js + FastAPI) | 2 | 4 GB | Kata microVM; tunable per pool |
+| Deployed app | 1–4 | 2–8 GB | Per app's Helm values |
+| Companion MCP | 1 | 2 GB | One per source app |
+| Buildkit | 4 | 8 GB | Burst |
+| OpenTelemetry collector | 1 | 2 GB | DaemonSet |
+
+### 11.6 Secrets and persistent volumes
+
+Secrets reach pods via external-secrets-operator pulling from Azure
+Key Vault. Persistent volumes are minimized: Postgres is managed
+(no PV); Loki / Tempo / Mimir use Azure Blob-backed object storage
+where supported, falling back to managed-disk PVs for Mimir's local
+ingester and Tempo's WAL (default; revisit). Sandbox pods are
+ephemeral; deployed apps are stateless except for app-owned data
+in their per-app database (provisioning model open per PERSIST-1
+follow-up).
+
+---
+
+## 12. Local development
+
+The local stack is a `docker-compose` topology that mirrors
+production component-for-component, with the goal that a developer
+can clone the repo, run `make dev`, and have a functional Amira on
+localhost without Azure access.
+
+### 12.1 docker-compose stack (production parity)
+
+| Service | Local impl | Production equivalent |
+| --- | --- | --- |
+| Postgres + pgvector | `pgvector/pgvector:pg16` container | Azure Database for PostgreSQL Flexible Server |
+| Object storage | MinIO | Azure Blob Storage (S3-compatible) |
+| Secret store | Local file-backed shim emulating external-secrets-operator | Azure Key Vault |
+| Container registry | Local Docker registry | Azure Container Registry |
+| Dependency mirror | Verdaccio (npm) + devpi (PyPI) | JFrog Artifactory |
+| Sandbox runtime | Plain Docker containers (no Kata) | Kata-Firecracker on AKS |
+| Workflow engine | DBOS Python (same package, against local Postgres) | DBOS on managed Postgres |
+| Argo Rollouts | Skipped — `helm install` direct | Argo Rollouts on `amira-workloads` |
+| Ingress | Caddy (local TLS) | nginx + cert-manager + Let's Encrypt |
+| Identity | Local OIDC mock (mock-oauth2-server) | Auth0 / WorkOS / customer IdP |
+| LLM provider | Anthropic API direct via `ANTHROPIC_API_KEY` | Anthropic API (or Bedrock / Vertex / Foundry) |
+| OpenTelemetry stack | Grafana single-container dev image | Grafana / Loki / Tempo / Mimir self-hosted |
+| Skill curation scanners (Socket / Snyk / Trivy / dry-run) | Skipped at install time; `make scan` runs the same scanners on demand | Inline at every install / promotion |
+
+### 12.2 Mocked production features (and why)
+
+- **Kata-Firecracker isolation** — replaced with plain Docker
+  containers locally (developers don't run AKS Pod Sandboxing on a
+  laptop). Trade-off: local sandboxes share the host kernel; suitable
+  for development, never for production code execution.
+- **Azure Blob Immutable Compliance Mode** — replaced with MinIO
+  (no immutability lock). Local audit chain still hash-chains rows,
+  but the WORM property is absent. Audit-related tests pass against
+  the chain integrity check; immutability tests run only against
+  Azure.
+- **External IdP federation** — replaced by a local mock OIDC server
+  with seeded users + orgs. Federation handshakes (SAML, customer-IdP
+  callbacks) are exercised via integration tests in CI, not local
+  dev.
+- **Argo Rollouts BlueGreen** — `make dev` does `helm install`
+  directly; deploy gating + AC-runner runs but without the
+  `prePromotionAnalysis` Service-selector flip. Local "deploy"
+  produces a running app accessible at `<app>.localtest.me` (which
+  resolves to 127.0.0.1).
+- **Cross-cluster VNet peering** — collapsed: both `amira-platform`
+  and `amira-workloads` workloads run in the same compose network.
+  The VNet boundary is exercised in CI / staging, not locally.
+- **Skill curation scanners (Socket / Snyk / Trivy / Sigstore /
+  dry-run)** — disabled at the local install gate to keep `make dev`
+  fast; runnable on demand via `make scan`.
+
+The local stack is sufficient to build the platform itself, exercise
+the Spec → Build → Deploy pipeline, sign approvals, render the
+Compliance Matrix, and ask companion agents questions. Anything that
+specifically requires Azure-only behavior (immutability lock, Pod
+Sandboxing, Entra ID federation) is exercised in a CI staging
+environment that runs against actual Azure.
+
+### 12.3 Seed data
+
+`make seed` loads a representative set of fixtures (sample projects,
+governance assignments, audit records) so every local dev environment
+starts in a consistent, demonstrable state.
+
+---
+
+## 13. Customer-environment deployment model
+
+Amira's v1 architectural default is multi-tenant SaaS at
+`amira.qdt.ai` (per MTEN-1). A dedicated customer-installed
+deployment (e.g., Mars-Amira inside Mars's Azure subscription) is
+the **enterprise commercial tier** — same code, different deployment
+configuration — and is **out of scope for this iteration** but the
+platform is built so the redeploy is a configuration change, not a
+fork.
+
+### 13.1 What gets reconfigured per deployment
+
+| Surface | Reconfigured to | Default in QDT-hosted |
+| --- | --- | --- |
+| **Platform IdP** | Customer's IdP (Mars Entra ID / Okta / etc.) — drives users + roles directly; no federation needed | Auth0 / WorkOS (federates from each customer org's IdP) |
+| **LLM provider** | Customer-configured via the env-var-toggle adapter — Anthropic direct, Azure OpenAI in customer subscription, AWS Bedrock, Google Vertex, Microsoft AI Foundry, or on-prem (per LLM-6) | Anthropic API direct |
+| **Customer data sources** | Customer's data lakes (Mars QDL / QML / Q-* via Skill MCP adapters) | Demo data only |
+| **Skill catalog `deployment-proprietary` tier** | Customer-admin signing key; customer-published skills (e.g., Mars's QDL/QML skills) | QDT-admin key + QDT release skills |
+| **Container registry** | Customer's ACR or equivalent | QDT's ACR |
+| **Object storage** | Customer's Azure Blob (or other S3-compatible) in customer subscription | QDT's Azure Blob |
+| **Postgres** | Customer's Azure Database for PostgreSQL (or equivalent managed Postgres) | QDT's instance |
+| **Secret store** | Customer's Key Vault (with customer's signing chains) | QDT's Key Vault |
+| **DNS / hostnames** | Customer-chosen domain (e.g., `amira.mars.com`); per-app subdomain pattern preserved or replaced with per-app sub-path; cert authority configurable (Let's Encrypt or customer internal CA) | `amira.qdt.ai`; `*.apps.amira.qdt.ai` |
+| **Dependency mirror** | Customer's curated Artifactory / Nexus | QDT's Artifactory |
+| **Observability** | Customer-side Grafana stack (or routed via OpenTelemetry to a backend of customer choice) | QDT's self-hosted Grafana |
+
+### 13.2 What stays the same
+
+- Two-cluster split (platform + workloads).
+- Postgres + pgvector schema, RLS rules, immutable session attribute
+  pattern.
+- Hash-chained audit ledger + WORM Merkle anchor pattern
+  (Azure Blob Immutable Compliance Mode is the reference, but any
+  WORM-compliant object store satisfies the contract).
+- DBOS workflow engine, Claude Agent SDK runtime, MCP skill format
+  with Amira manifest overlay.
+- `agent-sandbox` CRD with Kata-Firecracker, warm pools.
+- Helm + Argo Rollouts BlueGreen deploy with AC-runner +
+  `prePromotionAnalysis`.
+- OBO via RFC 8693 Token Exchange; three-field actor + `causedBy`
+  audit attribution.
+- Spec capability graph + Compliance Matrix re-evaluation.
+- Per-tenant config record (per MTEN-2) loaded at session start —
+  in a single-tenant deployment the config simply has one tenant.
+
+### 13.3 What isn't supported
+
+- **License enforcement, feature-gating, tier-based entitlement** —
+  the platform has no runtime license-key check, no feature flag
+  tied to a license tier, no expiration-triggered read-only mode,
+  no phone-home enforcement (per 00-context.md). Entitlement is
+  governed contractually. If AMS lapses the customer keeps a
+  working perpetual build but stops receiving updates.
+- **Per-user BYOK** — v1 only supports per-org BYOK (per LLM-6).
+- **Subscription-OAuth proxy** for LLMs — permanently rejected (per
+  LLM-6, Anthropic Feb 2026 ToS).
+- **Cloud lock-in to Azure** — the platform runs on AKS today and
+  should remain portable to other Kubernetes flavors with a
+  configuration change. Avoiding Azure-Monitor / Application
+  Insights / Log Analytics is the structural reason the
+  observability stack is Grafana-based (per OBS-3).
+- **Local-agent topology** (user runs the agent on their own
+  machine) — out of scope (per 00-context.md / LLM-6 option 4).
+
+### 13.4 Deployment-time configuration registry
+
+A per-deployment + per-org config record (per MTEN-2) is loaded at
+session start and supplies: skills allowlist, governance roles,
+vocabulary, compliance standards, prompt fragments, audit kinds.
+Tenant-specific tools install through the skill catalog's
+`deployment-proprietary` tier (per SKILL-3). Fork-driven customization
+is rejected.
+
+---
+
+## 14. Open architectural risks
+
+Risks the platform is choosing not to solve in v1, why that's safe
+for now, and what would force a revisit.
+
+### 14.1 Single-Postgres concentration
+
+One Postgres family carries application state, DBOS workflow state,
+audit outboxes, and the audit ledger. A Postgres outage is a
+platform-wide outage.
+
+**Why safe** — Azure Database for PostgreSQL Flexible Server with
+geo-redundant backup + point-in-time restore is a managed substrate
+operated by Microsoft. v1 expected concurrency (Mars-rollout scale,
+~200–500 events/sec peak per ORCH-1) is an order of magnitude under
+the chain-write ceiling. RUNTIME-1 picked DBOS-on-shared-Postgres
+specifically to keep operational surface low.
+
+**Trigger to revisit** — Sustained chain-write throughput >1k
+events/sec for a rolling 24h window (WAL-tail migration), or
+approach to ~5k events/sec (per-project chain sharding). For
+workflow workload: separate the DBOS Postgres from the audit
+Postgres if the triple-workload contention surfaces.
+
+### 14.2 Single audit consumer
+
+One global Audit Consumer in v1 (per ORCH-1). Consumer outage delays
+audit visibility for every project.
+
+**Why safe** — The hash chain is intrinsically serial (one writer
+to the chain). Consumer outage doesn't block business writes; only
+audit visibility lags. SKIP LOCKED degrades gracefully.
+
+**Trigger to revisit** — Sustained backpressure or consumer
+operational fragility. Migration is partition-key-per-consumer,
+not architectural redesign.
+
+### 14.3 Single-agent ReAct loop without verifier
+
+Day-one Build Agent runs single-agent without a verifier sub-agent
+(per AGENT-TOPO-1). Compliance re-eval shares context budget with
+the main loop.
+
+**Why safe** — Cheaper, fewer moving parts. Compliance Matrix
+re-eval is bounded; published research shows verifier sub-agents
+help mostly when error rates are unacceptable.
+
+**Trigger to revisit** — Compliance re-eval starves the main
+loop's context budget (measured), or single-agent error rate is
+unacceptable on dogfood metrics.
+
+### 14.4 Forward-only rollback in v1.0
+
+v1.0 ships forward-only rollback (`helm rollback <release> <revision>`).
+v1.5 adds Argo Rollouts BlueGreen + paired companion-agent version-pin
+flip atomicity (per DEPLOY-5).
+
+**Why safe** — Helm release history is preserved per app.
+Forward-only is acceptable when ACs gate every promotion.
+
+**Trigger to revisit** — Customer requirement for atomic rollback,
+or operational pain from manual companion-agent re-pin.
+
+### 14.5 Public anchor publication not implemented
+
+Audit anchor is sealed in Azure Blob Immutable Compliance Mode in
+QDT's subscription, but not published to a public transparency log.
+
+**Why safe** — Cohasset-assessed Azure Blob Compliance Mode meets
+SEC 17a-4(f) / FINRA 4511(c) / CFTC 1.31(c) without public
+publication.
+
+**Trigger to revisit** — A regulator or customer specifically asks
+for public verifiability.
+
+### 14.6 Single greenfield stack (Next.js + FastAPI)
+
+v1 commits to one stack for full Build Agent capability (per
+BUILD-1). Imported repos in non-Next/FastAPI stacks are
+host-only (degraded experience).
+
+**Why safe** — Lovable-style narrow lock-in is the deliberate
+quality trade. The cost to add a stack is bounded (~1 dev-month).
+
+**Trigger to revisit** — A paying customer requires a different
+greenfield stack.
+
+### 14.7 Per-user BYOK deferred
+
+v1 supports per-org BYOK only (per LLM-6). Per-user BYOK is a
+future feature.
+
+**Why safe** — Org-level BYOK matches the org-as-tenant model
+(MTEN-1) and covers the volume-economics use case.
+
+**Trigger to revisit** — Power-user demand for per-user keys, or
+org-level BYOK proves operationally awkward.
+
+### 14.8 No multi-LLM-provider in v1
+
+The LLM adapter exposes Anthropic-family models only in v1; OpenAI
+/ Gemini / others are Phase 2 (per LLM-6).
+
+**Why safe** — Anthropic models cover Build Agent quality. The
+adapter shape (env-var-toggle) preserves the option without code
+change.
+
+**Trigger to revisit** — A customer specifically requires another
+provider, or model-quality gap on a target task.
+
+### 14.9 Dedicated customer-installed deployment is parallel offering
+
+The dedicated customer-installed enterprise tier (Mars-Amira inside
+Mars's Azure subscription) remains available but is **out of scope
+for this iteration** (per MTEN-1). Multi-tenant SaaS is the v1
+default.
+
+**Why safe** — Same code, different deployment configuration. The
+platform is built so the redeploy is a configuration change, not a
+fork (§13).
+
+**Trigger to revisit** — Commercial demand validates the dedicated
+tier; until then, the SaaS shape is the priority.
+
+### 14.10 Companion-agent prompt customization not user-editable in v1
+
+v1 ships pure-auto companion-agent synthesis (per AGENT-1
+follow-ups). Explicit prompt customization is Phase 2.
+
+**Why safe** — Synthesis from spec FRs + ACs covers the demo and
+early production cases. Hand-edit creates an ownership question
+about the SKILL.md across deploys.
+
+**Trigger to revisit** — Customer demand for branded / customized
+companion-agent voice.
+
+### 14.11 Time-travel UI in Canvas deferred
+
+Per-build snapshots / checkpoints surface in Canvas as a time-travel
+UI is Phase 2 (per BUILD-4 follow-ups). The CAS layer + Git tagging
+already store the necessary data.
+
+**Why safe** — Build-session checkpoints preserve work; Git tags
+and repo browsing cover the recovery use case.
+
+**Trigger to revisit** — User research surfaces strong demand.
+
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---- Helpers ----
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function stripTags(s) { return String(s).replace(/<[^>]*>/g, ''); }
+  function slugify(text) {
+    return String(text).toLowerCase().trim()
+      .replace(/[^\w\s.\-]/g, '')
+      .replace(/[\s.]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+  function debounce(fn, wait) {
+    let t; return function () { clearTimeout(t); t = setTimeout(() => fn.apply(this, arguments), wait); };
+  }
+
+  // ---- DOMPurify config: permissive for trusted authored markdown but blocks scripts/iframes/etc. ----
+  const sanitize = (html) => DOMPurify.sanitize(html, {
+    ADD_ATTR: ['target', 'loading', 'referrerpolicy', 'class', 'id'],
+    FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick']
+  });
+  const sanitizeSvg = (svg) => DOMPurify.sanitize(svg, {
+    USE_PROFILES: { svg: true, svgFilters: true, html: true },
+    ADD_TAGS: ['style', 'foreignObject', 'use', 'switch'],
+    ADD_ATTR: ['xmlns', 'xmlns:xlink', 'xlink:href', 'style', 'class', 'id', 'transform',
+               'd', 'viewBox', 'preserveAspectRatio', 'fill', 'stroke', 'stroke-width',
+               'stroke-dasharray', 'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit',
+               'font-family', 'font-size', 'font-weight', 'font-style',
+               'text-anchor', 'dominant-baseline', 'alignment-baseline',
+               'x', 'y', 'cx', 'cy', 'r', 'rx', 'ry', 'x1', 'y1', 'x2', 'y2',
+               'width', 'height', 'requiredExtensions', 'marker-end', 'marker-start',
+               'opacity', 'fill-opacity', 'stroke-opacity', 'color']
+  });
+
+  // ---- Markdown source ----
+  const mdRaw = document.getElementById('md-source').textContent;
+
+  // ---- Marked configuration ----
+  const renderer = new marked.Renderer();
+
+  const origHeading = renderer.heading.bind(renderer);
+  renderer.heading = function (text, level, raw) {
+    const plain = stripTags(typeof text === 'string' ? text : (raw || ''));
+    const id = slugify(plain);
+    return '<h' + level + ' id="' + escapeHtml(id) + '">' + text + '</h' + level + '>\n';
+  };
+
+  const origTable = renderer.table.bind(renderer);
+  renderer.table = function (header, body) {
+    return '<div class="table-scroll"><table>\n<thead>\n' + header + '</thead>\n<tbody>\n' + body + '</tbody>\n</table></div>\n';
+  };
+
+  renderer.code = function (code, infostring, escaped) {
+    const lang = (infostring || '').match(/\S*/)[0];
+    if (lang === 'mermaid') {
+      return '<div class="mermaid-container"><div class="mermaid">' + escapeHtml(code) + '</div></div>\n';
+    }
+    const escaped_code = escaped ? code : escapeHtml(code);
+    if (lang) return '<pre><code class="language-' + escapeHtml(lang) + '">' + escaped_code + '\n</code></pre>\n';
+    return '<pre><code>' + escaped_code + '\n</code></pre>\n';
+  };
+
+  renderer.image = function (href, title, text) {
+    const t = title ? ' title="' + escapeHtml(title) + '"' : '';
+    return '<img src="' + escapeHtml(href) + '" alt="' + escapeHtml(text || '') + '"' + t + ' loading="lazy" />';
+  };
+
+  marked.setOptions({
+    renderer: renderer,
+    gfm: true,
+    breaks: false
+  });
+
+  // ---- Render markdown ----
+  const rawHtml = marked.parse(mdRaw);
+  const safeHtml = sanitize(rawHtml);
+  const article = document.getElementById('article');
+  article.innerHTML = safeHtml;
+  article.classList.add('reveal');
+
+  // ---- Initialize Mermaid ----
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const mermaidVars = isDark ? {
+    primaryColor: '#1A1814',
+    primaryBorderColor: '#6BC4D0',
+    primaryTextColor: '#ECE6D9',
+    secondaryColor: '#211E18',
+    tertiaryColor: '#14110D',
+    lineColor: '#A39B8C',
+    background: '#1A1814',
+    mainBkg: '#1A1814',
+    secondBkg: '#211E18',
+    textColor: '#ECE6D9',
+    nodeBorder: '#6BC4D0',
+    clusterBkg: '#1F1C16',
+    clusterBorder: '#423D31',
+    edgeLabelBackground: '#1A1814',
+    noteBkgColor: '#211E18',
+    noteTextColor: '#ECE6D9',
+    noteBorderColor: '#423D31',
+    actorBkg: '#1A1814',
+    actorBorder: '#6BC4D0',
+    actorTextColor: '#ECE6D9',
+    actorLineColor: '#A39B8C'
+  } : {
+    primaryColor: '#FFFFFF',
+    primaryBorderColor: '#0F5560',
+    primaryTextColor: '#1A1612',
+    secondaryColor: '#F2EDE2',
+    tertiaryColor: '#FAF8F3',
+    lineColor: '#5E574B',
+    background: '#FFFFFF',
+    mainBkg: '#FFFFFF',
+    secondBkg: '#F2EDE2',
+    textColor: '#1A1612',
+    nodeBorder: '#0F5560',
+    clusterBkg: '#FAF8F3',
+    clusterBorder: '#C9C0AB',
+    edgeLabelBackground: '#FAF8F3',
+    noteBkgColor: '#F2EDE2',
+    noteTextColor: '#1A1612',
+    noteBorderColor: '#C9C0AB',
+    actorBkg: '#FFFFFF',
+    actorBorder: '#0F5560',
+    actorTextColor: '#1A1612',
+    actorLineColor: '#5E574B'
+  };
+
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'base',
+    themeVariables: Object.assign({
+      fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+      fontSize: '13px'
+    }, mermaidVars),
+    flowchart: {
+      useMaxWidth: false,
+      htmlLabels: true,  // foreignObject xhtml survives via DOMParser path below
+      curve: 'basis',
+      padding: 14
+    },
+    sequence: {
+      useMaxWidth: false,
+      actorMargin: 60,
+      messageMargin: 36,
+      boxMargin: 12,
+      noteMargin: 10,
+      mirrorActors: false
+    },
+    securityLevel: 'loose'
+  });
+
+  // Render mermaid diagrams sequentially.
+  // Parse SVG via DOMParser instead of innerHTML so foreignObject + xhtml labels survive
+  // (DOMPurify's SVG profile strips xhtml inside foreignObject, which is where mermaid
+  // puts node text). The mermaid input comes from our own md-source block, so the output
+  // is trusted authored content; we still defensively strip any <script> nodes.
+  const parser = new DOMParser();
+  const stripUnsafe = (svgEl) => {
+    svgEl.querySelectorAll('script').forEach(n => n.remove());
+    svgEl.querySelectorAll('*').forEach(el => {
+      [...el.attributes].forEach(attr => {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith('on')) el.removeAttribute(attr.name);
+        if (name === 'href' || name === 'xlink:href') {
+          const v = (attr.value || '').trim().toLowerCase();
+          if (v.startsWith('javascript:')) el.removeAttribute(attr.name);
+        }
+      });
+    });
+    return svgEl;
+  };
+  (async function renderMermaid() {
+    const nodes = Array.from(document.querySelectorAll('.mermaid'));
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+      const code = node.textContent;
+      const id = 'mmd-' + i;
+      try {
+        const result = await mermaid.render(id, code);
+        const doc = parser.parseFromString(result.svg, 'image/svg+xml');
+        const svgEl = doc.documentElement;
+        if (svgEl && svgEl.nodeName.toLowerCase() === 'svg') {
+          stripUnsafe(svgEl);
+          node.replaceChildren(svgEl);
+        } else {
+          throw new Error('Mermaid did not return an <svg> root');
+        }
+      } catch (err) {
+        console.error('Mermaid render failed for diagram', i + 1, err);
+        node.textContent = '';
+        const pre = document.createElement('pre');
+        pre.textContent = code;
+        pre.style.cssText = 'text-align:left;font-family:var(--font-mono);font-size:12px;color:var(--text-muted);padding:12px;background:var(--surface-2);border-radius:6px;overflow:auto;';
+        node.appendChild(pre);
+      }
+    }
+    bindMermaidLightbox();
+  })();
+
+  // Inline any <img src="*.svg"> into the article so the SVG flows through the
+  // canvas-style lightbox (drag, wheel zoom, pinch) instead of the simple image lightbox.
+  // Lookup order: hidden <template id="svg-tpl-{basename}"> embedded at build time
+  // (works offline / file://) → fetch() (works on http(s) and Safari file://).
+  function svgTemplateFor(src) {
+    const m = (src || '').match(/([^/]+)\.svg(?:[?#].*)?$/i);
+    if (!m) return null;
+    return document.getElementById('svg-tpl-' + m[1]);
+  }
+  async function loadSvg(src) {
+    const tpl = svgTemplateFor(src);
+    if (tpl && tpl.content) {
+      // The browser already parsed the SVG inside the <template> using HTML's foreign-
+      // content rules — clone that node directly. This sidesteps XML strictness around
+      // bare `&` in text content (which would fail DOMParser's image/svg+xml mode).
+      const inner = tpl.content.querySelector('svg');
+      if (inner) return inner.cloneNode(true);
+    }
+    const res = await fetch(src);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    const doc = parser.parseFromString(text, 'image/svg+xml');
+    if (!doc.documentElement || doc.documentElement.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) {
+      throw new Error('Not a valid <svg> root');
+    }
+    return doc.documentElement;
+  }
+  (async function inlineSvgImages() {
+    const imgs = Array.from(article.querySelectorAll('img[src$=".svg"]'));
+    for (const img of imgs) {
+      try {
+        const svgEl = await loadSvg(img.getAttribute('src'));
+        stripUnsafe(svgEl);
+        // Wrap in the same frame mermaid diagrams use, so the visual treatment matches.
+        const container = document.createElement('div');
+        container.className = 'mermaid-container';
+        const inner = document.createElement('div');
+        inner.className = 'mermaid';
+        inner.appendChild(svgEl);
+        container.appendChild(inner);
+        const alt = img.getAttribute('alt');
+        if (alt) container.setAttribute('aria-label', alt);
+        img.replaceWith(container);
+        inner.addEventListener('click', () => openLightbox(svgEl));
+      } catch (err) {
+        console.error('Inline SVG failed for', img.src, err);
+      }
+    }
+  })();
+
+  // ---- Build TOC from h2 + h3 ----
+  function buildToc() {
+    const tocList = document.getElementById('tocList');
+    const headings = article.querySelectorAll('h2, h3');
+    let currentH2Sublist = null;
+
+    headings.forEach((h) => {
+      const level = h.tagName === 'H2' ? 2 : 3;
+      const id = h.id || slugify(h.textContent);
+      h.id = id;
+
+      const text = h.textContent.trim();
+      const numMatch = text.match(/^(\d+(?:\.\d+)*)\.?\s+(.+)$/);
+
+      if (level === 2) {
+        const li = document.createElement('li');
+        li.className = 'toc-h2';
+        li.dataset.target = id;
+
+        const a = document.createElement('a');
+        a.href = '#' + id;
+
+        if (numMatch) {
+          const numSpan = document.createElement('span');
+          numSpan.className = 'toc-num';
+          numSpan.textContent = numMatch[1];
+          const txtSpan = document.createElement('span');
+          txtSpan.className = 'toc-text';
+          txtSpan.textContent = numMatch[2];
+          a.appendChild(numSpan);
+          a.appendChild(txtSpan);
+        } else {
+          const txtSpan = document.createElement('span');
+          txtSpan.className = 'toc-text';
+          txtSpan.textContent = text;
+          a.appendChild(txtSpan);
+        }
+        li.appendChild(a);
+
+        const sub = document.createElement('ul');
+        li.appendChild(sub);
+        tocList.appendChild(li);
+        currentH2Sublist = sub;
+      } else if (level === 3 && currentH2Sublist) {
+        const li = document.createElement('li');
+        li.className = 'toc-h3';
+        li.dataset.target = id;
+        const a = document.createElement('a');
+        a.href = '#' + id;
+        const txtSpan = document.createElement('span');
+        txtSpan.className = 'toc-text';
+        txtSpan.textContent = numMatch ? numMatch[2] : text;
+        a.appendChild(txtSpan);
+        li.appendChild(a);
+        currentH2Sublist.appendChild(li);
+      }
+    });
+  }
+  buildToc();
+
+  // ---- Smooth scroll on TOC click ----
+  document.getElementById('tocList').addEventListener('click', function (e) {
+    const a = e.target.closest('a');
+    if (!a) return;
+    e.preventDefault();
+    const id = a.getAttribute('href').slice(1);
+    const target = document.getElementById(id);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      history.replaceState(null, '', '#' + id);
+    }
+    closeSidebar();
+  });
+
+  // ---- Scrollspy ----
+  function setupScrollspy() {
+    const sections = Array.from(article.querySelectorAll('h2, h3'));
+    const tocLinks = document.querySelectorAll('#tocList li');
+    if (!sections.length) return;
+
+    const visible = new Set();
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) visible.add(entry.target.id);
+        else visible.delete(entry.target.id);
+      });
+
+      let activeId = null;
+      sections.forEach((s) => {
+        if (!activeId && visible.has(s.id)) activeId = s.id;
+      });
+      if (!activeId) {
+        const scrollY = window.scrollY + 80;
+        sections.forEach((s) => {
+          if (s.offsetTop <= scrollY) activeId = s.id;
+        });
+      }
+
+      tocLinks.forEach((li) => li.classList.toggle('active', li.dataset.target === activeId));
+      if (activeId) {
+        const activeLi = document.querySelector('#tocList li[data-target="' + CSS.escape(activeId) + '"]');
+        if (activeLi && activeLi.classList.contains('toc-h3')) {
+          const parent = activeLi.closest('.toc-h2');
+          if (parent) parent.classList.add('active');
+        }
+      }
+    }, {
+      rootMargin: '-15% 0px -70% 0px',
+      threshold: 0
+    });
+
+    sections.forEach((s) => observer.observe(s));
+  }
+  setupScrollspy();
+
+  // ---- Mobile sidebar toggle ----
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+  const menuBtn = document.getElementById('menuToggle');
+
+  function openSidebar() {
+    sidebar.classList.add('open');
+    overlay.classList.add('open');
+    menuBtn.setAttribute('aria-expanded', 'true');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeSidebar() {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('open');
+    menuBtn.setAttribute('aria-expanded', 'false');
+    document.body.style.overflow = '';
+  }
+  menuBtn.addEventListener('click', () => {
+    if (sidebar.classList.contains('open')) closeSidebar(); else openSidebar();
+  });
+  overlay.addEventListener('click', closeSidebar);
+
+  // ---- Lightbox ----
+  const lightbox = document.getElementById('lightbox');
+  const lightboxContent = document.getElementById('lightboxContent');
+  const lightboxToolbar = document.getElementById('lightboxToolbar');
+  const lightboxZoomLabel = document.getElementById('lightboxZoomLabel');
+  const lightboxZoomIn = document.getElementById('lightboxZoomIn');
+  const lightboxZoomOut = document.getElementById('lightboxZoomOut');
+  const lightboxZoomFit = document.getElementById('lightboxZoomFit');
+
+  // Canvas-style pan + zoom for SVG diagrams (Figma/draw.io feel).
+  // The stage is positioned at the lightbox-content's top-left and transformed via
+  // `translate(panX, panY) scale(scale)`. Pan and zoom both work at any scale —
+  // there's no native scrolling, so panning works even when the diagram is
+  // smaller than the viewport.
+  const ZOOM_MIN = 0.1;
+  const ZOOM_MAX = 10;
+  const ZOOM_STEP = 1.2;
+  const WHEEL_SENSITIVITY = 0.0015;
+  let zoomState = null; // { svg, stage, baseW, baseH, scale, panX, panY }
+
+  function clamp(s) { return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, s)); }
+
+  function applyTransform() {
+    if (!zoomState) return;
+    const { stage, panX, panY, scale } = zoomState;
+    stage.style.transform = 'translate(' + panX + 'px, ' + panY + 'px) scale(' + scale + ')';
+    lightboxZoomLabel.textContent = Math.round(scale * 100) + '%';
+  }
+
+  // Cursor-anchored zoom: keep the diagram point under the cursor pinned.
+  function zoomAtPoint(newScale, clientX, clientY) {
+    if (!zoomState) return;
+    const oldScale = zoomState.scale;
+    newScale = clamp(newScale);
+    if (newScale === oldScale) return;
+    const rect = lightboxContent.getBoundingClientRect();
+    const cx = clientX - rect.left;
+    const cy = clientY - rect.top;
+    // Diagram-local point under cursor: (cx - panX) / scale.
+    // After scaling, we want that point to stay at (cx, cy):
+    //   newPanX = cx - localX * newScale = cx - (cx - panX) * (newScale/oldScale)
+    const factor = newScale / oldScale;
+    zoomState.panX = cx - (cx - zoomState.panX) * factor;
+    zoomState.panY = cy - (cy - zoomState.panY) * factor;
+    zoomState.scale = newScale;
+    applyTransform();
+  }
+
+  function fitZoom() {
+    if (!zoomState) return;
+    const padX = 32, padY = 32;
+    const cw = lightboxContent.clientWidth;
+    const ch = lightboxContent.clientHeight;
+    const availW = Math.max(100, cw - padX);
+    const availH = Math.max(100, ch - padY);
+    const fit = Math.min(availW / zoomState.baseW, availH / zoomState.baseH);
+    // Boost for narrow/tall diagrams so labels are readable.
+    const target = clamp(Math.max(fit, Math.min(1.6, fit * 1.4)));
+    zoomState.scale = target;
+    // Center the diagram.
+    zoomState.panX = (cw - zoomState.baseW * target) / 2;
+    zoomState.panY = (ch - zoomState.baseH * target) / 2;
+    applyTransform();
+  }
+
+  function openLightbox(node) {
+    while (lightboxContent.firstChild) lightboxContent.removeChild(lightboxContent.firstChild);
+    lightboxContent.classList.remove('is-grab', 'is-grabbing');
+    zoomState = null;
+    if (node.tagName === 'IMG') {
+      const clone = node.cloneNode(true);
+      clone.style.cursor = 'default';
+      clone.style.borderRadius = '0';
+      clone.style.boxShadow = 'none';
+      clone.style.border = '0';
+      lightboxContent.appendChild(clone);
+      lightboxToolbar.style.display = 'none';
+    } else {
+      const svg = node.tagName.toLowerCase() === 'svg' ? node : node.querySelector('svg');
+      if (!svg) return;
+      const clone = svg.cloneNode(true);
+      clone.removeAttribute('style');
+
+      let baseW = 0, baseH = 0;
+      const vb = (clone.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+      if (vb.length === 4 && vb[2] > 0 && vb[3] > 0) {
+        baseW = vb[2]; baseH = vb[3];
+      } else {
+        baseW = parseFloat(clone.getAttribute('width')) || 0;
+        baseH = parseFloat(clone.getAttribute('height')) || 0;
+      }
+      if (!baseW || !baseH) { baseW = 1200; baseH = 800; }
+      if (!clone.getAttribute('preserveAspectRatio')) {
+        clone.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+      }
+      // SVG fills the stage; the stage is the unit we transform.
+      clone.setAttribute('width', baseW);
+      clone.setAttribute('height', baseH);
+
+      const stage = document.createElement('div');
+      stage.className = 'lightbox-stage';
+      stage.style.width = baseW + 'px';
+      stage.style.height = baseH + 'px';
+      stage.appendChild(clone);
+      lightboxContent.appendChild(stage);
+      lightboxToolbar.style.display = '';
+
+      zoomState = { svg: clone, stage, baseW, baseH, scale: 1, panX: 0, panY: 0 };
+      lightboxContent.classList.add('is-grab');
+    }
+    lightbox.hidden = false;
+    document.body.style.overflow = 'hidden';
+    if (zoomState) requestAnimationFrame(() => fitZoom());
+  }
+  function closeLightbox() {
+    lightbox.hidden = true;
+    document.body.style.overflow = '';
+    while (lightboxContent.firstChild) lightboxContent.removeChild(lightboxContent.firstChild);
+    lightboxContent.classList.remove('is-grab', 'is-grabbing');
+    zoomState = null;
+  }
+
+  function viewportCenter() {
+    const rect = lightboxContent.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }
+  lightboxZoomIn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!zoomState) return;
+    const c = viewportCenter();
+    zoomAtPoint(zoomState.scale * ZOOM_STEP, c.x, c.y);
+  });
+  lightboxZoomOut.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!zoomState) return;
+    const c = viewportCenter();
+    zoomAtPoint(zoomState.scale / ZOOM_STEP, c.x, c.y);
+  });
+  lightboxZoomFit.addEventListener('click', (e) => { e.stopPropagation(); fitZoom(); });
+  lightboxToolbar.addEventListener('click', (e) => e.stopPropagation());
+
+  // Wheel = zoom (cursor-anchored). Works for mouse wheels and trackpad pinch.
+  lightboxContent.addEventListener('wheel', (e) => {
+    if (!zoomState) return;
+    e.preventDefault();
+    const px = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+    const factor = Math.exp(-px * WHEEL_SENSITIVITY);
+    zoomAtPoint(zoomState.scale * factor, e.clientX, e.clientY);
+  }, { passive: false });
+
+  // Drag = pan. Works at any zoom level (no native scroll required).
+  let panState = null; // { startX, startY, startPanX, startPanY }
+  lightboxContent.addEventListener('mousedown', (e) => {
+    if (!zoomState) return;
+    if (e.target.closest('.lightbox-toolbar') || e.target.closest('.lightbox-close')) return;
+    if (e.button !== 0 && e.button !== 1) return;
+    e.preventDefault();
+    panState = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startPanX: zoomState.panX,
+      startPanY: zoomState.panY
+    };
+    lightboxContent.classList.add('is-grabbing');
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!panState || !zoomState) return;
+    zoomState.panX = panState.startPanX + (e.clientX - panState.startX);
+    zoomState.panY = panState.startPanY + (e.clientY - panState.startY);
+    applyTransform();
+  });
+  function endPan() {
+    if (!panState) return;
+    panState = null;
+    lightboxContent.classList.remove('is-grabbing');
+  }
+  window.addEventListener('mouseup', endPan);
+  window.addEventListener('blur', endPan);
+  lightboxContent.addEventListener('dragstart', (e) => e.preventDefault());
+
+  // Touch: single-finger pan, two-finger pinch zoom.
+  const activeTouches = new Map();
+  let touchState = null; // { mode: 'pan'|'pinch', ... }
+  lightboxContent.addEventListener('touchstart', (e) => {
+    if (!zoomState) return;
+    if (e.target.closest('.lightbox-toolbar') || e.target.closest('.lightbox-close')) return;
+    e.preventDefault();
+    for (const t of e.changedTouches) activeTouches.set(t.identifier, { x: t.clientX, y: t.clientY });
+    if (activeTouches.size === 1) {
+      const t = [...activeTouches.values()][0];
+      touchState = { mode: 'pan', startX: t.x, startY: t.y, startPanX: zoomState.panX, startPanY: zoomState.panY };
+    } else if (activeTouches.size >= 2) {
+      const [a, b] = [...activeTouches.values()];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      touchState = {
+        mode: 'pinch',
+        startDist: Math.hypot(dx, dy),
+        startScale: zoomState.scale,
+        midX: (a.x + b.x) / 2,
+        midY: (a.y + b.y) / 2
+      };
+    }
+  }, { passive: false });
+  lightboxContent.addEventListener('touchmove', (e) => {
+    if (!zoomState || !touchState) return;
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (activeTouches.has(t.identifier)) activeTouches.set(t.identifier, { x: t.clientX, y: t.clientY });
+    }
+    if (touchState.mode === 'pan' && activeTouches.size === 1) {
+      const t = [...activeTouches.values()][0];
+      zoomState.panX = touchState.startPanX + (t.x - touchState.startX);
+      zoomState.panY = touchState.startPanY + (t.y - touchState.startY);
+      applyTransform();
+    } else if (touchState.mode === 'pinch' && activeTouches.size >= 2) {
+      const [a, b] = [...activeTouches.values()];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const dist = Math.hypot(dx, dy);
+      const newScale = touchState.startScale * (dist / touchState.startDist);
+      zoomAtPoint(newScale, touchState.midX, touchState.midY);
+    }
+  }, { passive: false });
+  function touchEnd(e) {
+    for (const t of e.changedTouches) activeTouches.delete(t.identifier);
+    if (activeTouches.size === 0) touchState = null;
+    else if (activeTouches.size === 1 && zoomState) {
+      const t = [...activeTouches.values()][0];
+      touchState = { mode: 'pan', startX: t.x, startY: t.y, startPanX: zoomState.panX, startPanY: zoomState.panY };
+    }
+  }
+  lightboxContent.addEventListener('touchend', touchEnd);
+  lightboxContent.addEventListener('touchcancel', touchEnd);
+
+  function bindMermaidLightbox() {
+    article.querySelectorAll('.mermaid').forEach((m) => {
+      m.addEventListener('click', () => openLightbox(m));
+    });
+  }
+  // Bind every image to the lightbox. SVG-href images may also be replaced by the
+  // inline-SVG pass above; that just removes the <img> so this handler becomes a
+  // harmless dangling listener. If the inline pass fails (e.g. file:// CORS in Chrome),
+  // the <img> stays in place and this binding gives the user the image lightbox at least.
+  article.querySelectorAll('img').forEach((img) => {
+    img.addEventListener('click', () => openLightbox(img));
+  });
+
+  document.getElementById('lightboxClose').addEventListener('click', closeLightbox);
+  lightbox.addEventListener('click', (e) => {
+    if (e.target === lightbox) closeLightbox();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeSidebar();
+      closeLightbox();
+    }
+    if (!lightbox.hidden && zoomState) {
+      if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        const c = viewportCenter();
+        zoomAtPoint(zoomState.scale * ZOOM_STEP, c.x, c.y);
+      } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        const c = viewportCenter();
+        zoomAtPoint(zoomState.scale / ZOOM_STEP, c.x, c.y);
+      } else if (e.key === '0') {
+        e.preventDefault();
+        fitZoom();
+      }
+    }
+  });
+
+  // ---- Scroll progress ----
+  const progress = document.getElementById('progress');
+  function updateProgress() {
+    const docH = document.documentElement.scrollHeight - window.innerHeight;
+    const sc = window.scrollY;
+    const pct = docH > 0 ? Math.min(100, (sc / docH) * 100) : 0;
+    progress.style.width = pct + '%';
+  }
+  window.addEventListener('scroll', updateProgress, { passive: true });
+  window.addEventListener('resize', debounce(updateProgress, 100));
+  updateProgress();
+
+  // ---- Doc meta in footer ----
+  const sectionCount = article.querySelectorAll('h2').length;
+  const diagramCount = article.querySelectorAll('.mermaid-container').length;
+  document.getElementById('docMeta').textContent =
+    sectionCount + ' sections · ' + diagramCount + ' diagrams';
+
+  // ---- Anchor on initial load ----
+  if (location.hash) {
+    setTimeout(() => {
+      const t = document.getElementById(location.hash.slice(1));
+      if (t) t.scrollIntoView({ behavior: 'instant', block: 'start' });
+    }, 80);
+  }
+})();
+</script>
+</body>
+</html>

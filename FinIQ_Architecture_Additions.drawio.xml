@@ -1,0 +1,50 @@
+<mxfile host="app.diagrams.net" modified="2026-04-17T16:00:00.000Z" agent="Mozilla/5.0" version="23.1.6" type="device">
+  <diagram name="FinIQ Additions" id="finiq-additions">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="826" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ==================================================================== -->
+        <!-- SOURCE DATA ADDITIONS — drop these inside the "Source data" group    -->
+        <!-- ==================================================================== -->
+
+        <!-- Databricks node -->
+        <mxCell id="addition-databricks" value="Databricks&#10;(Mars Financials)" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#23272D;gradientColor=none;fillColor=#FF3621;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;shape=mxgraph.azure2.sql_datawarehouses;fontSize=12;labelPosition=center;" vertex="1" parent="1">
+          <mxGeometry x="80" y="40" width="64" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- QML / Q.Enterprise node -->
+        <mxCell id="addition-qml" value="QML · Q.Enterprise&#10;(Macro data)" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#23272D;gradientColor=none;fillColor=#2C5F2D;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;shape=mxgraph.azure2.cloud_services;fontSize=12;labelPosition=center;" vertex="1" parent="1">
+          <mxGeometry x="80" y="160" width="64" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- ==================================================================== -->
+        <!-- AZURE DELIVERY ADDITION — drop inside the "Azure delivery" group     -->
+        <!-- ==================================================================== -->
+
+        <!-- Azure Key Vault -->
+        <mxCell id="addition-keyvault" value="Azure Key Vault&#10;+ Managed Identity" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#23272D;gradientColor=none;fillColor=#0078D4;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;shape=mxgraph.azure2.key_vaults;fontSize=12;labelPosition=center;" vertex="1" parent="1">
+          <mxGeometry x="340" y="40" width="64" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- ==================================================================== -->
+        <!-- LABELS / INSTRUCTIONS                                                -->
+        <!-- ==================================================================== -->
+
+        <mxCell id="label-source" value="↓ Add to &quot;Source data&quot; group" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="10" width="160" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="label-azure" value="↓ Add to &quot;Azure delivery&quot; group" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=1;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="300" y="10" width="160" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="instructions" value="INSTRUCTIONS&#10;1. Open your existing FinIQ diagram in draw.io&#10;2. Extras → Edit Diagram… (Ctrl+Shift+X) on this file&#10;3. OR: Open this file as a new tab, select these 3 nodes, copy (Ctrl+C)&#10;4. Switch to your FinIQ diagram, paste (Ctrl+V)&#10;5. Drag each into position:&#10;   • Databricks → top of Source data group (primary data)&#10;   • QML / Q.Enterprise → between QDL and FMP&#10;   • Azure Key Vault → inside Azure delivery group, between&#10;     Application Gateway and App Services&#10;6. Draw arrows:&#10;   • Databricks → Semantic YAML (main data feed)&#10;   • Databricks → Query Intelligence (SQL target)&#10;   • QML → FastAPI backend (macro enrichment)&#10;   • Azure Key Vault → App Services (reads secrets / obtains tokens)" style="text;html=1;strokeColor=#4D90FE;fillColor=#E8F0FE;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="280" width="520" height="240" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,23 @@
+{
+  "name": "amira-finiq",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/farfar1985/FinIQ.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/farfar1985/FinIQ/issues"
+  },
+  "homepage": "https://github.com/farfar1985/FinIQ#readme",
+  "description": "",
+  "dependencies": {
+    "docx": "^9.6.1"
+  }
+}
